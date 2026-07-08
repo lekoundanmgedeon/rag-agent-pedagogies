@@ -17,3 +17,7 @@ agent-tuteur-deploy/backups/
 
 # OS
 .DS_Store
+#claude 
+.claude/
+
+
