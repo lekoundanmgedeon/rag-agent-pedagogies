@@ -1,11 +1,8 @@
 # agent-tuteur-api
 
-Cœur métier + (à venir) API de l'agent tuteur pédagogique RAG pour le programme
-scolaire sénégalais.
-
-> État : **étapes 1 à 3** construites (cœur RAG + agent, exécutables hors-ligne
-> en mode *mock / in-memory*). Les couches Postgres, FastAPI, ARQ/Redis,
-> Streamlit et déploiement (étapes 4 à 8) ne sont pas encore présentes.
+Cœur métier + API de l'agent tuteur pédagogique RAG pour le programme scolaire
+sénégalais. Voir le README à la racine du dépôt pour la vue d'ensemble multi-
+service ; ce document couvre spécifiquement ce sous-projet.
 
 ## Démo hors-ligne (sans infrastructure)
 
@@ -15,9 +12,23 @@ pip install -r requirements.txt
 PYTHONPATH=src python scripts/demo.py
 ```
 
-La démo exécute une ingestion du corpus d'exemple (`corpus/`) dans un vectorstore
-in-memory puis pose une question à l'agent, en affichant le niveau d'indice, les
-sources RAG et la réponse streamée par le LLM *mock*.
+Ingeste le corpus d'exemple (`corpus/`) dans un vectorstore in-memory puis pose
+une question à l'agent (mode LLM *mock*), en affichant le niveau d'indice, les
+sources RAG et la réponse streamée.
+
+## API complète (Postgres + Redis requis)
+
+```bash
+export DATABASE_URL=postgresql+asyncpg://tuteur_app:...@localhost:5432/tuteur
+export REDIS_URL=redis://localhost:6379/0
+alembic upgrade head
+PYTHONPATH=src uvicorn agent_tuteur.api.main:app --reload
+# dans un autre terminal :
+PYTHONPATH=src python -m arq agent_tuteur.workers.ingestion_worker.WorkerSettings
+```
+
+Documentation OpenAPI interactive : `http://localhost:8000/docs`. Détail de
+chaque endpoint : `../docs/api.md`.
 
 ## Tests
 
@@ -25,7 +36,18 @@ sources RAG et la réponse streamée par le LLM *mock*.
 PYTHONPATH=src python -m pytest -q
 ```
 
-## Organisation du cœur (framework-agnostique)
+Sans infrastructure : les tests du cœur (config/ingestion/vectorstore/agent)
+tournent toujours. Les tests de persistance/API/worker nécessitant Postgres ou
+Redis réels s'auto-skip si `TEST_DATABASE_URL`/`TEST_REDIS_URL` ne sont pas
+définis :
+
+```bash
+export TEST_DATABASE_URL=postgresql+asyncpg://tuteur:tuteur@localhost:5432/tuteur
+export TEST_REDIS_URL=redis://localhost:6379/0
+PYTHONPATH=src python -m pytest -q
+```
+
+## Organisation (framework-agnostique au cœur)
 
 | Module | Rôle |
 |---|---|
@@ -35,5 +57,9 @@ PYTHONPATH=src python -m pytest -q
 | `vectorstore/` | embeddings, store (in-memory/Qdrant), indexer, retriever hybride |
 | `tools/` | calculatrice symbolique SymPy en sandbox |
 | `agent/` | stratégie d'indice, frustration, LLM+fallback, garde-fous, graphe LangGraph |
+| `persistence/` | modèles ORM + repositories PostgreSQL (implémentent `agent/ports.py`) |
+| `api/` | routes FastAPI, dépendances, streaming SSE, lifespan |
+| `workers/` | worker ARQ (ingestion asynchrone) |
 
-Voir `../architecture.md` pour la spécification complète.
+Voir `../docs/architecture.md` pour la spécification complète des flux et
+frontières de responsabilité.

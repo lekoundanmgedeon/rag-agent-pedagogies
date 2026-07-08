@@ -9,6 +9,11 @@ venv/
 # Env
 .env
 .env.local
+.env.prod
+
+# Déploiement — secrets et artefacts générés, jamais commités
+agent-tuteur-deploy/nginx/certs/
+agent-tuteur-deploy/backups/
 
 # OS
 .DS_Store
