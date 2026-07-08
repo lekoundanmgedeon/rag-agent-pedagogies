@@ -12,8 +12,8 @@ langgraph>=0.2
 # --- Backends « réels » (activables par configuration, import tardif) ---
 # BGE-M3 dense+sparse — décommenter pour EMBEDDING_BACKEND=bge_m3
 # FlagEmbedding>=1.2
-# Qdrant serveur — décommenter pour VECTOR_BACKEND=qdrant
-# qdrant-client>=1.9
+# Qdrant serveur — utilisé par défaut dans docker-compose.dev/prod.yml (VECTOR_BACKEND=qdrant)
+qdrant-client>=1.9
 
 # --- Persistance PostgreSQL (étape 4) ---
 sqlalchemy>=2.0
@@ -26,9 +26,9 @@ uvicorn[standard]>=0.30
 slowapi>=0.1.9
 python-multipart>=0.0.9
 
-# --- Ingestion asynchrone (étape 6, hors périmètre de cette session) ---
-# arq>=0.25
-# redis>=5.0
+# --- Ingestion asynchrone (étape 6) ---
+arq>=0.25
+redis>=5.0
 
 # --- Développement / tests ---
 pytest>=8.0

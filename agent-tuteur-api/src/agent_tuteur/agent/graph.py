@@ -117,6 +117,11 @@ class TutorAgent:
         self._prep_graph = self._build_graph(include_compose=False)
         self._full_graph = self._build_graph(include_compose=True)
 
+    @property
+    def llm_chain(self) -> list[str]:
+        """Chaîne de fallback LLM effective (exposée pour ``GET /health``)."""
+        return self._llm.chain
+
     # ------------------------------------------------------------------ nœuds
     async def _n_retrieve(self, state: AgentState) -> dict:
         retrieved = self._retriever.retrieve(

@@ -46,17 +46,26 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
 
     def _ensure_collection(self) -> None:
         from qdrant_client import models as qm
+        from qdrant_client.http.exceptions import UnexpectedResponse
 
         existing = {c.name for c in self._client.get_collections().collections}
         if self._collection in existing:
             return
-        self._client.create_collection(
-            collection_name=self._collection,
-            vectors_config={
-                self.DENSE: qm.VectorParams(size=self._dense_dim, distance=qm.Distance.COSINE)
-            },
-            sparse_vectors_config={self.SPARSE: qm.SparseVectorParams()},
-        )
+        try:
+            self._client.create_collection(
+                collection_name=self._collection,
+                vectors_config={
+                    self.DENSE: qm.VectorParams(size=self._dense_dim, distance=qm.Distance.COSINE)
+                },
+                sparse_vectors_config={self.SPARSE: qm.SparseVectorParams()},
+            )
+        except UnexpectedResponse as exc:
+            if exc.status_code == 409:
+                # Créée entre-temps par un autre processus (API/worker démarrent
+                # en parallèle) : la collection existe déjà, rien à faire de plus
+                # (l'index de payload a été créé par le gagnant de la course).
+                return
+            raise
         # Index de payload pour le filtrage curriculaire.
         for field in CHAMPS_INDEXES:
             self._client.create_payload_index(

@@ -1,18 +1,18 @@
 """Upload et gestion des documents curriculaires.
 
-**Note d'implémentation (portée de cette session) :** l'ingestion asynchrone via
-ARQ + Redis est prévue à l'étape 6 (hors périmètre). En attendant, le traitement
-post-upload utilise ``BackgroundTasks`` de FastAPI : même contrat observable côté
-client (``document_id`` renvoyé immédiatement, statut ``pending``→``indexed``/
-``failed`` consultable ensuite), et le CODE de pipeline appelé
-(``ingestion.pipeline.process_document`` + ``Indexer.index_chunks``) est
-exactement celui qu'un futur worker ARQ invoquera — remplacer le exécuteur
-(BackgroundTasks → job de queue) n'affectera pas cette couche.
+**Exécution de l'ingestion.** Le job (``ingestion.pipeline.process_document`` +
+``Indexer``) tourne soit dans le **worker ARQ** (``workers/ingestion_worker.py``,
+séparé, consommant Redis) soit, si Redis est indisponible, en ``BackgroundTasks``
+FastAPI **dans le même processus** (dégradation gracieuse — cf.
+``api/main.py::_try_create_arq_pool``). Le contrat observable côté client est
+identique dans les deux cas : ``document_id`` renvoyé immédiatement, statut
+``pending``→``indexed``/``failed`` consultable ensuite. Voir le worker pour la
+limitation connue du backend vectoriel in-memory en multi-processus.
 
-De même, ``/status`` expose un flux SSE par **sondage** de la base (pas encore
-d'événements fins par étape extract/normalize/chunk/embed, qui viendront avec le
-worker à l'étape 6) : le contrat SSE observable ({status: ...} jusqu'à un état
-terminal) restera stable.
+``/status`` expose un flux SSE par **sondage** de la base (pas encore
+d'événements fins par étape extract/normalize/chunk/embed — amélioration future
+possible côté worker) : le contrat SSE observable ({status: ...} jusqu'à un état
+terminal) reste stable indépendamment de l'exécuteur.
 
 ``reindex`` accepte un nouveau fichier plutôt qu'un identifiant sans contenu : le
 stack verrouillée ne prévoit pas de stockage d'objets (S3/MinIO) pour conserver
@@ -26,8 +26,9 @@ import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent_tuteur.api.dependencies import document_repo, get_indexer, get_tenant_id
+from agent_tuteur.api.dependencies import document_repo, get_indexer, get_session, get_tenant_id
 from agent_tuteur.api.rate_limit import limiter
 from agent_tuteur.api.schemas import DocumentOut, DocumentStatusEvent, UploadedDocumentOut
 from agent_tuteur.api.streaming import sse_event
@@ -40,8 +41,6 @@ from agent_tuteur.persistence.repositories import DocumentRepository
 from agent_tuteur.vectorstore.indexer import Indexer
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
-
-_METADATA_FIELDS = ("niveau", "classe", "serie", "discipline", "chapitre", "competence", "examen_associe")
 
 
 def _extension_ok(filename: str) -> bool:
@@ -58,10 +57,11 @@ async def _ingest_in_background(
     *,
     replace: bool = False,
 ) -> None:
-    """Exécutée après la réponse HTTP : extraction → indexation → statut final.
+    """Repli en tâche de fond **du même processus** (Redis/ARQ indisponible).
 
-    ``replace=True`` (cas ré-indexation) retire d'abord les anciens chunks du
-    document avant d'indexer les nouveaux (``Indexer.reindex_source``).
+    Logique identique à ``workers.ingestion_worker.ingest_document_task``,
+    dupliquée volontairement car cette version utilise l'``Indexer`` déjà
+    construit par l'API (``app.state.indexer``) plutôt que d'en bâtir un nouveau.
     """
     async with session_scope(tenant_id) as session:
         repo = DocumentRepository(session)
@@ -71,9 +71,39 @@ async def _ingest_in_background(
                 await asyncio.to_thread(indexer.reindex_source, filename, result.chunks)
             else:
                 await asyncio.to_thread(indexer.index_chunks, result.chunks)
-            await repo.update_status(document_id, "indexed")
+            await repo.update_status(document_id, "indexed", tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 — toute erreur d'ingestion doit aboutir en 'failed', pas planter le worker.
-            await repo.update_status(document_id, "failed", error=str(exc))
+            await repo.update_status(document_id, "failed", error=str(exc), tenant_id=tenant_id)
+
+
+async def _schedule_ingestion(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    *,
+    document_id: str,
+    filename: str,
+    data: bytes,
+    form_metadata: dict,
+    tenant_id: str,
+    replace: bool = False,
+) -> None:
+    """Programme le job d'ingestion : file ARQ si Redis dispo, sinon repli local."""
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool is not None:
+        await pool.enqueue_job(
+            "ingest_document_task", document_id, filename, data, form_metadata, tenant_id, replace
+        )
+        return
+    background_tasks.add_task(
+        _ingest_in_background,
+        document_id,
+        filename,
+        data,
+        form_metadata,
+        tenant_id,
+        get_indexer(request),
+        replace=replace,
+    )
 
 
 @router.post("", response_model=list[UploadedDocumentOut])
@@ -90,11 +120,11 @@ async def upload_documents(
     competence: str | None = Form(default=None),
     examen_associe: str | None = Form(default=None),
     tenant_id: str = Depends(get_tenant_id),
-    repo: DocumentRepository = Depends(document_repo),
+    session: AsyncSession = Depends(get_session),
 ) -> list[UploadedDocumentOut]:
     settings = get_settings()
     max_bytes = settings.max_file_size_mb * 1024 * 1024
-    indexer = get_indexer(request)
+    repo = DocumentRepository(session)
 
     form_metadata = {
         k: v
@@ -122,8 +152,19 @@ async def upload_documents(
         doc_type = _doc_type_for(file.filename or "")
         doc = await repo.create_pending(tenant_id, file.filename or "sans-nom", doc_type, form_metadata or None)
         results.append(UploadedDocumentOut(document_id=doc.id, filename=doc.filename, status=doc.status))
-        background_tasks.add_task(
-            _ingest_in_background, doc.id, doc.filename, data, form_metadata, tenant_id, indexer
+        # Commit explicite AVANT de programmer la tâche d'arrière-plan : Starlette
+        # exécute les BackgroundTasks pendant l'envoi de la réponse, donc AVANT que
+        # la dépendance `get_session` ne se ferme (et commit) en sortie de requête.
+        # Sans ce commit, la tâche (nouvelle session) ne verrait pas encore la ligne.
+        await session.commit()
+        await _schedule_ingestion(
+            request,
+            background_tasks,
+            document_id=doc.id,
+            filename=doc.filename,
+            data=data,
+            form_metadata=form_metadata,
+            tenant_id=tenant_id,
         )
     return results
 
@@ -150,14 +191,21 @@ def _to_out(doc: Document) -> DocumentOut:
 
 
 @router.get("", response_model=list[DocumentOut])
-async def list_documents(repo: DocumentRepository = Depends(document_repo)) -> list[DocumentOut]:
-    docs = await repo.list()
+async def list_documents(
+    tenant_id: str = Depends(get_tenant_id),
+    repo: DocumentRepository = Depends(document_repo),
+) -> list[DocumentOut]:
+    docs = await repo.list(tenant_id)
     return [_to_out(d) for d in docs]
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
-async def get_document(document_id: str, repo: DocumentRepository = Depends(document_repo)) -> DocumentOut:
-    doc = await repo.get(document_id)
+async def get_document(
+    document_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    repo: DocumentRepository = Depends(document_repo),
+) -> DocumentOut:
+    doc = await repo.get(document_id, tenant_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document introuvable")
     return _to_out(doc)
@@ -212,22 +260,25 @@ async def reindex_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     tenant_id: str = Depends(get_tenant_id),
-    repo: DocumentRepository = Depends(document_repo),
+    session: AsyncSession = Depends(get_session),
 ) -> UploadedDocumentOut:
+    repo = DocumentRepository(session)
     doc = await repo.get(document_id, tenant_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document introuvable")
 
     data = await file.read()
-    await repo.update_status(document_id, "pending")
-    background_tasks.add_task(
-        _ingest_in_background,
-        doc.id,
-        doc.filename,
-        data,
-        doc.metadata_ or {},
-        tenant_id,
-        get_indexer(request),
+    await repo.update_status(document_id, "pending", tenant_id=tenant_id)
+    # Commit explicite AVANT la tâche d'arrière-plan (cf. commentaire dans upload_documents).
+    await session.commit()
+    await _schedule_ingestion(
+        request,
+        background_tasks,
+        document_id=doc.id,
+        filename=doc.filename,
+        data=data,
+        form_metadata=doc.metadata_ or {},
+        tenant_id=tenant_id,
         replace=True,
     )
     return UploadedDocumentOut(document_id=doc.id, filename=doc.filename, status="pending")

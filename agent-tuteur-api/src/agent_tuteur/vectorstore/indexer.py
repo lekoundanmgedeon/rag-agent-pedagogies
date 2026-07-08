@@ -32,3 +32,7 @@ class Indexer:
     def delete_source(self, source_document: str) -> int:
         """Retire du vectorstore tous les chunks d'un document (sans réindexer)."""
         return self._store.delete_by_source(source_document)
+
+    def count(self) -> int:
+        """Nombre de chunks indexés — sonde légère pour ``GET /health``."""
+        return self._store.count()

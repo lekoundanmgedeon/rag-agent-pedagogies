@@ -205,8 +205,10 @@ class DocumentRepository:
         await self._session.flush()
         return doc
 
-    async def update_status(self, document_id: str, status: str, error: str | None = None) -> None:
-        doc = await self._session.get(Document, document_id)
+    async def update_status(
+        self, document_id: str, status: str, error: str | None = None, tenant_id: str = "default"
+    ) -> None:
+        doc = await self.get(document_id, tenant_id)
         if doc is None:
             raise LookupError(f"Document introuvable : {document_id}")
         doc.status = status

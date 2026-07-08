@@ -127,7 +127,7 @@ async def test_document_lifecycle(session):
     await session.commit()
     assert doc.status == "pending"
 
-    await repo.update_status(doc.id, "indexed")
+    await repo.update_status(doc.id, "indexed", tenant_id="t1")
     await session.commit()
     fetched = await repo.get(doc.id, "t1")
     assert fetched.status == "indexed"
@@ -147,3 +147,11 @@ async def test_document_tenant_isolation_on_get(session):
     await session.commit()
     assert await repo.get(doc.id, "ecoleB") is None
     assert await repo.delete(doc.id, "ecoleB") is False
+
+
+async def test_update_status_respects_tenant_isolation(session):
+    repo = DocumentRepository(session)
+    doc = await repo.create_pending("ecoleA", "a.pdf", "pdf")
+    await session.commit()
+    with pytest.raises(LookupError):
+        await repo.update_status(doc.id, "indexed", tenant_id="ecoleB")

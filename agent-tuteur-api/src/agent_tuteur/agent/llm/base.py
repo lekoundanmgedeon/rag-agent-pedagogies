@@ -37,3 +37,9 @@ class BaseLLM(ABC):
         d'une requête.
         """
         return True
+
+    @property
+    def chain(self) -> list[str]:
+        """Chaîne de fallback effective (``/health``). Un seul maillon ici ;
+        ``FallbackRouter`` la redéfinit pour exposer tous ses fournisseurs."""
+        return [self.name]
