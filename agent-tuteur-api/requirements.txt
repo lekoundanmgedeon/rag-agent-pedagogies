@@ -1,0 +1,37 @@
+# --- Cœur métier (étapes 1-3 : RAG + agent, exécutable hors-ligne) ---
+pydantic>=2.6
+pydantic-settings>=2.2
+pyyaml>=6.0
+numpy>=1.26
+sympy>=1.12
+httpx>=0.27
+pypdf>=4.0
+python-docx>=1.1
+langgraph>=0.2
+
+# --- Backends « réels » (activables par configuration, import tardif) ---
+# BGE-M3 dense+sparse — décommenter pour EMBEDDING_BACKEND=bge_m3
+# FlagEmbedding>=1.2
+# Qdrant serveur — décommenter pour VECTOR_BACKEND=qdrant
+# qdrant-client>=1.9
+
+# --- Persistance PostgreSQL (étape 4) ---
+sqlalchemy>=2.0
+asyncpg>=0.29
+alembic>=1.13
+
+# --- API FastAPI (étape 5) ---
+fastapi>=0.111
+uvicorn[standard]>=0.30
+slowapi>=0.1.9
+python-multipart>=0.0.9
+
+# --- Ingestion asynchrone (étape 6, hors périmètre de cette session) ---
+# arq>=0.25
+# redis>=5.0
+
+# --- Développement / tests ---
+pytest>=8.0
+pytest-asyncio>=0.23
+aiosqlite>=0.20
+greenlet>=3.0
