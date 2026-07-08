@@ -18,6 +18,8 @@ agent-tuteur-deploy/backups/
 # OS
 .DS_Store
 #claude 
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/README.md
 
 
