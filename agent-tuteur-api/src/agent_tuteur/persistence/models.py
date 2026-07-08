@@ -129,4 +129,7 @@ class Document(Base):
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONVariant, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Étapes chronométrées de l'ingestion (extract/normalize/chunk/annotate/
+    #: embed_upsert), pour affichage détaillé dans la page Upload/Logs.
+    log: Mapped[list | None] = mapped_column(JSONVariant, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)

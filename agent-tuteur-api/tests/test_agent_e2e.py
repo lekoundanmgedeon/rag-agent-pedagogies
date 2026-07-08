@@ -73,3 +73,39 @@ async def test_tenant_isolation_in_memory(agent):
     await agent.respond("question B", {"serie": "S1"}, SessionState(student_id="s1", tenant_id="t2"))
     assert len(await agent._memory.history("s1", "t1")) == 1
     assert len(await agent._memory.history("s1", "t2")) == 1
+
+
+async def test_prepare_exposes_node_by_node_orchestration_trace(agent):
+    prep = await agent.prepare("comment dériver un quotient de fonctions ?", {"serie": "S1"})
+    assert prep.trace_id  # identifiant de corrélation généré
+    node_names = [n["node"] for n in prep.node_trace]
+    assert node_names == [
+        "retrieve_context",
+        "detect_frustration",
+        "diagnose_hint_level",
+        "route_tool",
+        "guardrail",
+    ]
+    # Chaque étape est chronométrée et rattachée au même trace_id.
+    for entry in prep.node_trace:
+        assert entry["duration_ms"] >= 0
+        assert entry["trace_id"] == prep.trace_id
+    assert prep.trace["trace_id"] == prep.trace_id
+
+
+async def test_stream_fills_generation_stats_after_completion(agent):
+    prep = await agent.prepare("explique la notion de dérivée", {"serie": "S1"})
+    assert prep.generation is None  # pas encore streamé
+    tokens = [tok async for tok in agent.stream(prep)]
+    assert prep.generation is not None
+    assert prep.generation["token_count"] == len(tokens)
+    assert prep.generation["duration_ms"] >= 0
+    assert prep.generation["llm_provider"] == "mock"
+    assert agent.last_llm_used == "mock"
+
+
+async def test_respond_full_turn_exposes_trace_id_and_node_trace(agent):
+    result = await agent.respond("comment étudier les variations d'une fonction ?", {"serie": "S1"})
+    assert result.trace_id
+    node_names = [n["node"] for n in result.node_trace]
+    assert "compose_response" in node_names

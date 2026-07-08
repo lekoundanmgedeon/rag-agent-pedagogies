@@ -162,3 +162,15 @@ def submit_feedback(message_id: str, tenant_id: str, value: int) -> dict:
     )
     _raise_for_status(resp)
     return resp.json()
+
+
+def get_chat_logs(tenant_id: str, limit: int = 50) -> list[dict]:
+    """Derniers tours de chat (tous élèves) avec leur trace complète — page Logs."""
+    resp = requests.get(
+        f"{API_BASE_URL}/api/logs/chat",
+        params={"limit": limit},
+        headers=_headers(tenant_id),
+        timeout=_TIMEOUT,
+    )
+    _raise_for_status(resp)
+    return resp.json()

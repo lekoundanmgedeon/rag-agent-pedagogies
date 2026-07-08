@@ -27,6 +27,14 @@ class SourceOut(BaseModel):
     score: float
 
 
+class NodeTraceEntry(BaseModel):
+    node: str
+    duration_ms: float
+    trace_id: str | None = None
+
+    model_config = {"extra": "allow"}  # champs additionnels selon le nœud (n_sources, level, tool_used…)
+
+
 class ChatMeta(BaseModel):
     hint_level: int
     hint_label: str
@@ -34,6 +42,8 @@ class ChatMeta(BaseModel):
     scores: list[float]
     tool_used: str | None
     frustration_score: float
+    trace_id: str
+    node_trace: list[NodeTraceEntry]
 
 
 class SearchRequest(BaseModel):
@@ -64,6 +74,7 @@ class DocumentOut(BaseModel):
     status: str
     error: str | None
     metadata: dict | None
+    log: list[dict] | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -104,3 +115,19 @@ class HealthOut(BaseModel):
     redis: str
     qdrant: str
     llm: list[str]
+
+
+class ChatLogEntry(BaseModel):
+    """Un tour de chat, pour la page « Logs » (vue d'ensemble multi-élèves).
+
+    ``trace`` contient déjà la question (clé ``question``), le detail
+    nœud-par-nœud (``node_trace``) et les stats de génération (``generation``)
+    — voir ``api/routes/chat.py`` pour la construction de cet objet avant
+    persistance.
+    """
+
+    message_id: str
+    conversation_id: str
+    student_id: str
+    created_at: datetime
+    trace: dict

@@ -20,10 +20,13 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.api.rate_limit import limiter
-from agent_tuteur.api.routes import chat, documents, feedback, health, progression, search
+from agent_tuteur.api.routes import chat, documents, feedback, health, logs, progression, search
 from agent_tuteur.config.settings import get_settings
 from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
+from agent_tuteur.observability import setup_logging
 from agent_tuteur.persistence.db import dispose_engine, init_engine
+
+setup_logging("api")
 
 CORPUS_DIR = Path(__file__).resolve().parents[3] / "corpus"
 
@@ -101,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(progression.router)
     app.include_router(feedback.router)
     app.include_router(health.router)
+    app.include_router(logs.router)
 
     return app
 
