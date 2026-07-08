@@ -28,6 +28,8 @@ class AgentState(TypedDict, total=False):
     session: SessionState
     memory_port: StudentMemoryPort | None
     audit_port: AuditLogPort | None
+    #: Corrélation logs/trace pour tout le tour (généré par prepare()/respond()).
+    trace_id: str
 
     # --- Produits des nœuds a→e ---
     retrieved: list[ScoredChunk]

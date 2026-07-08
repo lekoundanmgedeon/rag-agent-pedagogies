@@ -15,6 +15,9 @@ venv/
 agent-tuteur-deploy/nginx/certs/
 agent-tuteur-deploy/backups/
 
+# Logs applicatifs (JSON, régénérés à chaque exécution)
+agent-tuteur-api/logs/
+
 # OS
 .DS_Store
 #claude 

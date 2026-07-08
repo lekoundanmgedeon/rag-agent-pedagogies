@@ -1,14 +1,20 @@
 """POST /api/chat — a→e synchrones puis streaming SSE de la génération (f).
 
 Contrat SSE : ``{meta: {...}}`` en premier, puis une série de ``{token: "..."}``,
-enfin ``{done: {message_id, conversation_id}}``. La persistance (conversation +
-messages) a lieu **après** la fin du flux de tokens (non-bloquant pour le
-streaming token-par-token), mais **avant** l'événement ``done`` puisque son
-payload contient le ``message_id`` fraîchement créé.
+enfin ``{done: {message_id, conversation_id, generation}}``. La persistance
+(conversation + messages) a lieu **après** la fin du flux de tokens (non-bloquant
+pour le streaming token-par-token), mais **avant** l'événement ``done`` puisque
+son payload contient le ``message_id`` fraîchement créé.
 
 Anti-injection : ``sanitize`` est appelé ici, hors du générateur, pour pouvoir
 renvoyer un vrai HTTP 400 — impossible de changer le status code une fois la
 ``StreamingResponse`` entamée.
+
+Observabilité : ``meta`` inclut ``trace_id``/``node_trace`` (détail nœud-par-nœud
+de l'orchestration a→e, cf. ``agent/graph.py``) — c'est ce qu'affiche l'onglet
+« orchestration » du chat Streamlit. Le ``trace`` persisté dans ``messages.trace``
+regroupe la question, le node_trace et les stats de génération, pour que la page
+Logs puisse reconstituer tout le tour sans consulter les logs bruts.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from agent_tuteur.api.rate_limit import limiter
 from agent_tuteur.api.schemas import ChatRequest
 from agent_tuteur.api.streaming import sse_event
 from agent_tuteur.config.settings import get_settings
+from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.persistence.db import session_scope
 from agent_tuteur.persistence.repositories import (
     AuditLogRepository,
@@ -36,6 +43,7 @@ from agent_tuteur.persistence.repositories import (
 )
 
 router = APIRouter(tags=["chat"])
+_logger = get_logger("agent_tuteur.api.routes.chat")
 
 
 async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) -> AsyncIterator[str]:
@@ -59,6 +67,8 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
                     "scores": prepared.trace["scores"],
                     "tool_used": prepared.trace["tool_used"],
                     "frustration_score": prepared.trace["frustration_score"],
+                    "trace_id": prepared.trace_id,
+                    "node_trace": prepared.node_trace,
                 }
             }
         )
@@ -69,6 +79,8 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
                 answer_parts.append(token)
                 yield sse_event({"token": token})
         except LLMError as exc:
+            log_event(_logger, "chat:generation_failed", trace_id=prepared.trace_id,
+                      error=str(exc), log_level=40)
             yield sse_event({"error": f"Génération indisponible : {exc}"})
             return
 
@@ -83,12 +95,31 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
             conversation = await conv_repo.create(tenant_id, payload.student_id)
         conversation_id = conversation.id
 
+        # Trace complète persistée : question + orchestration a→e + génération —
+        # c'est ce que relit GET /api/logs/chat pour la page Logs Streamlit.
+        full_trace = {
+            **prepared.trace,
+            "question": prepared.question,
+            "node_trace": prepared.node_trace,
+            "generation": prepared.generation,
+        }
+
         await msg_repo.add(conversation_id, tenant_id, "user", prepared.question)
         assistant_message = await msg_repo.add(
-            conversation_id, tenant_id, "assistant", answer, trace=prepared.trace
+            conversation_id, tenant_id, "assistant", answer, trace=full_trace
         )
+        log_event(_logger, "chat:turn_persisted", trace_id=prepared.trace_id,
+                  message_id=assistant_message.id, conversation_id=conversation_id)
 
-        yield sse_event({"done": {"message_id": assistant_message.id, "conversation_id": conversation_id}})
+        yield sse_event(
+            {
+                "done": {
+                    "message_id": assistant_message.id,
+                    "conversation_id": conversation_id,
+                    "generation": prepared.generation,
+                }
+            }
+        )
 
 
 @router.post("/api/chat")

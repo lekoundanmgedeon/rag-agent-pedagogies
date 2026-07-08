@@ -70,6 +70,21 @@ for doc in docs:
         st.json(doc.get("metadata") or {})
         if doc.get("error"):
             st.error(doc["error"])
+
+        log_steps = doc.get("log") or []
+        if log_steps:
+            st.write("**Étapes d'ingestion :**")
+            for step in log_steps:
+                name = step.get("step", "?")
+                duration = step.get("duration_ms", 0)
+                detail = {k: v for k, v in step.items() if k not in ("step", "duration_ms")}
+                line = f"- `{name}` — {duration:.1f} ms"
+                if detail:
+                    line += " (" + ", ".join(f"{k}={v}" for k, v in detail.items()) + ")"
+                st.markdown(line)
+            total = sum(s.get("duration_ms", 0) for s in log_steps)
+            st.caption(f"⏱️ Durée totale d'ingestion : {total:.1f} ms")
+
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🗑️ Supprimer", key=f"del_{doc['id']}"):

@@ -177,6 +177,28 @@ class MessageRepository:
         )
         return list((await self._session.execute(stmt)).scalars().all())
 
+    async def list_recent(self, tenant_id: str = "default", limit: int = 50) -> list[dict]:
+        """Derniers tours de chat (réponses assistant + leur trace complète),
+        tous élèves confondus — alimente la page Logs (vue d'ensemble)."""
+        stmt = (
+            select(Message, Conversation.student_id)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(Message.tenant_id == tenant_id, Message.role == "assistant")
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            {
+                "message_id": msg.id,
+                "conversation_id": msg.conversation_id,
+                "student_id": student_id,
+                "created_at": msg.created_at,
+                "trace": msg.trace or {},
+            }
+            for msg, student_id in rows
+        ]
+
 
 class FeedbackRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -206,13 +228,20 @@ class DocumentRepository:
         return doc
 
     async def update_status(
-        self, document_id: str, status: str, error: str | None = None, tenant_id: str = "default"
+        self,
+        document_id: str,
+        status: str,
+        error: str | None = None,
+        tenant_id: str = "default",
+        log: list[dict] | None = None,
     ) -> None:
         doc = await self.get(document_id, tenant_id)
         if doc is None:
             raise LookupError(f"Document introuvable : {document_id}")
         doc.status = status
         doc.error = error
+        if log is not None:
+            doc.log = log
         await self._session.flush()
 
     async def get(self, document_id: str, tenant_id: str = "default") -> Document | None:

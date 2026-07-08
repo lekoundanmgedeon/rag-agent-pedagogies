@@ -108,6 +108,38 @@ async def test_conversation_message_feedback_flow(session):
     assert fb.value == 1
 
 
+async def test_message_list_recent_joins_student_id_and_filters_role(session):
+    conv_repo = ConversationRepository(session)
+    msg_repo = MessageRepository(session)
+
+    conv = await conv_repo.create("t1", "eleve_x")
+    await msg_repo.add(conv.id, "t1", "user", "une question")
+    await msg_repo.add(conv.id, "t1", "assistant", "une réponse", trace={"hint_level": 2, "question": "une question"})
+    await session.commit()
+
+    recent = await msg_repo.list_recent("t1", limit=10)
+    assert len(recent) == 1  # seuls les messages "assistant" portent une trace exploitable
+    assert recent[0]["student_id"] == "eleve_x"
+    assert recent[0]["conversation_id"] == conv.id
+    assert recent[0]["trace"]["hint_level"] == 2
+
+
+async def test_message_list_recent_respects_tenant_and_limit(session):
+    conv_repo = ConversationRepository(session)
+    msg_repo = MessageRepository(session)
+
+    conv_t1 = await conv_repo.create("t1", "eleve1")
+    conv_t2 = await conv_repo.create("t2", "eleve2")
+    for i in range(3):
+        await msg_repo.add(conv_t1.id, "t1", "assistant", f"réponse {i}")
+    await msg_repo.add(conv_t2.id, "t2", "assistant", "autre tenant")
+    await session.commit()
+
+    recent = await msg_repo.list_recent("t1", limit=2)
+    assert len(recent) == 2  # limite respectée
+    assert all(r["conversation_id"] == conv_t1.id for r in recent)
+
+
 async def test_feedback_value_constraint_rejected(session):
     conv_repo = ConversationRepository(session)
     msg_repo = MessageRepository(session)
@@ -126,12 +158,15 @@ async def test_document_lifecycle(session):
     doc = await repo.create_pending("t1", "cours.pdf", "pdf", metadata={"niveau": "secondaire"})
     await session.commit()
     assert doc.status == "pending"
+    assert doc.log is None
 
-    await repo.update_status(doc.id, "indexed", tenant_id="t1")
+    steps = [{"step": "extract", "duration_ms": 1.2}, {"step": "embed_upsert", "duration_ms": 3.4}]
+    await repo.update_status(doc.id, "indexed", tenant_id="t1", log=steps)
     await session.commit()
     fetched = await repo.get(doc.id, "t1")
     assert fetched.status == "indexed"
     assert fetched.metadata_ == {"niveau": "secondaire"}
+    assert fetched.log == steps
 
     docs = await repo.list("t1")
     assert len(docs) == 1

@@ -37,3 +37,16 @@ def test_txt_document_supported():
     result = process_document("notes.txt", b"Juste du texte brut sans structure.")
     assert result.doc_type == "txt"
     assert result.n_chunks == 1
+
+
+def test_process_document_records_timed_steps():
+    data = b"## Chapitre : Test\n\ncontenu\n\n### Exercice 1\n\nenonce indice solution\n"
+    result = process_document("cours.md", data, document_id="doc-123")
+    step_names = [s["step"] for s in result.steps]
+    assert step_names == ["extract", "normalize", "chunk", "annotate"]
+    for step in result.steps:
+        assert step["duration_ms"] >= 0
+    # Détails spécifiques à chaque étape.
+    assert result.steps[0]["doc_type"] == "markdown"
+    assert result.steps[2]["n_drafts"] == 2
+    assert result.steps[3]["n_chunks"] == 2

@@ -23,6 +23,7 @@ de la refournir. Décision documentée dans docs/adr.
 from __future__ import annotations
 
 import asyncio
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -35,12 +36,14 @@ from agent_tuteur.api.streaming import sse_event
 from agent_tuteur.config.settings import get_settings
 from agent_tuteur.ingestion.loaders import SUPPORTED_EXTENSIONS
 from agent_tuteur.ingestion.pipeline import process_document
+from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.persistence.db import session_scope
 from agent_tuteur.persistence.models import Document
 from agent_tuteur.persistence.repositories import DocumentRepository
 from agent_tuteur.vectorstore.indexer import Indexer
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+_logger = get_logger("agent_tuteur.api.routes.documents")
 
 
 def _extension_ok(filename: str) -> bool:
@@ -63,17 +66,30 @@ async def _ingest_in_background(
     dupliquée volontairement car cette version utilise l'``Indexer`` déjà
     construit par l'API (``app.state.indexer``) plutôt que d'en bâtir un nouveau.
     """
+    log_event(_logger, "ingestion:job_start", document_id=document_id, filename=filename, tenant_id=tenant_id)
     async with session_scope(tenant_id) as session:
         repo = DocumentRepository(session)
+        steps: list[dict] = []
         try:
-            result = await asyncio.to_thread(process_document, filename, data, form_metadata)
+            result = await asyncio.to_thread(
+                process_document, filename, data, form_metadata, document_id=document_id
+            )
+            steps = result.steps
+            t0 = time.perf_counter()
             if replace:
                 await asyncio.to_thread(indexer.reindex_source, filename, result.chunks)
             else:
                 await asyncio.to_thread(indexer.index_chunks, result.chunks)
-            await repo.update_status(document_id, "indexed", tenant_id=tenant_id)
+            duration_ms = round((time.perf_counter() - t0) * 1000, 2)
+            steps.append({"step": "embed_upsert", "duration_ms": duration_ms, "n_chunks": result.n_chunks})
+            log_event(_logger, "ingestion:embed_upsert", document_id=document_id, filename=filename,
+                      duration_ms=duration_ms, n_chunks=result.n_chunks)
+            await repo.update_status(document_id, "indexed", tenant_id=tenant_id, log=steps)
+            log_event(_logger, "ingestion:job_done", document_id=document_id, filename=filename, status="indexed")
         except Exception as exc:  # noqa: BLE001 — toute erreur d'ingestion doit aboutir en 'failed', pas planter le worker.
-            await repo.update_status(document_id, "failed", error=str(exc), tenant_id=tenant_id)
+            log_event(_logger, "ingestion:job_failed", document_id=document_id, filename=filename,
+                      error=str(exc), log_level=40)
+            await repo.update_status(document_id, "failed", error=str(exc), tenant_id=tenant_id, log=steps)
 
 
 async def _schedule_ingestion(
@@ -186,6 +202,7 @@ def _to_out(doc: Document) -> DocumentOut:
         status=doc.status,
         error=doc.error,
         metadata=doc.metadata_,
+        log=doc.log,
         created_at=doc.created_at,
     )
 
