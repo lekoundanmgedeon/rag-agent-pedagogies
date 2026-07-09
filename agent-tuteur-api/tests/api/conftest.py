@@ -44,6 +44,7 @@ async def api_client(monkeypatch):
     async with app.router.lifespan_context(app):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
+            client.app = app  # accès direct à app.state (ex. simuler la perte de vecteurs dans les tests)
             yield client
 
     get_settings.cache_clear()

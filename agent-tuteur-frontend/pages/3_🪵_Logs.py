@@ -73,7 +73,7 @@ with tab_docs:
     if not docs:
         st.info("Aucun document pour ce tenant.")
 
-    status_icons = {"pending": "🟡", "indexed": "🟢", "failed": "🔴"}
+    status_icons = {"pending": "🟡", "indexed": "🟢", "failed": "🔴", "orphaned": "⚠️"}
     for doc in docs:
         icon = status_icons.get(doc["status"], "⚪")
         with st.expander(f"{icon} {doc['filename']} — {doc['status']} — {doc.get('created_at', '')}"):

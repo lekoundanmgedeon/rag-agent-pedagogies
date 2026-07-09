@@ -45,3 +45,20 @@ def test_build_filters_expands_serie_and_ignores_unindexed():
     # competence n'est pas un champ indexé -> ignoré du filtrage.
     assert "competence" not in filters
     assert "student_id" not in filters
+
+
+def test_count_for_source_matches_only_that_document(rag_stack):
+    indexer = rag_stack.indexer
+    assert indexer.count_for_source("maths_ts1_derivees.md") > 0
+    assert indexer.count_for_source("document_qui_n_existe_pas.md") == 0
+
+
+def test_count_for_source_sums_to_total_count(rag_stack):
+    # Chaque chunk appartient à exactement un document -> la somme par source
+    # doit reconstituer le total (pas de double-comptage, pas d'oubli).
+    from pathlib import Path
+
+    total = 0
+    for path in sorted((Path(__file__).resolve().parents[1] / "corpus").glob("*.md")):
+        total += rag_stack.indexer.count_for_source(path.name)
+    assert total == rag_stack.indexer.count()

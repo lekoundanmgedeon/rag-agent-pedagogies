@@ -115,6 +115,20 @@ class HealthOut(BaseModel):
     redis: str
     qdrant: str
     llm: list[str]
+    documents_orphaned: int
+
+
+class DocumentConsistencyOut(BaseModel):
+    document_id: str
+    filename: str
+    status: str
+    chunks_in_store: int
+    consistent: bool
+
+
+class VerifyAllOut(BaseModel):
+    checked: int
+    orphaned: list[DocumentConsistencyOut]
 
 
 class ChatLogEntry(BaseModel):

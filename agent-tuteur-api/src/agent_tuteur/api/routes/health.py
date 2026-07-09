@@ -1,4 +1,4 @@
-"""GET /health — sondes db, redis, qdrant, llm.
+"""GET /health — sondes db, redis, qdrant, llm, cohérence des documents.
 
 ``redis`` reflète l'état du pool ARQ construit au lifespan
 (``app.state.arq_pool``) : ``"ok"`` s'il est disponible, ``"degraded"`` s'il
@@ -6,16 +6,23 @@ est absent (repli automatique de l'ingestion sur ``BackgroundTasks`` — mode
 dégradé assumé, pas une panne signalée en ``status: degraded`` global). Qdrant
 n'est sondé que si ``VECTOR_BACKEND=qdrant`` ; en mode ``memory`` (défaut), il
 n'y a pas de serveur à vérifier.
+
+``documents_orphaned`` compte les documents déjà marqués ``orphaned`` (statut
+persisté) pour le tenant courant — une requête COUNT bon marché, pas une
+vérification live du vectorstore à chaque appel (coûteuse, réservée à
+``POST /api/documents/verify-all``, appelé à la demande ou au démarrage).
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 
+from agent_tuteur.api.dependencies import document_repo, get_tenant_id
 from agent_tuteur.api.schemas import HealthOut
 from agent_tuteur.config.settings import get_settings
 from agent_tuteur.persistence.db import get_engine
+from agent_tuteur.persistence.repositories import DocumentRepository
 
 router = APIRouter(tags=["health"])
 
@@ -34,7 +41,11 @@ async def _check_db() -> bool:
 
 
 @router.get("/health", response_model=HealthOut)
-async def health(request: Request) -> HealthOut:
+async def health(
+    request: Request,
+    tenant_id: str = Depends(get_tenant_id),
+    repo: DocumentRepository = Depends(document_repo),
+) -> HealthOut:
     settings = get_settings()
     db_ok = await _check_db()
 
@@ -53,6 +64,11 @@ async def health(request: Request) -> HealthOut:
 
     redis_status = "ok" if getattr(request.app.state, "arq_pool", None) is not None else "degraded"
 
+    try:
+        orphaned_count = await repo.count_by_status(tenant_id, "orphaned")
+    except Exception:  # noqa: BLE001 — une sonde de santé ne doit jamais lever.
+        orphaned_count = 0
+
     status = "ok" if db_ok else "degraded"
     return HealthOut(
         status=status,
@@ -60,4 +76,5 @@ async def health(request: Request) -> HealthOut:
         redis=redis_status,
         qdrant=qdrant_status,
         llm=llm_chain,
+        documents_orphaned=orphaned_count,
     )

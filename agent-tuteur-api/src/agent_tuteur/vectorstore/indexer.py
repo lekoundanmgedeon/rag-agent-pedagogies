@@ -36,3 +36,8 @@ class Indexer:
     def count(self) -> int:
         """Nombre de chunks indexés — sonde légère pour ``GET /health``."""
         return self._store.count()
+
+    def count_for_source(self, source_document: str) -> int:
+        """Nombre de chunks réellement présents pour ce document — sert à
+        détecter un statut ``indexed`` orphelin (cf. ``ingestion/consistency.py``)."""
+        return self._store.count_for_source(source_document)

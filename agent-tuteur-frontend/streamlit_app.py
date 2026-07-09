@@ -24,6 +24,11 @@ with st.sidebar:
         h = api_client.health()
         icon = "🟢" if h["status"] == "ok" else "🟠"
         st.caption(f"{icon} API {h['status']} — LLM: {' → '.join(h['llm'])}")
+        if h.get("documents_orphaned"):
+            st.caption(
+                f"⚠️ {h['documents_orphaned']} document(s) orphelin(s) détecté(s) "
+                "— voir la page Upload pour les ré-uploader."
+            )
     except Exception as exc:  # noqa: BLE001 — affichage best-effort du statut.
         st.caption(f"🔴 API injoignable ({exc})")
 

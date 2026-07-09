@@ -132,6 +132,17 @@ def reindex_document(document_id: str, tenant_id: str, filename: str, content: b
     return resp.json()
 
 
+def verify_all_documents(tenant_id: str) -> dict:
+    """Vérifie les documents ``indexed`` contre le vectorstore réel — marque
+    ``orphaned`` ceux dont les chunks ont disparu (ex. après un changement de
+    VECTOR_BACKEND). Renvoie ``{checked: int, orphaned: [...]}``."""
+    resp = requests.post(
+        f"{API_BASE_URL}/api/documents/verify-all", headers=_headers(tenant_id), timeout=_TIMEOUT
+    )
+    _raise_for_status(resp)
+    return resp.json()
+
+
 def search(
     query: str, tenant_id: str, curriculum_context: dict | None = None, top_k: int = 5
 ) -> list[dict]:

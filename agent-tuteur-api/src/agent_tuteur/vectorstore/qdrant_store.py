@@ -158,3 +158,14 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
 
     def count(self) -> int:
         return self._client.count(collection_name=self._collection).count
+
+    def count_for_source(self, source_document: str) -> int:
+        from qdrant_client import models as qm
+
+        result = self._client.count(
+            collection_name=self._collection,
+            count_filter=qm.Filter(
+                must=[qm.FieldCondition(key="source_document", match=qm.MatchValue(value=source_document))]
+            ),
+        )
+        return result.count

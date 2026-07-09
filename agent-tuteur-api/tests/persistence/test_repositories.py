@@ -190,3 +190,27 @@ async def test_update_status_respects_tenant_isolation(session):
     await session.commit()
     with pytest.raises(LookupError):
         await repo.update_status(doc.id, "indexed", tenant_id="ecoleB")
+
+
+async def test_list_by_status_and_count_by_status(session):
+    repo = DocumentRepository(session)
+    d1 = await repo.create_pending("t1", "a.pdf", "pdf")
+    d2 = await repo.create_pending("t1", "b.pdf", "pdf")
+    d3 = await repo.create_pending("t1", "c.pdf", "pdf")
+    await session.commit()
+
+    await repo.update_status(d1.id, "indexed", tenant_id="t1")
+    await repo.update_status(d2.id, "indexed", tenant_id="t1")
+    await repo.update_status(
+        d3.id, "orphaned", tenant_id="t1", error="chunks absents du vectorstore"
+    )
+    await session.commit()
+
+    indexed = await repo.list_by_status("t1", "indexed")
+    assert {d.filename for d in indexed} == {"a.pdf", "b.pdf"}
+
+    assert await repo.count_by_status("t1", "indexed") == 2
+    assert await repo.count_by_status("t1", "orphaned") == 1
+    assert await repo.count_by_status("t1", "failed") == 0
+    # Isolation tenant : un autre tenant ne voit rien de ces documents.
+    assert await repo.count_by_status("t2", "indexed") == 0
