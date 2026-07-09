@@ -56,7 +56,13 @@ services:
 
   api:
     build: ../agent-tuteur-api
+    # Source unique de vérité pour la config applicative (clés LLM, etc.) :
+    # ce fichier est relu à chaque `up -d`, pas besoin de --build en cas de changement.
+    env_file:
+      - ../agent-tuteur-api/.env
     environment:
+      # Ces valeurs sont spécifiques au réseau Docker et priment sur env_file :
+      # elles remplacent volontairement les URL "localhost" du .env local.
       # Rôle applicatif NON-superuser : condition pour que RLS s'applique réellement.
       DATABASE_URL: postgresql+asyncpg://tuteur_app:tuteur_app_password@postgres:5432/tuteur
       REDIS_URL: redis://redis:6379/0
@@ -64,7 +70,6 @@ services:
       QDRANT_URL: http://qdrant:6333
       EMBEDDING_BACKEND: light
       LLM_BACKEND: auto
-      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
