@@ -77,6 +77,9 @@ class BaseVectorStore(ABC):
     @abstractmethod
     def count(self) -> int: ...
 
+    @abstractmethod
+    def count_for_source(self, source_document: str) -> int: ...
+
 
 class InMemoryVectorStore(BaseVectorStore):
     """Store hybride en mémoire (dense cosinus + sparse dot + RRF)."""
@@ -142,6 +145,11 @@ class InMemoryVectorStore(BaseVectorStore):
 
     def count(self) -> int:
         return len(self._records)
+
+    def count_for_source(self, source_document: str) -> int:
+        return sum(
+            1 for rec in self._records.values() if rec.chunk.metadata.source_document == source_document
+        )
 
 
 def build_vector_store(backend: str = "memory", *, rrf_k: int = 60, **kwargs) -> BaseVectorStore:

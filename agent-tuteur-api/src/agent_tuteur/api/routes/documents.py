@@ -31,9 +31,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_tuteur.api.dependencies import document_repo, get_indexer, get_session, get_tenant_id
 from agent_tuteur.api.rate_limit import limiter
-from agent_tuteur.api.schemas import DocumentOut, DocumentStatusEvent, UploadedDocumentOut
+from agent_tuteur.api.schemas import (
+    DocumentConsistencyOut,
+    DocumentOut,
+    DocumentStatusEvent,
+    UploadedDocumentOut,
+    VerifyAllOut,
+)
 from agent_tuteur.api.streaming import sse_event
 from agent_tuteur.config.settings import get_settings
+from agent_tuteur.ingestion.consistency import check_documents_consistency
 from agent_tuteur.ingestion.loaders import SUPPORTED_EXTENSIONS
 from agent_tuteur.ingestion.pipeline import process_document
 from agent_tuteur.observability import get_logger, log_event
@@ -251,7 +258,7 @@ async def document_status_stream(
     """SSE : émet le statut courant toutes les 500 ms jusqu'à un état terminal."""
 
     async def _events():
-        terminal = {"indexed", "failed"}
+        terminal = {"indexed", "failed", "orphaned"}
         last_status: str | None = None
         for _ in range(120):  # ~60s garde-fou : évite un flux ouvert indéfiniment
             async with session_scope(tenant_id) as session:
@@ -299,3 +306,46 @@ async def reindex_document(
         replace=True,
     )
     return UploadedDocumentOut(document_id=doc.id, filename=doc.filename, status="pending")
+
+
+async def verify_tenant_consistency(repo: DocumentRepository, indexer: Indexer, tenant_id: str) -> VerifyAllOut:
+    """Vérifie tous les documents ``indexed`` d'un tenant contre le vectorstore
+    réel, et marque ``orphaned`` (avec un message explicite) ceux dont les
+    chunks ont disparu. Réutilisée par la route API et par le contrôle
+    best-effort au démarrage de l'API (``api/main.py``).
+    """
+    indexed_docs = await repo.list_by_status(tenant_id, "indexed")
+    results = check_documents_consistency(indexed_docs, indexer)
+
+    orphaned: list[DocumentConsistencyOut] = []
+    for result in results:
+        if not result.consistent:
+            await repo.update_status(
+                result.document_id,
+                "orphaned",
+                error=(
+                    "Statut 'indexed' mais aucun chunk trouvé dans le vectorstore actuel "
+                    "(store perdu après un changement de backend ou un redémarrage) — "
+                    "ré-uploader le document."
+                ),
+                tenant_id=tenant_id,
+            )
+            orphaned.append(DocumentConsistencyOut(**result.__dict__))
+            log_event(_logger, "consistency:marked_orphaned", document_id=result.document_id,
+                      filename=result.filename, tenant_id=tenant_id, log_level=30)
+
+    return VerifyAllOut(checked=len(results), orphaned=orphaned)
+
+
+@router.post("/verify-all", response_model=VerifyAllOut)
+async def verify_all_documents(
+    request: Request,
+    tenant_id: str = Depends(get_tenant_id),
+    repo: DocumentRepository = Depends(document_repo),
+) -> VerifyAllOut:
+    """Vérifie tous les documents ``indexed`` du tenant contre le vectorstore
+    réel — détecte les documents « orphelins » (statut indexé mais chunks
+    disparus, ex. après un changement de VECTOR_BACKEND). Les marque
+    ``orphaned`` en conséquence ; ne les réindexe pas (le fichier original
+    n'est pas conservé côté serveur — un ré-upload est nécessaire)."""
+    return await verify_tenant_consistency(repo, get_indexer(request), tenant_id)

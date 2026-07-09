@@ -256,6 +256,16 @@ class DocumentRepository:
         )
         return list((await self._session.execute(stmt)).scalars().all())
 
+    async def list_by_status(self, tenant_id: str, status: str) -> list[Document]:
+        stmt = select(Document).where(Document.tenant_id == tenant_id, Document.status == status)
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def count_by_status(self, tenant_id: str, status: str) -> int:
+        stmt = select(func.count()).select_from(Document).where(
+            Document.tenant_id == tenant_id, Document.status == status
+        )
+        return (await self._session.execute(stmt)).scalar_one()
+
     async def delete(self, document_id: str, tenant_id: str = "default") -> bool:
         doc = await self.get(document_id, tenant_id)
         if doc is None:

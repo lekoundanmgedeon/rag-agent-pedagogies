@@ -53,8 +53,25 @@ if submitted:
 st.divider()
 st.subheader("Documents du tenant")
 
-if st.button("🔄 Actualiser"):
-    st.rerun()
+col_refresh, col_verify = st.columns([1, 2])
+with col_refresh:
+    if st.button("🔄 Actualiser"):
+        st.rerun()
+with col_verify:
+    if st.button("🔍 Vérifier la cohérence (statut vs vectorstore réel)"):
+        try:
+            result = api_client.verify_all_documents(st.session_state["tenant_id"])
+            n_orphaned = len(result["orphaned"])
+            if n_orphaned:
+                st.warning(
+                    f"{n_orphaned}/{result['checked']} document(s) « indexed » sont en réalité "
+                    f"orphelins (chunks absents du vectorstore) — marqués ⚠️ ci-dessous, à ré-uploader."
+                )
+            else:
+                st.success(f"{result['checked']} document(s) vérifié(s), tous cohérents.")
+            st.rerun()
+        except api_client.ApiError as exc:
+            st.error(f"Échec de la vérification : {exc}")
 
 try:
     docs = api_client.list_documents(st.session_state["tenant_id"])
@@ -62,14 +79,17 @@ except api_client.ApiError as exc:
     st.error(f"Impossible de lister les documents : {exc}")
     docs = []
 
-status_icons = {"pending": "🟡", "indexed": "🟢", "failed": "🔴"}
+status_icons = {"pending": "🟡", "indexed": "🟢", "failed": "🔴", "orphaned": "⚠️"}
 
 for doc in docs:
     icon = status_icons.get(doc["status"], "⚪")
     with st.expander(f"{icon} {doc['filename']} — {doc['status']}"):
         st.json(doc.get("metadata") or {})
         if doc.get("error"):
-            st.error(doc["error"])
+            if doc["status"] == "orphaned":
+                st.warning(doc["error"])
+            else:
+                st.error(doc["error"])
 
         log_steps = doc.get("log") or []
         if log_steps:

@@ -21,12 +21,15 @@ from slowapi.middleware import SlowAPIMiddleware
 from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.api.rate_limit import limiter
 from agent_tuteur.api.routes import chat, documents, feedback, health, logs, progression, search
+from agent_tuteur.api.routes.documents import verify_tenant_consistency
 from agent_tuteur.config.settings import get_settings
 from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
-from agent_tuteur.observability import setup_logging
-from agent_tuteur.persistence.db import dispose_engine, init_engine
+from agent_tuteur.observability import get_logger, log_event, setup_logging
+from agent_tuteur.persistence.db import dispose_engine, init_engine, session_scope
+from agent_tuteur.persistence.repositories import DocumentRepository
 
 setup_logging("api")
+_logger = get_logger("agent_tuteur.api.main")
 
 CORPUS_DIR = Path(__file__).resolve().parents[3] / "corpus"
 
@@ -61,11 +64,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # cf. api/routes/documents.py). Ne bloque jamais le démarrage de l'API.
     app.state.arq_pool = await _try_create_arq_pool(settings.redis_url)
 
+    await _check_consistency_best_effort(rag_stack.indexer, settings.default_tenant)
+
     yield
 
     if app.state.arq_pool is not None:
         await app.state.arq_pool.aclose()
     await dispose_engine()
+
+
+async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:
+    """Vérifie au démarrage que les documents ``indexed`` du tenant par défaut
+    ont bien des chunks dans le vectorstore actuel (détecte les orphelins créés
+    par un changement de VECTOR_BACKEND ou un redémarrage entre deux sessions).
+    Best-effort : ne doit jamais empêcher l'API de démarrer. Portée volontairement
+    limitée au tenant par défaut (pas de scan multi-tenant au démarrage, coûteux
+    et redondant avec ``POST /api/documents/verify-all`` disponible à la demande
+    pour tout tenant).
+    """
+    try:
+        async with session_scope(default_tenant) as session:
+            repo = DocumentRepository(session)
+            result = await verify_tenant_consistency(repo, indexer, default_tenant)
+        if result.orphaned:
+            log_event(
+                _logger, "consistency:startup_check_found_orphans", log_level=30,
+                tenant_id=default_tenant, checked=result.checked,
+                orphaned_count=len(result.orphaned),
+                orphaned_files=[o.filename for o in result.orphaned],
+            )
+    except Exception as exc:  # noqa: BLE001 — un contrôle de démarrage ne doit jamais bloquer l'API.
+        log_event(_logger, "consistency:startup_check_failed", log_level=30, error=str(exc))
 
 
 async def _try_create_arq_pool(redis_url: str) -> ArqRedis | None:
