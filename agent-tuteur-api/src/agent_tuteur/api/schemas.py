@@ -20,6 +20,23 @@ class ChatRequest(BaseModel):
     curriculum_context: dict[str, str] = Field(default_factory=dict)
 
 
+class ConversationOut(BaseModel):
+    id: str
+    title: str | None
+    created_at: str
+    last_message_at: str
+
+
+class MessageOut(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: datetime
+    trace: dict | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class SourceOut(BaseModel):
     id: str
     label: str

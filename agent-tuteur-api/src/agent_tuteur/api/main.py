@@ -20,7 +20,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.api.rate_limit import limiter
-from agent_tuteur.api.routes import chat, documents, feedback, health, logs, progression, search
+from agent_tuteur.api.routes import chat, conversations, documents, feedback, health, logs, progression, search
 from agent_tuteur.api.routes.documents import verify_tenant_consistency
 from agent_tuteur.config.settings import get_settings
 from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(chat.router)
+    app.include_router(conversations.router)
     app.include_router(documents.router)
     app.include_router(search.router)
     app.include_router(progression.router)

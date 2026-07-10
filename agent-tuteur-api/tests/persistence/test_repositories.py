@@ -108,6 +108,56 @@ async def test_conversation_message_feedback_flow(session):
     assert fb.value == 1
 
 
+async def test_conversation_list_for_student_orders_by_last_activity(session):
+    conv_repo = ConversationRepository(session)
+    msg_repo = MessageRepository(session)
+
+    older = await conv_repo.create("t1", "eleve1", title="Plus ancienne, relancée")
+    newer = await conv_repo.create("t1", "eleve1", title="Créée après, jamais reprise")
+    await session.commit()
+
+    # `older` est créée en premier mais reçoit le dernier message : elle doit
+    # remonter en tête (tri par activité, pas par date de création).
+    await msg_repo.add(newer.id, "t1", "user", "question initiale")
+    await msg_repo.add(older.id, "t1", "user", "relance plus tard")
+    await session.commit()
+
+    listed = await conv_repo.list_for_student("t1", "eleve1")
+    assert [c["id"] for c in listed] == [older.id, newer.id]
+    assert listed[0]["title"] == "Plus ancienne, relancée"
+
+
+async def test_conversation_list_for_student_respects_tenant_and_student(session):
+    conv_repo = ConversationRepository(session)
+
+    await conv_repo.create("t1", "eleve1")
+    await conv_repo.create("t2", "eleve1")
+    await conv_repo.create("t1", "eleve_autre")
+    await session.commit()
+
+    listed = await conv_repo.list_for_student("t1", "eleve1")
+    assert len(listed) == 1
+
+
+async def test_conversation_delete_cascades_to_messages(session):
+    conv_repo = ConversationRepository(session)
+    msg_repo = MessageRepository(session)
+
+    conv = await conv_repo.create("t1", "eleve1")
+    await msg_repo.add(conv.id, "t1", "user", "question")
+    await session.commit()
+
+    assert await conv_repo.delete(conv.id, "t1") is True
+    await session.commit()
+    assert await conv_repo.get(conv.id, "t1") is None
+    assert await msg_repo.list_for_conversation(conv.id, "t1") == []
+
+
+async def test_conversation_delete_missing_returns_false(session):
+    conv_repo = ConversationRepository(session)
+    assert await conv_repo.delete("inconnu", "t1") is False
+
+
 async def test_message_list_recent_joins_student_id_and_filters_role(session):
     conv_repo = ConversationRepository(session)
     msg_repo = MessageRepository(session)

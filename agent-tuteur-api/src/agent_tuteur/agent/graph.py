@@ -61,6 +61,26 @@ from agent_tuteur.vectorstore.retriever import HybridRetriever
 
 _logger = get_logger("agent_tuteur.agent.graph")
 
+#: Nombre d'échanges (paires élève/tuteur) réinjectés dans la requête de recherche.
+_HISTORY_EXCHANGES_FOR_RETRIEVAL = 3
+
+
+def _condense_retrieval_query(question: str, history: list[dict]) -> str:
+    """Ancre la requête de recherche sur le fil de la conversation en cours.
+
+    Une relance courte de l'élève ("un autre indice ?") ne contient aucun terme
+    mathématique exploitable pour l'embedding : seule, elle ramène les chunks
+    les plus proches dans l'espace vectoriel quel que soit leur sujet réel. On
+    y réinjecte donc les questions précédentes de l'élève (pas les réponses du
+    tuteur, pour ne pas renforcer une dérive déjà hors-sujet).
+    """
+    if not history:
+        return question
+    recent = history[-_HISTORY_EXCHANGES_FOR_RETRIEVAL * 2 :]
+    prior_questions = " ".join(m["content"] for m in recent if m.get("role") == "user")
+    return f"{prior_questions} {question}".strip() if prior_questions else question
+
+
 _MODERATION_OVERRIDE = (
     "IMPORTANT : la question de l'élève aborde un sujet inapproprié pour un cadre "
     "scolaire. Décline avec bienveillance, n'entre pas dans le détail, et invite "
@@ -179,8 +199,9 @@ class TutorAgent:
     # ------------------------------------------------------------------ nœuds
     @_timed_node("retrieve_context")
     async def _n_retrieve(self, state: AgentState) -> dict:
+        query = _condense_retrieval_query(state["question"], state.get("conversation_history", []))
         retrieved = self._retriever.retrieve(
-            state["question"], state.get("curriculum_context", {}), top_k=self._top_k
+            query, state.get("curriculum_context", {}), top_k=self._top_k
         )
         return {
             "retrieved": retrieved,
@@ -244,7 +265,8 @@ class TutorAgent:
             reason=state.get("hint_reason", ""),
         )
         system, user_prompt = assemble_prompt(
-            question, decision, retrieved, state.get("tool_result"), ctx
+            question, decision, retrieved, state.get("tool_result"), ctx,
+            state.get("conversation_history", []),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -347,6 +369,7 @@ class TutorAgent:
         *,
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> Prepared:
         """Exécute a→e et renvoie le prompt final **sans** générer.
 
@@ -354,7 +377,9 @@ class TutorAgent:
         malveillante lève ``PromptInjectionError`` avant tout traitement.
         ``memory``/``audit`` permettent d'injecter des ports liés à la requête
         (ex. repositories Postgres d'une session FastAPI) ; à défaut, les ports
-        fournis à la construction de l'agent sont utilisés.
+        fournis à la construction de l'agent sont utilisés. ``conversation_history``
+        (tours précédents, chargés par l'appelant depuis la persistance) ancre la
+        recherche RAG et le prompt sur le fil de la conversation en cours.
         """
         clean = sanitize(question)
         session = session or SessionState()
@@ -366,6 +391,7 @@ class TutorAgent:
             "audit_port": audit,
             "trace_id": trace_id,
             "node_trace": [],
+            "conversation_history": conversation_history or [],
         }
         log_event(
             _logger, "turn:start", trace_id=trace_id, student_id=session.student_id,
@@ -430,6 +456,7 @@ class TutorAgent:
         *,
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> AgentResult:
         """Tour complet non-streamé (a→f) — pratique pour tests et démo."""
         clean = sanitize(question)
@@ -443,6 +470,7 @@ class TutorAgent:
             "audit_port": audit,
             "trace_id": trace_id,
             "node_trace": [],
+            "conversation_history": conversation_history or [],
         }
         log_event(
             _logger, "turn:start", trace_id=trace_id, student_id=session.student_id,
