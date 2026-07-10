@@ -129,8 +129,8 @@ class ConversationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, tenant_id: str, student_id: str) -> Conversation:
-        conv = Conversation(tenant_id=tenant_id, student_id=student_id)
+    async def create(self, tenant_id: str, student_id: str, title: str | None = None) -> Conversation:
+        conv = Conversation(tenant_id=tenant_id, student_id=student_id, title=title)
         self._session.add(conv)
         await self._session.flush()
         return conv
@@ -140,6 +140,44 @@ class ConversationRepository:
             Conversation.id == conversation_id, Conversation.tenant_id == tenant_id
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def list_for_student(self, tenant_id: str, student_id: str) -> list[dict]:
+        """Sessions de chat d'un élève, plus récente activité en premier.
+
+        Triées par dernier message plutôt que par date de création : une
+        conversation reprise il y a longtemps mais relancée aujourd'hui doit
+        remonter en tête, comme dans un client de chat classique.
+        """
+        last_message = (
+            select(Message.conversation_id, func.max(Message.created_at).label("last_at"))
+            .where(Message.tenant_id == tenant_id)
+            .group_by(Message.conversation_id)
+            .subquery()
+        )
+        stmt = (
+            select(Conversation, last_message.c.last_at)
+            .outerjoin(last_message, last_message.c.conversation_id == Conversation.id)
+            .where(Conversation.tenant_id == tenant_id, Conversation.student_id == student_id)
+            .order_by(func.coalesce(last_message.c.last_at, Conversation.created_at).desc())
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            {
+                "id": conv.id,
+                "title": conv.title,
+                "created_at": _iso(conv.created_at),
+                "last_message_at": _iso(last_at) if last_at is not None else _iso(conv.created_at),
+            }
+            for conv, last_at in rows
+        ]
+
+    async def delete(self, conversation_id: str, tenant_id: str) -> bool:
+        conv = await self.get(conversation_id, tenant_id)
+        if conv is None:
+            return False
+        await self._session.delete(conv)  # cascade ORM + FK ON DELETE CASCADE : messages/feedback inclus
+        await self._session.flush()
+        return True
 
 
 class MessageRepository:

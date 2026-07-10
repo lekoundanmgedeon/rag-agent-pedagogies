@@ -44,7 +44,7 @@ from agent_tuteur.ingestion.consistency import check_documents_consistency
 from agent_tuteur.ingestion.loaders import SUPPORTED_EXTENSIONS
 from agent_tuteur.ingestion.pipeline import process_document
 from agent_tuteur.observability import get_logger, log_event
-from agent_tuteur.persistence.db import session_scope
+from agent_tuteur.persistence.db import session_scope, set_tenant_context
 from agent_tuteur.persistence.models import Document
 from agent_tuteur.persistence.repositories import DocumentRepository
 from agent_tuteur.vectorstore.indexer import Indexer
@@ -180,6 +180,10 @@ async def upload_documents(
         # la dépendance `get_session` ne se ferme (et commit) en sortie de requête.
         # Sans ce commit, la tâche (nouvelle session) ne verrait pas encore la ligne.
         await session.commit()
+        # `set_config(..., true)` (RLS) est local à la transaction : le commit
+        # ci-dessus la clôt et efface `app.tenant_id`. Sans ce ré-armement, le
+        # fichier suivant de la boucle échoue en `InsufficientPrivilegeError`.
+        await set_tenant_context(session, tenant_id)
         await _schedule_ingestion(
             request,
             background_tasks,

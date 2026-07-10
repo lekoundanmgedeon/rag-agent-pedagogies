@@ -82,6 +82,38 @@ def chat_stream(
                 yield json.loads(data)
 
 
+def list_conversations(student_id: str, tenant_id: str) -> list[dict]:
+    """Sessions de chat de l'élève, triées par activité la plus récente."""
+    resp = requests.get(
+        f"{API_BASE_URL}/api/conversations",
+        params={"student_id": student_id},
+        headers=_headers(tenant_id),
+        timeout=_TIMEOUT,
+    )
+    _raise_for_status(resp)
+    return resp.json()
+
+
+def get_conversation_messages(conversation_id: str, tenant_id: str) -> list[dict]:
+    """Historique complet d'une session (rôle/contenu/trace), pour la reprendre."""
+    resp = requests.get(
+        f"{API_BASE_URL}/api/conversations/{conversation_id}/messages",
+        headers=_headers(tenant_id),
+        timeout=_TIMEOUT,
+    )
+    _raise_for_status(resp)
+    return resp.json()
+
+
+def delete_conversation(conversation_id: str, tenant_id: str) -> None:
+    resp = requests.delete(
+        f"{API_BASE_URL}/api/conversations/{conversation_id}",
+        headers=_headers(tenant_id),
+        timeout=_TIMEOUT,
+    )
+    _raise_for_status(resp)
+
+
 def upload_documents(
     files: list[tuple[str, bytes]],
     tenant_id: str,

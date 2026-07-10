@@ -30,6 +30,9 @@ class AgentState(TypedDict, total=False):
     audit_port: AuditLogPort | None
     #: Corrélation logs/trace pour tout le tour (généré par prepare()/respond()).
     trace_id: str
+    #: Tours précédents de la conversation ([{"role": "user"|"assistant", "content": str}, ...]),
+    #: chargés depuis la persistance par l'appelant (ex. chat.py) — vide pour un 1er tour.
+    conversation_history: list[dict[str, str]]
 
     # --- Produits des nœuds a→e ---
     retrieved: list[ScoredChunk]

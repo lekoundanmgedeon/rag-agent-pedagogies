@@ -45,6 +45,14 @@ from agent_tuteur.persistence.repositories import (
 router = APIRouter(tags=["chat"])
 _logger = get_logger("agent_tuteur.api.routes.chat")
 
+_TITLE_MAX_LEN = 60
+
+
+def _make_title(question: str) -> str:
+    """Libellé de session dérivé de la première question (aplatie, tronquée)."""
+    flat = " ".join(question.split())
+    return flat if len(flat) <= _TITLE_MAX_LEN else flat[:_TITLE_MAX_LEN].rstrip() + "…"
+
 
 async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) -> AsyncIterator[str]:
     async with session_scope(tenant_id) as session:
@@ -53,9 +61,27 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
         conv_repo = ConversationRepository(session)
         msg_repo = MessageRepository(session)
 
+        conversation_id = payload.conversation_id
+        conversation = None
+        history: list[dict[str, str]] = []
+        if conversation_id:
+            conversation = await conv_repo.get(conversation_id, tenant_id)
+        if conversation is not None:
+            past_messages = await msg_repo.list_for_conversation(conversation.id, tenant_id)
+            history = [{"role": m.role, "content": m.content} for m in past_messages]
+
         session_state = SessionState(student_id=payload.student_id, tenant_id=tenant_id)
+        # Recharge la fenêtre de répétition depuis l'historique persisté : sans ça,
+        # la détection de frustration repart à zéro à chaque requête HTTP.
+        session_state.recent_questions = [m["content"] for m in history if m["role"] == "user"]
+
         prepared = await agent.prepare(
-            payload.question, payload.curriculum_context, session_state, memory=memory, audit=audit
+            payload.question,
+            payload.curriculum_context,
+            session_state,
+            memory=memory,
+            audit=audit,
+            conversation_history=history,
         )
 
         yield sse_event(
@@ -87,12 +113,10 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
         answer = "".join(answer_parts)
         await agent.commit_memory(prepared)
 
-        conversation_id = payload.conversation_id
-        conversation = None
-        if conversation_id:
-            conversation = await conv_repo.get(conversation_id, tenant_id)
         if conversation is None:
-            conversation = await conv_repo.create(tenant_id, payload.student_id)
+            conversation = await conv_repo.create(
+                tenant_id, payload.student_id, title=_make_title(prepared.question)
+            )
         conversation_id = conversation.id
 
         # Trace complète persistée : question + orchestration a→e + génération —

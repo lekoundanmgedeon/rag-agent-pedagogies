@@ -11,12 +11,14 @@ from __future__ import annotations
 import streamlit as st
 
 from services import api_client
-from services.session import curriculum_context, render_identity_sidebar
+from services.formatting import normalize_latex_delimiters
+from services.session import curriculum_context, render_conversation_sidebar, render_identity_sidebar
 from services.trace_view import render_node_trace
 
 st.set_page_config(page_title="Agent Tuteur Sénégal — Chat", page_icon="🎓", layout="wide")
 
 render_identity_sidebar()
+render_conversation_sidebar()
 
 with st.sidebar:
     st.divider()
@@ -42,7 +44,8 @@ st.session_state.setdefault("messages", [])
 
 for msg in st.session_state["messages"]:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        content = msg["content"]
+        st.markdown(normalize_latex_delimiters(content) if msg["role"] == "assistant" else content)
         if msg["role"] == "assistant" and msg.get("trace"):
             trace = msg["trace"]
             with st.expander(f"Niveau d'indice : {trace['hint_level']} ({trace['hint_label']})"):
@@ -98,7 +101,7 @@ if question:
                     )
                 elif "token" in event:
                     answer_parts.append(event["token"])
-                    text_box.markdown("".join(answer_parts))
+                    text_box.markdown(normalize_latex_delimiters("".join(answer_parts)))
                 elif "done" in event:
                     message_id = event["done"]["message_id"]
                     conversation_id = event["done"]["conversation_id"]

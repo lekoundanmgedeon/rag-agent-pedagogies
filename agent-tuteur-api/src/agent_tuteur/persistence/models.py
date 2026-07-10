@@ -73,6 +73,10 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     student_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: Dérivé du premier message élève (tronqué) — sert de libellé de session
+    #: dans la liste de conversations ; ``None`` pour les conversations créées
+    #: avant l'ajout de cette colonne.
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
