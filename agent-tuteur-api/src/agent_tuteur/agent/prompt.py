@@ -11,19 +11,38 @@ LLM mock (et la traçabilité) peuvent relire.
 
 from __future__ import annotations
 
+from agent_tuteur.agent.course_plan import CoursePosition, plan_titles
 from agent_tuteur.agent.hint_strategy import HintDecision
 from agent_tuteur.domain.models import ScoredChunk
+
+# Contraintes communes aux deux postures (ancrage RAG + rendu LaTeX). Toute
+# persona doit les rappeler à l'identique pour un affichage cohérent côté client.
+_COMMON_RULES = (
+    "Tu t'appuies STRICTEMENT sur les extraits de cours fournis ; si "
+    "l'information manque, tu le dis honnêtement plutôt que d'inventer. Tu "
+    "t'exprimes en français clair, avec des formules en LaTeX. Utilise "
+    "EXCLUSIVEMENT les délimiteurs $...$ (inline) et $$...$$ (bloc) ; n'utilise "
+    "JAMAIS \\(...\\) ni \\[...\\], qui ne s'affichent pas correctement ici."
+)
 
 SYSTEM_PERSONA = (
     "Tu es un tuteur pédagogique bienveillant pour le programme scolaire "
     "sénégalais (de l'élémentaire au Baccalauréat). Ta posture est socratique : "
     "tu guides l'élève vers la réponse par des indices progressifs plutôt que de "
-    "la donner directement. Tu t'appuies STRICTEMENT sur les extraits de cours "
-    "fournis ; si l'information manque, tu le dis honnêtement. Tu t'exprimes en "
-    "français clair, avec des formules en LaTeX. Utilise EXCLUSIVEMENT les "
-    "délimiteurs $...$ (inline) et $$...$$ (bloc) ; n'utilise JAMAIS \\(...\\) ni "
-    "\\[...\\], qui ne s'affichent pas correctement ici. "
+    "la donner directement. " + _COMMON_RULES + " "
     "Tu ne dépasses jamais le niveau d'indice demandé."
+)
+
+#: Posture inverse de la persona socratique : ici on **expose** le cours.
+SYSTEM_PERSONA_COURSE = (
+    "Tu es un professeur pédagogue pour le programme scolaire sénégalais (de "
+    "l'élémentaire au Baccalauréat). Tu construis le cours d'un chapitre PAS À "
+    "PAS, une section à la fois. Ta posture est didactique : tu exposes "
+    "clairement la section demandée, tu développes, tu illustres, et tu "
+    "t'assures d'être compris avant d'avancer. " + _COMMON_RULES + " Tu traites "
+    "UNIQUEMENT la section courante indiquée — n'anticipe pas les suivantes. "
+    "Tu termines toujours en vérifiant la compréhension et en proposant "
+    "explicitement de passer à la section suivante (ou de poser une question)."
 )
 
 _MAX_EXCERPT = 600
@@ -97,3 +116,55 @@ def assemble_prompt(
     parts.append(f"Question de l'élève : {question}")
 
     return SYSTEM_PERSONA, "\n\n".join(parts)
+
+
+def _build_plan_block(position: CoursePosition) -> str:
+    """Sommaire du cours avec la section courante repérée (« ▶ »)."""
+    titles = plan_titles()
+    lines = [
+        f"{'▶' if i == position.section_index else ' '} {i + 1}. {title}"
+        for i, title in enumerate(titles)
+    ]
+    return "\n".join(lines)
+
+
+def assemble_course_prompt(
+    question: str,
+    position: CoursePosition,
+    retrieved: list[ScoredChunk],
+    curriculum_context: dict | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> tuple[str, str]:
+    """Retourne ``(system_prompt, user_prompt)`` pour le **mode cours**.
+
+    Le ``user_prompt`` agrège : cadre curriculaire, sommaire du cours avec la
+    position courante, historique récent, extraits RAG, puis la consigne de la
+    section à enseigner et la relance de l'élève. Aucune notion d'indice ici :
+    la progression est portée par ``position`` (cf. ``course_plan.py``).
+    """
+    ctx = curriculum_context or {}
+    scope = ", ".join(
+        f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
+    )
+    section = position.section
+
+    parts: list[str] = []
+    chapitre = position.chapitre or "(à identifier à partir des extraits)"
+    header = f"Cours en cours : {chapitre}."
+    if scope:
+        header += f" Cadre curriculaire : {scope}."
+    parts.append(header)
+    parts.append("Plan du cours (▶ = section à traiter maintenant) :\n" + _build_plan_block(position))
+
+    history_block = build_history_block(conversation_history)
+    if history_block:
+        parts.append(f"Historique récent de la conversation :\n{history_block}")
+
+    parts.append("Extraits de cours disponibles :\n" + build_context_block(retrieved))
+    parts.append(
+        f"Section à enseigner : {position.section_index + 1}. {section.title}.\n"
+        f"Consigne : {section.instruction}"
+    )
+    parts.append(f"Message de l'élève : {question}")
+
+    return SYSTEM_PERSONA_COURSE, "\n\n".join(parts)

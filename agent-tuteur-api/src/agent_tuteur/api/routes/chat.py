@@ -54,6 +54,23 @@ def _make_title(question: str) -> str:
     return flat if len(flat) <= _TITLE_MAX_LEN else flat[:_TITLE_MAX_LEN].rstrip() + "…"
 
 
+def _reconstruct_course_state(past_messages: list) -> dict | None:
+    """Position dans un cours au dernier tour, ou ``None`` si le fil n'était pas
+    en mode cours.
+
+    On lit le bloc ``course`` (chapitre + section_index) de la trace du **dernier
+    message assistant**. C'est ce qui donne au tour courant la continuité du
+    cours (« continue », « passe aux exercices » ne prennent leur sens que là).
+    Zéro table dédiée : l'état voyage dans ``messages.trace`` déjà persisté.
+    """
+    for msg in reversed(past_messages):
+        if msg.role != "assistant":
+            continue
+        course = (msg.trace or {}).get("course")
+        return course or None  # 1er assistant remonté = tour le plus récent
+    return None
+
+
 async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) -> AsyncIterator[str]:
     async with session_scope(tenant_id) as session:
         memory = ProgressRepository(session)
@@ -64,11 +81,13 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
         conversation_id = payload.conversation_id
         conversation = None
         history: list[dict[str, str]] = []
+        course_state: dict | None = None
         if conversation_id:
             conversation = await conv_repo.get(conversation_id, tenant_id)
         if conversation is not None:
             past_messages = await msg_repo.list_for_conversation(conversation.id, tenant_id)
             history = [{"role": m.role, "content": m.content} for m in past_messages]
+            course_state = _reconstruct_course_state(past_messages)
 
         session_state = SessionState(student_id=payload.student_id, tenant_id=tenant_id)
         # Recharge la fenêtre de répétition depuis l'historique persisté : sans ça,
@@ -82,6 +101,7 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
             memory=memory,
             audit=audit,
             conversation_history=history,
+            course_state=course_state,
         )
 
         yield sse_event(
@@ -93,6 +113,7 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
                     "scores": prepared.trace["scores"],
                     "tool_used": prepared.trace["tool_used"],
                     "frustration_score": prepared.trace["frustration_score"],
+                    "course": prepared.trace.get("course"),
                     "trace_id": prepared.trace_id,
                     "node_trace": prepared.node_trace,
                 }

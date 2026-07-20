@@ -80,6 +80,7 @@ async def test_prepare_exposes_node_by_node_orchestration_trace(agent):
     assert prep.trace_id  # identifiant de corrélation généré
     node_names = [n["node"] for n in prep.node_trace]
     assert node_names == [
+        "detect_intent",
         "retrieve_context",
         "detect_frustration",
         "diagnose_hint_level",
