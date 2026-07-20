@@ -33,6 +33,14 @@ class AgentState(TypedDict, total=False):
     #: Tours précédents de la conversation ([{"role": "user"|"assistant", "content": str}, ...]),
     #: chargés depuis la persistance par l'appelant (ex. chat.py) — vide pour un 1er tour.
     conversation_history: list[dict[str, str]]
+    #: État du cours reconstruit du dernier tour ({"chapitre", "section_index"}),
+    #: ou None si le tour précédent n'était pas en mode cours. Alimente detect_intent
+    #: (continuité de session) puis course_planner (progression).
+    course_state: dict[str, Any] | None
+
+    # --- Intention (nœud detect_intent) ---
+    intent: str  # "exercice" | "cours"
+    intent_nav: str | None  # navigation cours détectée ("start"|"next"|"prev"|"goto")
 
     # --- Produits des nœuds a→e ---
     retrieved: list[ScoredChunk]
@@ -45,6 +53,9 @@ class AgentState(TypedDict, total=False):
     tool_used: str | None
     tool_result: str | None
     moderation_flagged: bool
+    #: Position dans le cours calculée par course_planner ({"chapitre", "section_index",
+    #: "section_key", "section_title", "reason"}) — présent uniquement en mode cours.
+    course_section: dict[str, Any]
     system_prompt: str
     final_prompt: str
     trace: dict[str, Any]

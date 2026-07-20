@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 
 from langgraph.graph import END, START, StateGraph
 
+from agent_tuteur.agent.course_plan import CoursePosition, advance, plan_titles
 from agent_tuteur.agent.frustration import SessionState, detect_frustration
 from agent_tuteur.agent.guardrails import clamp_hint_level, moderate, sanitize
 from agent_tuteur.agent.hint_strategy import (
@@ -50,9 +51,10 @@ from agent_tuteur.agent.hint_strategy import (
     HintDecision,
     diagnose_hint_level,
 )
+from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.ports import AuditLogPort, StudentMemoryPort
-from agent_tuteur.agent.prompt import assemble_prompt
+from agent_tuteur.agent.prompt import assemble_course_prompt, assemble_prompt
 from agent_tuteur.agent.state import AgentState
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
@@ -197,6 +199,17 @@ class TutorAgent:
         return getattr(self._llm, "last_used", None) or self._llm.name
 
     # ------------------------------------------------------------------ nœuds
+    @_timed_node("detect_intent")
+    async def _n_detect_intent(self, state: AgentState) -> dict:
+        in_course = bool(state.get("course_state"))
+        decision = classify_intent(state["question"], in_course=in_course)
+        nav = decision.navigation.value if decision.navigation else None
+        return {
+            "intent": decision.intent.value,
+            "intent_nav": nav,
+            "node_trace": [{"node": "detect_intent", "intent": decision.intent.value, "nav": nav}],
+        }
+
     @_timed_node("retrieve_context")
     async def _n_retrieve(self, state: AgentState) -> dict:
         query = _condense_retrieval_query(state["question"], state.get("conversation_history", []))
@@ -280,15 +293,8 @@ class TutorAgent:
             "frustration_score": state.get("frustration_score", 0.0),
             "tool_used": state.get("tool_used"),
             "competence": competence,
-            "sources": [
-                {
-                    "id": sc.chunk.id,
-                    "label": sc.source_label,
-                    "type_chunk": sc.chunk.metadata.type_chunk,
-                    "score": sc.score,
-                }
-                for sc in retrieved
-            ],
+            "course": None,
+            "sources": _sources_payload(retrieved),
             "scores": [sc.score for sc in retrieved],
         }
         await self._write_audit(state, trace)
@@ -298,6 +304,81 @@ class TutorAgent:
             "moderation_flagged": moderation.flagged,
             "trace": trace,
             "node_trace": [{"node": "guardrail", "moderation_flagged": moderation.flagged}],
+        }
+
+    # ------------------------------------------------------------ branche cours
+    @_timed_node("course_planner")
+    async def _n_course_planner(self, state: AgentState) -> dict:
+        ctx = state.get("curriculum_context", {})
+        retrieved = state.get("retrieved", [])
+        nav_raw = state.get("intent_nav")
+        navigation = Navigation(nav_raw) if nav_raw else None
+        chapitre_fallback = _infer_chapitre(ctx, retrieved)
+        position = advance(
+            state.get("course_state"), navigation, state["question"],
+            chapitre_fallback=chapitre_fallback,
+        )
+        section = position.section
+        course_section = {
+            "chapitre": position.chapitre,
+            "section_index": position.section_index,
+            "section_key": section.key,
+            "section_title": section.title,
+            "reason": position.reason,
+        }
+        return {
+            "course_section": course_section,
+            "node_trace": [
+                {"node": "course_planner", "section": section.key,
+                 "section_index": position.section_index}
+            ],
+        }
+
+    @_timed_node("guardrail_course")
+    async def _n_guardrail_course(self, state: AgentState) -> dict:
+        question = state["question"]
+        ctx = state.get("curriculum_context", {})
+        retrieved = state.get("retrieved", [])
+        cs = state["course_section"]
+        moderation = moderate(question)
+
+        position = CoursePosition(
+            chapitre=cs["chapitre"], section_index=cs["section_index"], reason=cs.get("reason", "")
+        )
+        system, user_prompt = assemble_course_prompt(
+            question, position, retrieved, ctx, state.get("conversation_history", []),
+        )
+        if moderation.flagged:
+            user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
+
+        competence = _competence_from_context(ctx, retrieved)
+        trace = {
+            "trace_id": state.get("trace_id"),
+            # Pas de niveau d'indice en mode cours : on conserve les clés du
+            # contrat (meta/logs/frontend) avec des valeurs adaptées.
+            "hint_level": None,
+            "hint_label": "Cours",
+            "hint_reason": cs.get("reason", ""),
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": competence,
+            "course": {
+                "chapitre": cs["chapitre"],
+                "section_index": cs["section_index"],
+                "section_key": cs["section_key"],
+                "section_title": cs["section_title"],
+                "plan": plan_titles(),
+            },
+            "sources": _sources_payload(retrieved),
+            "scores": [sc.score for sc in retrieved],
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": system,
+            "final_prompt": user_prompt,
+            "moderation_flagged": moderation.flagged,
+            "trace": trace,
+            "node_trace": [{"node": "guardrail_course", "moderation_flagged": moderation.flagged}],
         }
 
     @_timed_node("compose_response")
@@ -341,23 +422,45 @@ class TutorAgent:
 
     # ---------------------------------------------------------------- graphes
     def _build_graph(self, *, include_compose: bool):
+        """Graphe commun aux deux postures, aiguillé après ``retrieve_context``.
+
+        ``detect_intent`` classe le tour ; la recherche RAG est partagée ; puis
+        un edge conditionnel envoie vers la branche **exercice** (socratique,
+        inchangée) ou **cours** (didactique). Les deux branches convergent sur
+        ``compose_response`` (graphe complet) ou ``END`` (graphe de préparation).
+        """
         g = StateGraph(AgentState)
+        g.add_node("detect_intent", self._n_detect_intent)
         g.add_node("retrieve_context", self._n_retrieve)
+        # Branche exercice (posture socratique) — inchangée.
         g.add_node("detect_frustration", self._n_frustration)
         g.add_node("diagnose_hint_level", self._n_hint)
         g.add_node("route_tool", self._n_route_tool)
         g.add_node("guardrail", self._n_guardrail)
-        g.add_edge(START, "retrieve_context")
-        g.add_edge("retrieve_context", "detect_frustration")
+        # Branche cours (posture didactique).
+        g.add_node("course_planner", self._n_course_planner)
+        g.add_node("guardrail_course", self._n_guardrail_course)
+
+        g.add_edge(START, "detect_intent")
+        g.add_edge("detect_intent", "retrieve_context")
+        g.add_conditional_edges(
+            "retrieve_context",
+            _route_by_intent,
+            {"exercice": "detect_frustration", "cours": "course_planner"},
+        )
         g.add_edge("detect_frustration", "diagnose_hint_level")
         g.add_edge("diagnose_hint_level", "route_tool")
         g.add_edge("route_tool", "guardrail")
+        g.add_edge("course_planner", "guardrail_course")
+
         if include_compose:
             g.add_node("compose_response", self._n_compose)
             g.add_edge("guardrail", "compose_response")
+            g.add_edge("guardrail_course", "compose_response")
             g.add_edge("compose_response", END)
         else:
             g.add_edge("guardrail", END)
+            g.add_edge("guardrail_course", END)
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -370,6 +473,7 @@ class TutorAgent:
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
         conversation_history: list[dict[str, str]] | None = None,
+        course_state: dict | None = None,
     ) -> Prepared:
         """Exécute a→e et renvoie le prompt final **sans** générer.
 
@@ -380,6 +484,9 @@ class TutorAgent:
         fournis à la construction de l'agent sont utilisés. ``conversation_history``
         (tours précédents, chargés par l'appelant depuis la persistance) ancre la
         recherche RAG et le prompt sur le fil de la conversation en cours.
+        ``course_state`` (position dans un cours au tour précédent, reconstruite
+        par l'appelant depuis ``trace['course']``) active la continuité du mode
+        cours ; ``None`` si le tour précédent n'était pas un cours.
         """
         clean = sanitize(question)
         session = session or SessionState()
@@ -392,6 +499,7 @@ class TutorAgent:
             "trace_id": trace_id,
             "node_trace": [],
             "conversation_history": conversation_history or [],
+            "course_state": course_state,
         }
         log_event(
             _logger, "turn:start", trace_id=trace_id, student_id=session.student_id,
@@ -457,6 +565,7 @@ class TutorAgent:
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
         conversation_history: list[dict[str, str]] | None = None,
+        course_state: dict | None = None,
     ) -> AgentResult:
         """Tour complet non-streamé (a→f) — pratique pour tests et démo."""
         clean = sanitize(question)
@@ -471,6 +580,7 @@ class TutorAgent:
             "trace_id": trace_id,
             "node_trace": [],
             "conversation_history": conversation_history or [],
+            "course_state": course_state,
         }
         log_event(
             _logger, "turn:start", trace_id=trace_id, student_id=session.student_id,
@@ -484,6 +594,34 @@ class TutorAgent:
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
         )
+
+
+def _route_by_intent(state: AgentState) -> str:
+    """Aiguillage conditionnel après ``retrieve_context`` (défaut : exercice)."""
+    return "cours" if state.get("intent") == Intent.COURS.value else "exercice"
+
+
+def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
+    """Liste d'attribution des sources RAG (identique aux deux branches)."""
+    return [
+        {
+            "id": sc.chunk.id,
+            "label": sc.source_label,
+            "type_chunk": sc.chunk.metadata.type_chunk,
+            "score": sc.score,
+        }
+        for sc in retrieved
+    ]
+
+
+def _infer_chapitre(ctx: dict, retrieved: list[ScoredChunk]) -> str | None:
+    """Chapitre du cours : celui du contexte, sinon du meilleur extrait annoté."""
+    if ctx.get("chapitre"):
+        return ctx["chapitre"]
+    for sc in retrieved:
+        if sc.chunk.metadata.chapitre:
+            return sc.chunk.metadata.chapitre
+    return None
 
 
 def _competence_from_context(ctx: dict, retrieved: list[ScoredChunk]) -> str | None:
