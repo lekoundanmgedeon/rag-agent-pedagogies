@@ -10,20 +10,26 @@ from __future__ import annotations
 import streamlit as st
 
 _NODE_ICONS = {
+    "detect_intent": "🧭",
     "retrieve_context": "🔍",
     "detect_frustration": "😤",
     "diagnose_hint_level": "🎚️",
     "route_tool": "🧮",
     "guardrail": "🛡️",
+    "course_planner": "📚",
+    "guardrail_course": "🛡️",
     "compose_response": "💬",
 }
 
 _NODE_LABELS = {
+    "detect_intent": "Détection d'intention (exercice / cours)",
     "retrieve_context": "Recherche RAG",
     "detect_frustration": "Détection de frustration",
     "diagnose_hint_level": "Diagnostic du niveau d'indice",
     "route_tool": "Routage d'outil",
     "guardrail": "Garde-fou + assemblage du prompt",
+    "course_planner": "Planification du cours (section)",
+    "guardrail_course": "Garde-fou + assemblage du prompt (cours)",
     "compose_response": "Génération LLM",
 }
 

@@ -36,7 +36,9 @@ class ProgressRepository:
             tenant_id=entry.get("tenant_id", "default"),
             student_id=entry["student_id"],
             competence=entry.get("competence"),
-            hint_level=entry.get("hint_level", 0),
+            # Colonne NOT NULL : le mode cours n'a pas de niveau d'indice (None) ;
+            # 0 est le neutre du codebase (le filtre difficultés est hint_level >= 3).
+            hint_level=entry.get("hint_level") or 0,
             question=entry["question"],
         )
         self._session.add(row)
@@ -92,7 +94,8 @@ class AuditLogRepository:
             question=event["question"],
             competence=event.get("competence"),
             rag_sources=event.get("sources"),
-            hint_level=event.get("hint_level", 0),
+            # NOT NULL : le mode cours envoie hint_level=None → 0 (neutre, cf. Progress.record).
+            hint_level=event.get("hint_level") or 0,
             hint_label=event.get("hint_label", ""),
             frustration_score=event.get("frustration_score", 0.0),
             tool_used=event.get("tool_used"),
