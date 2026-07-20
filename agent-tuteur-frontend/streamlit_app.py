@@ -17,6 +17,24 @@ from services.trace_view import render_node_trace
 
 st.set_page_config(page_title="Agent Tuteur Sénégal — Chat", page_icon="🎓", layout="wide")
 
+
+def _status_label(trace: dict) -> str:
+    """Bandeau de statut du tour : progression du cours, ou niveau d'indice.
+
+    En mode cours, ``hint_level`` vaut ``None`` (pas d'indice socratique) et un
+    bloc ``course`` porte la position dans le plan — on affiche « Cours — Section
+    n/N : Titre » plutôt qu'un « Niveau d'indice : None » trompeur.
+    """
+    course = trace.get("course")
+    if course:
+        idx = course.get("section_index", 0)
+        total = len(course.get("plan", [])) or 1
+        title = course.get("section_title", "")
+        chapitre = course.get("chapitre")
+        head = f"📚 Cours — Section {idx + 1}/{total} : {title}"
+        return f"{head} — {chapitre}" if chapitre else head
+    return f"Niveau d'indice : {trace.get('hint_level')} ({trace.get('hint_label')})"
+
 render_identity_sidebar()
 render_conversation_sidebar()
 
@@ -48,7 +66,7 @@ for msg in st.session_state["messages"]:
         st.markdown(normalize_latex_delimiters(content) if msg["role"] == "assistant" else content)
         if msg["role"] == "assistant" and msg.get("trace"):
             trace = msg["trace"]
-            with st.expander(f"Niveau d'indice : {trace['hint_level']} ({trace['hint_label']})"):
+            with st.expander(_status_label(trace)):
                 if trace.get("tool_used"):
                     st.caption(f"🧮 Outil utilisé : {trace['tool_used']}")
                 st.caption(f"Frustration détectée : {trace['frustration_score']}")
@@ -96,9 +114,7 @@ if question:
             ):
                 if "meta" in event:
                     trace = event["meta"]
-                    meta_box.caption(
-                        f"Niveau d'indice : {trace['hint_level']} ({trace['hint_label']})"
-                    )
+                    meta_box.caption(_status_label(trace))
                 elif "token" in event:
                     answer_parts.append(event["token"])
                     text_box.markdown(normalize_latex_delimiters("".join(answer_parts)))
