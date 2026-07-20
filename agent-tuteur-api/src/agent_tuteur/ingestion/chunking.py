@@ -24,6 +24,25 @@ _EXERCICE = re.compile(r"^exercice\b", re.IGNORECASE)
 _COMPETENCE = re.compile(r"^comp[ée]tence\b", re.IGNORECASE)
 _CHAPITRE = re.compile(r"^chapitre\b", re.IGNORECASE)
 
+# Une **leçon** structurée (format pilote `lessons/Lecon_*.md`) se reconnaît à son
+# titre de niveau 1 (`# Titre`) — le corpus d'exemple, lui, commence directement
+# par des `## Chapitre : …` / `## Compétence : …`. En mode leçon, les 18 sections
+# en `##` sont des *sous-notions* d'un même chapitre (porté par le frontmatter),
+# et non des chapitres distincts — sinon `chapitre` se pollue avec des titres de
+# section (« 2. Introduction ») et une leçon éclate en 18 pseudo-chapitres.
+_H1 = re.compile(r"^#\s+\S", re.MULTILINE)
+
+# Sections d'*auteur* d'une leçon (non pédagogiques) — exclues du RAG pour ne pas
+# polluer la recherche (« Métadonnées RAG » remontait avec un score maximal).
+_LESSON_META_SECTION = re.compile(
+    r"^\s*(?:\d+\.\s*)?(?:"
+    r"m[ée]tadonn[ée]es(?:\s+rag)?"
+    r"|d[ée]coupage\s+pour\s+vectorisation"
+    r"|contr[ôo]le\s+qualit[ée]"
+    r")",
+    re.IGNORECASE,
+)
+
 # Heuristique PDF : lignes ressemblant à des titres (numérotation / mots-clés).
 _HEURISTIC_TITLE = re.compile(
     r"^\s*(?:"
@@ -54,23 +73,31 @@ class ChunkDraft:
         return not "".join(self.lines).strip()
 
 
-def _classify_heading(title: str) -> str:
+def _classify_heading(title: str, *, lesson: bool = False) -> str:
     if _EXERCICE.match(title):
         return TypeChunk.EXERCICE.value
     if _COMPETENCE.match(title):
         return TypeChunk.COMPETENCE_COMPLETE.value
-    return TypeChunk.CHAPITRE.value
+    # En mode leçon, une section `##` est une sous-notion du chapitre (frontmatter),
+    # pas un chapitre à part entière.
+    return TypeChunk.SOUS_NOTION.value if lesson else TypeChunk.CHAPITRE.value
 
 
-def _split_markdown(text: str) -> list[ChunkDraft]:
+def _split_markdown(text: str, *, lesson: bool = False) -> list[ChunkDraft]:
     """Découpe selon les marqueurs ``##`` / ``### Exercice``.
 
     Un titre de niveau 2 (``##``) démarre toujours un nouveau chunk. Un titre de
     niveau 3 démarre un chunk **seulement** s'il s'agit d'un exercice (pour le
     garder indivisible) ; les autres sous-titres restent dans le chunk parent.
+
+    En mode ``lesson``, les sections ``##`` deviennent des *sous-notions* et les
+    sections d'auteur (Métadonnées RAG, Découpage vectorisation, Contrôle
+    qualité) sont ignorées (leur contenu est absorbé dans un brouillon marqué
+    ``_skip`` puis retiré).
     """
     drafts: list[ChunkDraft] = []
     current: ChunkDraft | None = None
+    skipping = False
 
     for line in text.split("\n"):
         m = _HEADING.match(line)
@@ -78,15 +105,21 @@ def _split_markdown(text: str) -> list[ChunkDraft]:
             level, title = len(m.group(1)), m.group(2).strip()
             is_exercice = _EXERCICE.match(title) is not None
             if level == 2 or is_exercice:
-                if current is not None and not current.is_empty():
+                if current is not None and not current.is_empty() and not skipping:
                     drafts.append(current)
-                current = ChunkDraft(title=title, type_chunk=_classify_heading(title))
+                skipping = lesson and _LESSON_META_SECTION.match(title) is not None
+                if skipping:
+                    current = None
+                    continue
+                current = ChunkDraft(title=title, type_chunk=_classify_heading(title, lesson=lesson))
                 continue
+        if skipping:
+            continue
         if current is None:
             current = ChunkDraft(title=None, type_chunk=TypeChunk.CHAPITRE.value)
         current.lines.append(line)
 
-    if current is not None and not current.is_empty():
+    if current is not None and not current.is_empty() and not skipping:
         drafts.append(current)
     return drafts
 
@@ -122,9 +155,11 @@ def chunk_document(text: str) -> list[ChunkDraft]:
 
     Utilise les marqueurs Markdown s'ils existent, sinon l'heuristique de titres.
     En dernier recours (aucun découpage possible), renvoie le document entier.
+    Le format **leçon** (présence d'un titre `# `) est détecté automatiquement
+    et découpé en sous-notions (cf. ``_split_markdown``).
     """
     if _HEADING.search(text) is not None:
-        drafts = _split_markdown(text)
+        drafts = _split_markdown(text, lesson=_H1.search(text) is not None)
     else:
         drafts = _split_heuristic(text)
 
