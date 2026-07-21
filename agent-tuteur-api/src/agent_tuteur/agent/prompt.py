@@ -118,6 +118,43 @@ def assemble_prompt(
     return SYSTEM_PERSONA, "\n\n".join(parts)
 
 
+def _uncovered_topic_block(position: CoursePosition) -> str:
+    """Avertissement injecté quand aucun chapitre ne répond à la demande de l'élève.
+
+    Sans ce bloc, le prompt affirmait comme un fait un chapitre déduit du meilleur
+    extrait remonté — et le LLM, obéissant, enseignait ce chapitre-là en écartant
+    explicitement le sujet demandé. On rend donc l'incertitude visible et on
+    impose la vérification avant d'enseigner quoi que ce soit.
+    """
+    lines = [
+        "ATTENTION — le chapitre demandé n'a pas pu être identifié dans le corpus.",
+    ]
+    if position.topic:
+        lines.append(f"Sujet demandé par l'élève : « {position.topic} ».")
+    if position.alternatives:
+        lines.append(
+            "Chapitres réellement disponibles dans les extraits ci-dessous : "
+            + ", ".join(position.alternatives)
+            + "."
+        )
+    lines.append(
+        "Avant d'enseigner quoi que ce soit, vérifie que les extraits traitent bien "
+        "le sujet demandé. S'ils le traitent, fais le cours normalement. S'ils ne le "
+        "traitent PAS, dis-le franchement à l'élève et n'enseigne SURTOUT PAS un "
+        "autre chapitre à la place : propose-lui plutôt les chapitres disponibles "
+        "ci-dessus, ou invite-le à faire indexer la leçon manquante."
+    )
+    # L'élève ne voit ni les extraits ni leur numérotation : les lui opposer
+    # (« les extraits que tu m'as fournis », « Source 1 ») expose la tuyauterie
+    # interne et lui impute un corpus qu'il n'a pas choisi.
+    lines.append(
+        "Formule ce refus du point de vue de l'élève : ne parle jamais d'« extraits », "
+        "de « sources » ni de leur numéro, et ne laisse pas entendre que c'est lui qui "
+        "les a fournis. Dis simplement que cette leçon n'est pas encore disponible."
+    )
+    return "\n".join(lines)
+
+
 def _build_plan_block(position: CoursePosition) -> str:
     """Sommaire du cours avec la section courante repérée (« ▶ »)."""
     titles = plan_titles()
@@ -154,6 +191,8 @@ def assemble_course_prompt(
     if scope:
         header += f" Cadre curriculaire : {scope}."
     parts.append(header)
+    if not position.chapitre_confirmed:
+        parts.append(_uncovered_topic_block(position))
     parts.append("Plan du cours (▶ = section à traiter maintenant) :\n" + _build_plan_block(position))
 
     history_block = build_history_block(conversation_history)
