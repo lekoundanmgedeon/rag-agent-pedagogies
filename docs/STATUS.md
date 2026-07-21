@@ -12,6 +12,7 @@
 | Chaque endpoint de l'API | [`docs/api.md`](api.md) |
 | Décisions techniques argumentées | [`docs/RAPPORT_TECHNIQUE.md`](RAPPORT_TECHNIQUE.md) |
 | **Comment lancer (Docker/local, tous modes)** | [`docs/GUIDE_LANCEMENT.md`](GUIDE_LANCEMENT.md) |
+| **Mettre en ligne sur un VPS (test d'équipe)** | [`docs/DEPLOIEMENT_TEST.md`](DEPLOIEMENT_TEST.md) |
 | ADR individuelles | [`docs/adr/`](adr/) |
 | Import de données antérieures | [`docs/migration.md`](migration.md) |
 
