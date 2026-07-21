@@ -8,7 +8,12 @@ est appliquée ici pour qu'une question en « STIDD1 » atteigne des chunks « T
 
 from __future__ import annotations
 
-from agent_tuteur.config.taxonomy import CHAMPS_INDEXES, serie_aliases
+from agent_tuteur.config.taxonomy import (
+    CHAMPS_INDEXES,
+    CHAMPS_NORMALISES,
+    serie_aliases,
+    taxonomy_key,
+)
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.vectorstore.embeddings import BaseEmbedder
 from agent_tuteur.vectorstore.store import BaseVectorStore, Filters
@@ -17,8 +22,17 @@ from agent_tuteur.vectorstore.store import BaseVectorStore, Filters
 def build_filters(context: dict) -> Filters:
     """Construit des filtres de store à partir d'un contexte curriculaire.
 
-    Ne retient que les champs indexés non vides. La série est étendue à tous ses
-    alias équivalents (ancienne ↔ nouvelle nomenclature).
+    Ne retient que les champs indexés non vides. Deux normalisations s'appliquent
+    pour qu'un libellé saisi par un humain atteigne les chunks correspondants :
+
+    * la **série** est étendue à tous ses alias équivalents (ancienne ↔ nouvelle
+      nomenclature) — « STIDD1 » atteint des chunks « T1 » ;
+    * les autres libellés curriculaires sont réduits à leur clé normalisée —
+      « Mathematiques » atteint « Mathématiques », « Les Suites Numériques »
+      atteint « Suites Numeriques ».
+
+    Les valeurs renvoyées pour ces champs sont donc des *clés*, que les stores
+    confrontent aux compagnons ``<champ>_key`` des chunks, jamais aux libellés.
     """
     filters: Filters = {}
     for field in CHAMPS_INDEXES:
@@ -27,10 +41,15 @@ def build_filters(context: dict) -> Filters:
             continue
         if field == "serie":
             filters[field] = serie_aliases(value)
-        elif isinstance(value, (list, tuple, set)):
-            filters[field] = [str(v) for v in value]
-        else:
-            filters[field] = [str(value)]
+            continue
+        values = (
+            [str(v) for v in value]
+            if isinstance(value, (list, tuple, set))
+            else [str(value)]
+        )
+        filters[field] = (
+            [taxonomy_key(v) for v in values] if field in CHAMPS_NORMALISES else values
+        )
     return filters
 
 
