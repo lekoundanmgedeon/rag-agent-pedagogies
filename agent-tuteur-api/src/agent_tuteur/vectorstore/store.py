@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from agent_tuteur.config.taxonomy import CHAMPS_NORMALISES
 from agent_tuteur.domain.models import Chunk, ScoredChunk
 from agent_tuteur.vectorstore.embeddings import Embedding
 
@@ -26,7 +27,13 @@ Filters = dict[str, list[str]]
 
 
 def _matches(metadata, filters: Filters) -> bool:
-    """Vrai si le chunk satisfait tous les filtres (ET logique entre champs)."""
+    """Vrai si le chunk satisfait tous les filtres (ET logique entre champs).
+
+    Les champs de ``CHAMPS_NORMALISES`` sont comparés sur leur compagnon
+    ``<champ>_key`` : ``build_filters`` a déjà réduit la valeur entrante à la
+    même clé, si bien qu'un accent ou un article de différence ne fait plus
+    échouer le filtre (« Mathematiques » ≡ « Mathématiques »).
+    """
     for field, allowed in filters.items():
         if not allowed:
             continue
@@ -35,7 +42,8 @@ def _matches(metadata, filters: Filters) -> bool:
             if candidate.isdisjoint(set(allowed)):
                 return False
         else:
-            value = getattr(metadata, field, None)
+            attribut = f"{field}_key" if field in CHAMPS_NORMALISES else field
+            value = getattr(metadata, attribut, None)
             if value not in allowed:
                 return False
     return True

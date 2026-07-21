@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from agent_tuteur.config.taxonomy import CHAMPS_INDEXES
+from agent_tuteur.config.taxonomy import CHAMPS_INDEXES, CHAMPS_NORMALISES
 from agent_tuteur.domain.models import Chunk, CurriculumMetadata, ScoredChunk
 from agent_tuteur.vectorstore.embeddings import Embedding
 from agent_tuteur.vectorstore.store import BaseVectorStore, Filters
@@ -66,14 +66,18 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
                 # (l'index de payload a été créé par le gagnant de la course).
                 return
             raise
-        # Index de payload pour le filtrage curriculaire.
-        for field in CHAMPS_INDEXES:
+        # Index de payload pour le filtrage curriculaire : les libellés bruts
+        # (utiles à l'inspection), les compagnons normalisés effectivement
+        # interrogés, et les alias de série.
+        indexes = (
+            *CHAMPS_INDEXES,
+            *(f"{field}_key" for field in CHAMPS_NORMALISES),
+            "serie_alias",
+        )
+        for field in indexes:
             self._client.create_payload_index(
                 self._collection, field_name=field, field_schema=qm.PayloadSchemaType.KEYWORD
             )
-        self._client.create_payload_index(
-            self._collection, field_name="serie_alias", field_schema=qm.PayloadSchemaType.KEYWORD
-        )
 
     def upsert(self, chunks: list[Chunk], embeddings: list[Embedding]) -> None:
         from qdrant_client import models as qm
@@ -101,7 +105,15 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
         for field, allowed in filters.items():
             if not allowed:
                 continue
-            key = "serie_alias" if field == "serie" else field
+            # Le filtrage porte sur les compagnons normalisés, jamais sur les
+            # libellés bruts : côté serveur le match est exact, donc un accent de
+            # différence exclurait silencieusement le chunk (cf. taxonomy).
+            if field == "serie":
+                key = "serie_alias"
+            elif field in CHAMPS_NORMALISES:
+                key = f"{field}_key"
+            else:
+                key = field
             conditions.append(qm.FieldCondition(key=key, match=qm.MatchAny(any=list(allowed))))
         return qm.Filter(must=conditions) if conditions else None
 

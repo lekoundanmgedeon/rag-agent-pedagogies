@@ -1,3 +1,7 @@
+import pytest
+
+from agent_tuteur.config.taxonomy import taxonomy_key
+from agent_tuteur.domain.models import CurriculumMetadata
 from agent_tuteur.vectorstore.retriever import build_filters
 
 
@@ -41,7 +45,8 @@ def test_build_filters_expands_serie_and_ignores_unindexed():
         {"serie": "STEG", "discipline": "Maths", "student_id": "x", "competence": "y"}
     )
     assert set(filters["serie"]) == {"G", "STEG"}
-    assert filters["discipline"] == ["Maths"]
+    # La discipline est réduite à sa clé de filtrage (confrontée à discipline_key).
+    assert filters["discipline"] == ["MATHS"]
     # competence n'est pas un champ indexé -> ignoré du filtrage.
     assert "competence" not in filters
     assert "student_id" not in filters
@@ -62,3 +67,56 @@ def test_count_for_source_sums_to_total_count(rag_stack):
     for path in sorted((Path(__file__).resolve().parents[1] / "corpus").glob("*.md")):
         total += rag_stack.indexer.count_for_source(path.name)
     assert total == rag_stack.indexer.count()
+
+
+# --- Robustesse orthographique du filtrage curriculaire ----------------------
+
+
+@pytest.mark.parametrize(
+    "saisi, indexe",
+    [
+        ("Mathematiques", "Mathématiques"),   # accent manquant côté élève
+        ("Mathématiques", "Mathematiques"),   # accent manquant côté corpus
+        ("MATHEMATIQUES", "Mathématiques"),   # casse
+        ("Sciences  Physiques", "Sciences Physiques"),  # espaces surnuméraires
+    ],
+)
+def test_taxonomy_key_unifies_spelling_variants(saisi, indexe):
+    assert taxonomy_key(saisi) == taxonomy_key(indexe)
+
+
+@pytest.mark.parametrize(
+    "avec, sans",
+    [
+        ("Les Suites Numériques", "Suites Numeriques"),
+        ("Le Calcul Intégral", "Calcul Integral"),
+        ("L'Arithmétique", "Arithmetique"),
+    ],
+)
+def test_taxonomy_key_ignores_leading_article(avec, sans):
+    assert taxonomy_key(avec) == taxonomy_key(sans)
+
+
+def test_taxonomy_key_keeps_words_that_merely_start_like_an_article():
+    """« Deuxième degré » ne doit pas perdre son « De » initial."""
+    assert taxonomy_key("Deuxième degré") == "DEUXIEMEDEGRE"
+    assert taxonomy_key("Dérivées") == "DERIVEES"
+
+
+def test_metadata_derives_filter_keys():
+    meta = CurriculumMetadata(
+        niveau="secondaire", classe="Terminale",
+        discipline="Mathématiques", chapitre="Les Suites Numériques",
+    )
+    assert meta.discipline_key == "MATHEMATIQUES"
+    assert meta.chapitre_key == "SUITESNUMERIQUES"
+    # Le libellé affiché n'est jamais altéré.
+    assert meta.chapitre == "Les Suites Numériques"
+
+
+def test_filter_matches_across_accent_variants(rag_stack):
+    """Régression : un accent de différence coupait l'élève du corpus."""
+    accentue = rag_stack.retriever.retrieve("dérivée", {"discipline": "Mathématiques"}, top_k=10)
+    nu = rag_stack.retriever.retrieve("dérivée", {"discipline": "Mathematiques"}, top_k=10)
+    assert accentue and nu
+    assert [sc.chunk.id for sc in accentue] == [sc.chunk.id for sc in nu]

@@ -83,6 +83,41 @@ def _key(label: str) -> str:
     return norm.replace(" ", "").upper()
 
 
+# --- Clés de filtrage des autres champs curriculaires ------------------------
+# Même problème que les séries, autre remède : ici les libellés ne forment pas
+# des classes d'équivalence connues d'avance, ils divergent seulement par
+# l'orthographe. Constaté dans un index réel : « Mathématiques » vs
+# « Mathematiques » (accent), « Les Suites Numériques » vs « Suites Numeriques »
+# (accent + article). Un filtre exact coupait alors l'élève de 92 % du corpus,
+# silencieusement. On indexe donc une clé normalisée à côté de chaque libellé,
+# et c'est elle qui sert au filtrage — le libellé d'origine reste affiché.
+
+#: Champs pour lesquels un compagnon ``<champ>_key`` normalisé est indexé.
+CHAMPS_NORMALISES: tuple[str, ...] = ("niveau", "classe", "discipline", "chapitre")
+
+#: Articles initiaux ignorés : « Les Suites Numériques » ≡ « Suites Numériques ».
+_ARTICLES_INITIAUX = frozenset({"LE", "LA", "LES", "UN", "UNE", "DU", "DE", "DES"})
+
+
+def taxonomy_key(label: str) -> str:
+    """Clé de filtrage d'un libellé curriculaire (discipline, chapitre, classe…).
+
+    Neutralise accents, casse et espaces (comme ``_key``), puis retire un
+    éventuel article initial. Le retrait se fait **avant** la suppression des
+    espaces, sur le premier mot entier : sans cela « Deuxième degré » perdrait
+    son « De » initial.
+    """
+    norm = unicodedata.normalize("NFKD", label)
+    norm = "".join(c for c in norm if not unicodedata.combining(c)).upper()
+    words = norm.split()
+    if words:
+        if words[0] in _ARTICLES_INITIAUX:
+            words = words[1:]
+        elif words[0].startswith("L'"):
+            words[0] = words[0][2:]
+    return "".join(words)
+
+
 # Index inversé libellé-normalisé -> groupe d'équivalence.
 _SERIE_LOOKUP: dict[str, list[str]] = {
     _key(alias): group for group in SERIE_EQUIVALENCES for alias in group

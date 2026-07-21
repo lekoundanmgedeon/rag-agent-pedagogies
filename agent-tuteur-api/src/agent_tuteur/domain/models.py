@@ -10,10 +10,12 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_tuteur.config.taxonomy import (
+    CHAMPS_NORMALISES,
     EXAMEN_PAR_NIVEAU,
     Niveau,
     TypeChunk,
     serie_aliases,
+    taxonomy_key,
 )
 
 
@@ -33,11 +35,25 @@ class CurriculumMetadata(BaseModel):
     type_chunk: str = TypeChunk.CHAPITRE.value
     source_document: str | None = None
 
+    # Clés de filtrage normalisées (accents/casse/article neutralisés), dérivées
+    # des libellés ci-dessus. Elles sont indexées et interrogées à leur place ;
+    # les libellés, eux, restent la forme affichée à l'élève. Pendant du
+    # mécanisme ``serie_alias`` pour les champs sans classe d'équivalence connue.
+    niveau_key: str | None = None
+    classe_key: str | None = None
+    discipline_key: str | None = None
+    chapitre_key: str | None = None
+
     @model_validator(mode="after")
     def _enrichir(self) -> "CurriculumMetadata":
         # Aligne serie_alias[] sur les classes d'équivalence si non fourni.
         if self.serie and not self.serie_alias:
             self.serie_alias = serie_aliases(self.serie)
+        # Dérive les clés de filtrage — toujours recalculées depuis le libellé,
+        # pour qu'une valeur persistée obsolète ne puisse pas prendre le dessus.
+        for champ in CHAMPS_NORMALISES:
+            libelle = getattr(self, champ, None)
+            setattr(self, f"{champ}_key", taxonomy_key(libelle) if libelle else None)
         # Examen déduit du niveau si absent (indicatif).
         if not self.examen_associe:
             try:
