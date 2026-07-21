@@ -54,7 +54,10 @@ class AgentState(TypedDict, total=False):
     tool_result: str | None
     moderation_flagged: bool
     #: Position dans le cours calculée par course_planner ({"chapitre", "section_index",
-    #: "section_key", "section_title", "reason"}) — présent uniquement en mode cours.
+    #: "section_key", "section_title", "reason", "chapitre_confirmed", "alternatives",
+    #: "topic"}) — présent uniquement en mode cours. ``chapitre_confirmed`` est faux
+    #: quand la demande de l'élève n'a matché aucun chapitre du corpus : le prompt
+    #: bascule alors en posture prudente au lieu de substituer un autre chapitre.
     course_section: dict[str, Any]
     system_prompt: str
     final_prompt: str

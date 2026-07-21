@@ -88,3 +88,36 @@ async def test_exercise_question_ignores_course_state_default(agent):
     prep = await agent.prepare("comment dériver un quotient de fonctions ?", {"serie": "S1"})
     assert prep.trace["course"] is None
     assert prep.hint_level == 1
+
+
+async def test_course_does_not_substitute_an_unrelated_chapter(agent):
+    """Régression : « nombres complexes » enseigné comme un cours de suites.
+
+    Le corpus de test ne contient aucun chapitre sur les complexes ; le RAG
+    remonte donc quand même ses meilleurs extraits (suites, dérivées). L'agent
+    doit refuser de lier un chapitre et demander au LLM de le dire honnêtement,
+    plutôt que d'affirmer un chapitre déduit du meilleur extrait.
+    """
+    prep = await agent.prepare("Explique moi les nombres complexes", {"serie": "S1"})
+
+    course = prep.trace["course"]
+    assert course["chapitre_confirmed"] is False
+    assert course["chapitre"] is None
+    # Le prompt nomme le sujet demandé et interdit la substitution silencieuse.
+    assert "nombres complexes" in prep.final_prompt
+    assert "ATTENTION" in prep.final_prompt
+    assert "n'enseigne SURTOUT PAS un autre chapitre" in prep.final_prompt
+
+
+async def test_course_binds_chapter_present_in_corpus(agent):
+    prep = await agent.prepare("Explique moi les dérivées", {"serie": "S1"})
+
+    course = prep.trace["course"]
+    assert course["chapitre_confirmed"] is True
+    assert "dériv" in (course["chapitre"] or "").lower()
+    # Liaison réussie => aucun avertissement, et les extraits sont recentrés
+    # sur le seul chapitre enseigné.
+    assert "ATTENTION" not in prep.final_prompt
+    assert {s["label"] for s in prep.trace["sources"]}
+    chapters = {sc.chunk.metadata.chapitre for sc in prep.retrieved}
+    assert chapters == {course["chapitre"]}
