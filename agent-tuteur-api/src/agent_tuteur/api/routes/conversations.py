@@ -21,12 +21,16 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 def _target_student_id(principal: Principal, requested: str | None) -> str:
     """Élève dont on liste les conversations : l'élève lui-même, ou l'élève ciblé
-    par un admin. Un élève ne peut jamais viser un autre identifiant."""
+    par un admin. Un élève ne peut jamais viser un autre identifiant.
+
+    Un admin sans ``student_id`` liste ses **propres** sessions de chat : c'est le
+    pendant exact de ``_effective_student_id`` dans ``routes/chat.py``, qui range
+    les tours d'un admin sous son ``user_id``. Les deux règles doivent rester
+    alignées, sinon l'admin écrit dans un fil qu'il ne peut pas relire.
+    """
     if principal.role == "student":
         return principal.student_id or principal.user_id
-    if not requested:
-        raise HTTPException(status_code=400, detail="Paramètre student_id requis pour un administrateur.")
-    return requested
+    return requested or principal.user_id
 
 
 def _assert_can_access(principal: Principal, conversation) -> None:  # noqa: ANN001 - Conversation ORM

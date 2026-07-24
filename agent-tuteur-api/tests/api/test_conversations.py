@@ -79,6 +79,23 @@ async def test_conversation_delete_missing_returns_404(api_client, admin_headers
     assert resp.status_code == 404
 
 
+async def test_conversation_admin_without_student_id_lists_own_sessions(api_client, admin_headers):
+    """Un admin qui dialogue lui-même (sans cibler d'élève) doit relire ses sessions.
+
+    ``/api/chat`` range ses tours sous son ``user_id`` ; la liste doit appliquer
+    la même règle plutôt que d'exiger un ``student_id`` — sinon l'admin écrit
+    dans un fil invisible et le chat renvoie un 400 à chaque chargement.
+    """
+    payload = {"question": "comment dériver un quotient de fonctions ?"}
+    async with api_client.stream("POST", "/api/chat", json=payload, headers=admin_headers) as resp:
+        events = await _read_sse_events(resp)
+    conv_id = events[-1]["done"]["conversation_id"]
+
+    resp = await api_client.get("/api/conversations", headers=admin_headers)
+    assert resp.status_code == 200
+    assert [c["id"] for c in resp.json()] == [conv_id]
+
+
 async def test_conversation_student_cannot_read_another_students(api_client, tenant_id, make_headers):
     """Un élève ne peut pas ouvrir la conversation d'un autre élève (404, pas de fuite)."""
     admin = make_headers(tenant_id=tenant_id, role="admin")
