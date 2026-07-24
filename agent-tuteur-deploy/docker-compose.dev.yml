@@ -14,8 +14,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
+    # Pas d'exposition sur l'hôte : évite tout conflit avec un Postgres déjà
+    # installé sur la machine (port 5432). Les services y accèdent en interne via
+    # le nom `postgres`. Pour déboguer depuis l'hôte, ajouter un override avec
+    # `ports: ["55432:5432"]`.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tuteur"]
       interval: 5s
@@ -24,8 +26,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Pas d'exposition sur l'hôte (évite un conflit avec un Redis local sur 6379).
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -109,13 +110,12 @@ services:
     depends_on:
       - api
 
-  # Seed d'un compte admin initial pour le test rapide. Opt-in (profil "seed"),
-  # ne tourne PAS lors d'un `up` normal :
-  #   docker compose -f docker-compose.dev.yml --profile seed run --rm createadmin
-  # Personnalisable via ADMIN_EMAIL / ADMIN_PASSWORD.
+  # Amorçage d'un compte admin, exécuté à chaque `up` (idempotent : ne fait rien
+  # si le compte existe déjà). Sans lui, personne ne pourrait se connecter.
+  # Identifiants par défaut (dev) : admin@tuteur.sn / changeme123 — surchargeables
+  # via ADMIN_EMAIL / ADMIN_PASSWORD.
   createadmin:
     build: ../agent-tuteur-api
-    profiles: ["seed"]
     environment:
       DATABASE_URL: postgresql+asyncpg://tuteur_app:tuteur_app_password@postgres:5432/tuteur
     command:
