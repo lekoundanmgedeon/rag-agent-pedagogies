@@ -106,14 +106,41 @@ services:
         condition: service_healthy
     # Plusieurs workers : `docker compose -f docker-compose.prod.yml up --scale worker=3 -d`
 
-  frontend:
-    build: ../agent-tuteur-frontend
-    environment:
-      API_BASE_URL: http://api:8000
-      DEFAULT_TENANT: ${DEFAULT_TENANT:-default}
+  # Frontend web (Vue 3) : SPA statique servi par nginx interne. Non exposé sur
+  # l'hôte — le nginx frontal route "/" vers ce service (voir nginx/nginx.conf).
+  web:
+    build: ../agent-tuteur-web
     restart: unless-stopped
     depends_on:
       - api
+
+  # Création d'un compte admin initial. Opt-in (profil "seed"). Surcharge
+  # OBLIGATOIRE des identifiants en prod — les défauts ci-dessous ne servent qu'à
+  # laisser l'interpolation Compose passer (elle évalue tous les services, même
+  # ceux sous profil). Exemple :
+  #   ADMIN_EMAIL=admin@ton-domaine.sn ADMIN_PASSWORD='mot-de-passe-fort' \
+  #   docker compose --env-file .env.prod -f docker-compose.prod.yml \
+  #     --profile seed run --rm createadmin
+  createadmin:
+    build: ../agent-tuteur-api
+    profiles: ["seed"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_APP_USER:-app}:${POSTGRES_APP_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-tuteur}
+    command:
+      - python
+      - scripts/create_user.py
+      - --email
+      - ${ADMIN_EMAIL:-admin@example.com}
+      - --password
+      - ${ADMIN_PASSWORD:-change-me}
+      - --role
+      - admin
+      - --tenant
+      - ${DEFAULT_TENANT:-default}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
   nginx:
     image: nginx:1.27-alpine
@@ -126,7 +153,7 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-      - frontend
+      - web
 
 volumes:
   postgres_data:

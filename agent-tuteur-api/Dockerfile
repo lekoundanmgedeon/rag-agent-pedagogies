@@ -20,6 +20,7 @@ COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
 COPY corpus ./corpus
+COPY scripts ./scripts
 
 RUN pip install --no-cache-dir -e .
 

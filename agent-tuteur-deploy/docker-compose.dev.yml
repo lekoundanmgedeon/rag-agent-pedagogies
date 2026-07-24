@@ -100,15 +100,39 @@ services:
       qdrant:
         condition: service_healthy
 
-  frontend:
-    build: ../agent-tuteur-frontend
-    environment:
-      API_BASE_URL: http://api:8000
-      DEFAULT_TENANT: default
+  # Frontend web (Vue 3) : sert le SPA et proxifie /api + /health vers l'API.
+  # UI accessible sur http://localhost:8080
+  web:
+    build: ../agent-tuteur-web
     ports:
-      - "8501:8501"
+      - "8080:80"
     depends_on:
       - api
+
+  # Seed d'un compte admin initial pour le test rapide. Opt-in (profil "seed"),
+  # ne tourne PAS lors d'un `up` normal :
+  #   docker compose -f docker-compose.dev.yml --profile seed run --rm createadmin
+  # Personnalisable via ADMIN_EMAIL / ADMIN_PASSWORD.
+  createadmin:
+    build: ../agent-tuteur-api
+    profiles: ["seed"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tuteur_app:tuteur_app_password@postgres:5432/tuteur
+    command:
+      - python
+      - scripts/create_user.py
+      - --email
+      - ${ADMIN_EMAIL:-admin@tuteur.sn}
+      - --password
+      - ${ADMIN_PASSWORD:-changeme123}
+      - --role
+      - admin
+      - --tenant
+      - ${DEFAULT_TENANT:-default}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
 volumes:
   postgres_data:

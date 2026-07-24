@@ -21,3 +21,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 echo "Stack démarrée. Statut :"
 docker compose -f docker-compose.prod.yml --env-file .env.prod ps
+
+echo
+echo "Frontend web servi par le nginx frontal (https://<domaine>/)."
+echo "Premier déploiement : créer un compte admin (aucun n'existe par défaut) :"
+echo "  ADMIN_EMAIL=admin@ton-domaine.sn ADMIN_PASSWORD='mot-de-passe-fort' \\"
+echo "    docker compose -f docker-compose.prod.yml --env-file .env.prod \\"
+echo "    --profile seed run --rm createadmin"
