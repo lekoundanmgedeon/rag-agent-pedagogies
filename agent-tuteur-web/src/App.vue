@@ -224,4 +224,12 @@ a:hover { text-decoration: underline; }
 .markdown-body td { padding: 7px 10px; border-bottom: 1px solid var(--border); }
 .markdown-body a { text-decoration: underline; }
 .markdown-body strong { font-weight: 650; }
+
+/* ── Formules mathématiques (KaTeX) ── */
+.markdown-body .katex { font-size: 1.05em; }
+.markdown-body .katex-display { margin: 0.8rem 0; overflow-x: auto; overflow-y: hidden; padding: 4px 2px; }
+.markdown-body .math-error {
+  color: var(--error); background: var(--error-soft); font-family: var(--font-mono);
+  padding: 1px 5px; border-radius: var(--radius-sm); white-space: pre-wrap; word-break: break-word;
+}
 </style>
