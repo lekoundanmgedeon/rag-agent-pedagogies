@@ -1,5 +1,10 @@
 # ADR 0006 — `tenant_id` dès la première version
 
+> **Mise à jour (2026-07-24)** : le « JWT complet différé » de cette décision a
+> depuis été **réalisé** — voir [ADR 0009](0009-authentification-jwt-roles.md).
+> Le tenant n'est plus lu depuis l'en-tête `X-Tenant-Id` (retiré) mais **dérivé
+> du jeton JWT**. Le reste de cette ADR (schéma multi-tenant + RLS) reste valable.
+
 ## Contexte
 
 Le produit vise potentiellement plusieurs écoles/institutions. Ajouter le

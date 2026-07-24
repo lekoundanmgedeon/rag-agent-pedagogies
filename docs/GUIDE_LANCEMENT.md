@@ -38,6 +38,8 @@ seule la façon de lancer l'infrastructure et les processus change.
 ## 2. Prérequis
 
 - Python 3.11+ (le projet a été validé avec 3.12)
+- Node.js 20+ et npm (pour le frontend web Vue, modes B/C ; inutile en mode A où
+  le frontend est construit dans une image Docker)
 - Docker + Docker Compose (modes A et B)
 - `make` (GNU Make)
 
@@ -47,7 +49,7 @@ seule la façon de lancer l'infrastructure et les processus change.
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r agent-tuteur-api/requirements.txt -e agent-tuteur-api
-.venv/bin/pip install -r agent-tuteur-frontend/requirements.txt
+cd agent-tuteur-web && npm install && cd ..
 ```
 
 Ou, équivalent : `make setup`.
@@ -64,16 +66,27 @@ ou force un interpréteur explicite : `/usr/bin/python3.12 -m venv .venv`. Voir
 ## 3. Mode A — Tout Docker (docker-compose)
 
 Le plus simple : une seule commande démarre Postgres, Redis, Qdrant, applique
-les migrations, puis lance l'API, le worker et le frontend.
+les migrations, puis lance l'API, le worker et le frontend web (Vue).
 
 ```bash
 cd agent-tuteur-deploy
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
+- Frontend web : http://localhost:8080
 - API : http://localhost:8000/docs
-- Frontend : http://localhost:8501
 - Health : http://localhost:8000/health
+
+**Créer le premier compte admin** (obligatoire — l'API exige désormais une
+authentification, et aucun compte n'existe par défaut) :
+
+```bash
+docker compose -f docker-compose.dev.yml --profile seed run --rm createadmin
+# défaut : admin@tuteur.sn / changeme123 — surcharge : ADMIN_EMAIL=… ADMIN_PASSWORD=…
+```
+
+Se connecter ensuite sur http://localhost:8080 avec ces identifiants. Créer des
+comptes élèves/admin supplémentaires depuis l'espace **Administration → Comptes**.
 
 **Arrêt** :
 
@@ -91,7 +104,7 @@ docker compose -f docker-compose.dev.yml up -d --build api worker
 **Production** : `docker-compose.prod.yml` (secrets via `.env.prod`, nginx en
 frontal). Voir `agent-tuteur-deploy/scripts/setup.sh` et `deploy.sh`.
 
-⚠️ Si les ports 5432/6379/6333/8000/8501 sont déjà occupés par d'autres
+⚠️ Si les ports 5432/6379/6333/8000/8080 sont déjà occupés par d'autres
 services sur ta machine, remappe-les dans un fichier d'override (`-f
 docker-compose.dev.yml -f override.yml`) plutôt que d'éditer le fichier commité.
 
@@ -99,9 +112,20 @@ docker-compose.dev.yml -f override.yml`) plutôt que d'éditer le fichier commit
 
 ## 4. Mode B — Infra Docker + code local (recommandé en dev actif)
 
-Postgres/Redis/Qdrant tournent en conteneurs jetables ; l'API/worker/frontend
-tournent en local avec **rechargement à chaud** (`uvicorn --reload`) — le mode
-le plus confortable pour itérer sur le code.
+Postgres/Redis/Qdrant tournent en conteneurs jetables ; l'API/worker tournent en
+local avec **rechargement à chaud** (`uvicorn --reload`), et le frontend web via
+le serveur de dev Vite (`npm run dev`, proxy `/api` → :8000, HMR) — le mode le
+plus confortable pour itérer sur le code.
+
+Après `make migrate`, créer un compte admin local (sans lui, impossible de se
+connecter) :
+
+```bash
+make createadmin EMAIL=admin@tuteur.sn PASSWORD=changeme123
+```
+
+Le frontend Vite est servi sur http://localhost:5173 (mode B/C), l'API sur
+http://localhost:8000.
 
 ### 4.1 — B1 : minimal (Postgres seul, sans worker)
 
@@ -261,13 +285,22 @@ curl -s http://localhost:8000/health | python3 -m json.tool
   (normal en mode B1).
 - `qdrant` : `"not_configured"` si `VECTOR_BACKEND=memory` ; `"ok"`/`"unreachable"` sinon.
 
-Test rapide du chat :
+Test rapide du chat (l'API exige un jeton JWT — se connecter d'abord) :
 
 ```bash
-curl -sN -X POST http://localhost:8000/api/chat \
+# 1) Login → récupère un jeton (compte créé via `make createadmin` ou le profil seed)
+TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"question": "comment dériver un quotient de fonctions ?", "student_id": "test"}'
+  -d '{"email": "admin@tuteur.sn", "password": "changeme123"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# 2) Chat streamé (le student_id est dérivé du jeton, plus besoin de le passer)
+curl -sN -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"question": "comment dériver un quotient de fonctions ?"}'
 ```
+
+Sans jeton, toute route métier renvoie `401`. `/health` reste public.
 
 ---
 
@@ -280,8 +313,9 @@ stdout et dans un fichier dédié par service :
 tail -f agent-tuteur-api/logs/api.log agent-tuteur-api/logs/worker.log
 ```
 
-Vue consolidée et lisible dans le frontend Streamlit → page **🪵 Logs**
-(orchestration agent tour par tour, et étapes d'ingestion par document).
+Vue consolidée et lisible dans le frontend web → espace **Administration → 🪵 Logs**
+(orchestration agent tour par tour ; les étapes d'ingestion par document sont
+visibles dans **Administration → Documents**).
 Détail complet : `docs/RAPPORT_TECHNIQUE.md` §8 et `agent_tuteur/observability.py`.
 
 ---
@@ -299,7 +333,7 @@ docker compose -f docker-compose.dev.yml down
 ```bash
 pkill -f "uvicorn agent_tuteur"
 pkill -f "arq agent_tuteur"
-pkill -f "streamlit run"
+pkill -f "vite"           # serveur de dev du frontend web
 ```
 
 (`make dev` avec `Ctrl+C` arrête les 3 en une fois s'ils ont été lancés via
@@ -350,12 +384,21 @@ rm -rf .venv
 make setup
 ```
 
-### Ports déjà occupés (5432, 6379, 6333, 8000, 8501)
+### Ports déjà occupés (5432, 6379, 6333, 8000, 8080, 5173)
 
 Fréquent si un Postgres/Redis natif tourne déjà sur la machine pour un autre
 projet. Utiliser des ports hôte différents dans les commandes `docker run`
 (ex. `-p 55432:5432`) et adapter `DATABASE_URL`/`REDIS_URL`/`QDRANT_URL` en
 conséquence — les ports **internes** au conteneur restent inchangés.
+
+### `401 Unauthorized` sur toutes les routes / impossible de se connecter
+
+L'API exige un jeton JWT (`Authorization: Bearer …`). Si aucun compte n'existe
+encore, en créer un : `make createadmin EMAIL=… PASSWORD=…` (local) ou le profil
+`seed` du compose (Docker). `/health` reste la seule route publique. Un `401`
+après un login réussi signale un jeton expiré (durée `JWT_EXPIRY_HOURS`, 7 j par
+défaut) — se reconnecter. Vérifier aussi que `JWT_SECRET` est identique entre les
+redémarrages de l'API (un secret changé invalide les jetons émis).
 
 ### RLS ne filtre rien en production
 

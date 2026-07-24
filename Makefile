@@ -5,16 +5,16 @@
 # lancés et accessibles via les variables de agent-tuteur-api/.env.
 
 API_DIR := agent-tuteur-api
-FRONTEND_DIR := agent-tuteur-frontend
+WEB_DIR := agent-tuteur-web
 VENV := .venv/bin
 
-.PHONY: setup migrate api worker run dev test seed lint clean
+.PHONY: setup migrate api worker run dev test seed createadmin lint clean
 
-setup: ## Crée le venv et installe les dépendances (API + frontend).
+setup: ## Crée le venv (API) et installe les dépendances (API Python + frontend npm).
 	python3 -m venv .venv
 	$(VENV)/pip install --upgrade pip
 	$(VENV)/pip install -r $(API_DIR)/requirements.txt -e $(API_DIR)
-	$(VENV)/pip install -r $(FRONTEND_DIR)/requirements.txt
+	cd $(WEB_DIR) && npm install
 
 migrate: ## Applique les migrations Alembic (nécessite DATABASE_URL valide).
 	cd $(API_DIR) && ../$(VENV)/python -m alembic upgrade head
@@ -25,8 +25,12 @@ api: ## Démarre l'API FastAPI (uvicorn, rechargement à chaud).
 worker: ## Démarre le worker ARQ (ingestion asynchrone).
 	cd $(API_DIR) && PYTHONPATH=src ../$(VENV)/python -m arq agent_tuteur.workers.ingestion_worker.WorkerSettings
 
-run: ## Démarre le frontend Streamlit (client de l'API).
-	cd $(FRONTEND_DIR) && ../$(VENV)/python -m streamlit run streamlit_app.py
+run: ## Démarre le frontend web Vue (Vite, proxy /api -> :8000).
+	cd $(WEB_DIR) && npm run dev
+
+createadmin: ## Crée un compte admin (EMAIL=... PASSWORD=... [TENANT=default]).
+	cd $(API_DIR) && ../$(VENV)/python scripts/create_user.py \
+		--email "$(EMAIL)" --password "$(PASSWORD)" --role admin --tenant "$(or $(TENANT),default)"
 
 dev: ## Lance api + worker + frontend en parallèle (arrêt : Ctrl+C).
 	$(MAKE) -j3 api worker run

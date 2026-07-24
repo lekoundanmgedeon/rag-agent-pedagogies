@@ -11,7 +11,7 @@ symbolique.
 
 ```
 agent-tuteur-api/       Cœur métier + API FastAPI + worker ARQ
-agent-tuteur-frontend/  Client Streamlit (aucun accès direct au cœur)
+agent-tuteur-web/       Frontend Vue 3 (SPA élève + admin, aucun accès direct au cœur)
 agent-tuteur-deploy/    docker-compose (dev/prod), nginx, scripts
 docs/                   architecture.md, api.md, adr/, migration.md
 ```
@@ -23,7 +23,8 @@ Le **cœur métier** (`agent/`, `vectorstore/`, `ingestion/`, `tools/`,
 d'aucun framework web ni de base de données — il est testable et exécutable
 hors-ligne (LLM mock, vectorstore in-memory). `api/` (FastAPI), `workers/`
 (ARQ) et `persistence/` (PostgreSQL) sont aux extrémités et consomment ce
-cœur. Le frontend Streamlit ne parle qu'HTTP/SSE à l'API.
+cœur. Le frontend (SPA Vue 3, espaces élève + administration) ne parle qu'HTTP/SSE
+à l'API, authentifié par jeton JWT (rôles admin/élève).
 
 Détails complets : [`docs/architecture.md`](docs/architecture.md) (composants,
 flux RAG streamé, ingestion asynchrone, isolation multi-tenant),
@@ -46,11 +47,19 @@ docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 Démarre Postgres, Redis, Qdrant, applique les migrations (`migrate`), puis
-lance l'API (`:8000`), le worker ARQ, et le frontend Streamlit (`:8501`).
+lance l'API (`:8000`), le worker ARQ, et le frontend web Vue (`:8080`).
 
+- Frontend web : http://localhost:8080
 - API : http://localhost:8000/docs
-- Frontend : http://localhost:8501
 - Health check : http://localhost:8000/health
+
+**Créer le premier compte admin** (l'API exige une authentification ; aucun
+compte par défaut) :
+
+```bash
+docker compose -f docker-compose.dev.yml --profile seed run --rm createadmin
+# défaut : admin@tuteur.sn / changeme123 (ADMIN_EMAIL/ADMIN_PASSWORD surchargeables)
+```
 
 Pour la production : `docker-compose.prod.yml` (secrets via `.env.prod`, nginx
 en frontal avec SSL/rate limiting, aucun port interne exposé). Voir
@@ -60,14 +69,16 @@ en frontal avec SSL/rate limiting, aucun port interne exposé). Voir
 ## Démarrage local (sans Docker)
 
 ```bash
-make setup      # crée .venv, installe les dépendances (API + frontend)
+make setup      # crée .venv (API) + npm install (frontend web)
 make migrate    # applique les migrations Alembic (DATABASE_URL requis)
-make dev        # lance api + worker + frontend en parallèle
+make createadmin EMAIL=admin@tuteur.sn PASSWORD=changeme123   # 1er compte
+make dev        # lance api + worker + frontend (Vite :5173) en parallèle
 ```
 
-Cibles individuelles : `make api`, `make worker`, `make run` (frontend),
-`make test`, `make seed` (ingère le corpus d'exemple). Voir le `Makefile` pour
-le détail de chaque cible et ses prérequis.
+Cibles individuelles : `make api`, `make worker`, `make run` (frontend Vite),
+`make createadmin`, `make test`, `make seed` (ingère le corpus d'exemple). Voir
+le `Makefile` pour le détail de chaque cible et ses prérequis. Node.js 20+ est
+requis pour le frontend en local.
 
 **Démo 100% hors-ligne** (sans Postgres/Redis/Qdrant, LLM mock, vectorstore
 in-memory) :
@@ -80,10 +91,11 @@ PYTHONPATH=src python scripts/demo.py
 ## Variables d'environnement
 
 Voir `agent-tuteur-api/.env.example` (backend : DB, Redis, Qdrant, LLM,
-tenant, rate limiting) et `agent-tuteur-frontend/.env.example` (`API_BASE_URL`).
-Tous les défauts permettent un fonctionnement dégradé sans infrastructure
-lourde (backends légers, LLM mock) — voir la section « Dégradation gracieuse »
-de `docs/architecture.md`.
+`JWT_SECRET`, rate limiting) et `agent-tuteur-web/.env.example`
+(`VITE_API_TARGET`). Tous les défauts permettent un fonctionnement dégradé sans
+infrastructure lourde (backends légers, LLM mock) — voir la section
+« Dégradation gracieuse » de `docs/architecture.md`. En production, définir un
+`JWT_SECRET` fort (≥ 32 octets).
 
 ⚠️ **RLS et rôle Postgres** : en production, `DATABASE_URL` de l'API/du worker
 doit utiliser un rôle **non-superuser** (`postgres-init/01-app-role.sh` dans

@@ -3,10 +3,10 @@
 ## 1. Vue d'ensemble
 
 ```
-┌─────────────────────┐        ┌──────────────────────────────────────┐
-│  agent-tuteur-       │  HTTP  │  agent-tuteur-api                    │
-│  frontend            │◄──────►│  ┌────────────────────────────────┐ │
-│  (Streamlit)          │  SSE   │  │ api/  (FastAPI, routes, deps)  │ │
+┌─────────────────────┐  HTTP  ┌──────────────────────────────────────┐
+│  agent-tuteur-web    │  +JWT  │  agent-tuteur-api                    │
+│  (Vue 3 SPA :        │◄──────►│  ┌────────────────────────────────┐ │
+│   élève + admin)     │  SSE   │  │ api/  (FastAPI, routes, deps)  │ │
 └─────────────────────┘        │  └───────────────┬────────────────┘ │
                                  │                  │                  │
                                  │  ┌───────────────▼────────────────┐ │
@@ -29,10 +29,10 @@
 
 **Principe transversal** : `agent/`, `vectorstore/`, `ingestion/`, `tools/`,
 `config/`, `domain/` (le « cœur ») ne dépendent **jamais** de FastAPI, de
-SQLAlchemy côté logique métier, ni de Streamlit. `api/` et `workers/`
+SQLAlchemy côté logique métier, ni du frontend. `api/` et `workers/`
 consomment le cœur via des **ports** (protocoles Python) ; `persistence/`
-implémente ces ports pour PostgreSQL. Le frontend ne parle qu'HTTP/SSE à l'API
-— aucun import du cœur métier côté Streamlit.
+implémente ces ports pour PostgreSQL. Le frontend (SPA Vue) ne parle qu'HTTP/SSE
+à l'API, authentifié par jeton JWT — aucun import du cœur métier côté frontend.
 
 ## 2. Composants
 
@@ -45,9 +45,9 @@ implémente ces ports pour PostgreSQL. Le frontend ne parle qu'HTTP/SSE à l'API
 | `tools/` | calculatrice SymPy en sandbox | rien |
 | `agent/` | frustration, hint_strategy, guardrails, LLM+fallback, graphe LangGraph, `TutorAgent` | `vectorstore`, `tools`, `domain` |
 | `persistence/` | modèles ORM, repositories implémentant les ports de `agent/ports.py` | `agent.ports` (interfaces), SQLAlchemy async |
-| `api/` | routes FastAPI, dépendances (tenant/session), streaming SSE, lifespan | `agent`, `persistence`, `vectorstore` |
+| `api/` | routes FastAPI, auth JWT (`security.py`, `routes/auth.py`), dépendances (identité/tenant/session), streaming SSE, lifespan | `agent`, `persistence`, `vectorstore` |
 | `workers/` | worker ARQ (ingestion asynchrone) | `ingestion`, `vectorstore`, `persistence` |
-| `agent-tuteur-frontend/` | client Streamlit (HTTP/SSE uniquement) | — (aucun import du cœur) |
+| `agent-tuteur-web/` | frontend Vue 3 (SPA élève + admin, HTTP/SSE + JWT) | — (aucun import du cœur) |
 
 ## 3. Flux
 
@@ -131,7 +131,7 @@ c'est la configuration recommandée dès qu'un worker séparé est utilisé.
 
 - **Cœur métier** (`agent/`, `vectorstore/`, `ingestion/`, `tools/`) : aucune
   dépendance à FastAPI, SQLAlchemy (hormis les *protocoles* de `agent/ports.py`,
-  qui ne sont pas couplés à une implémentation), ou Streamlit. Testable
+  qui ne sont pas couplés à une implémentation), ni au frontend. Testable
   entièrement hors-ligne (mock LLM, store in-memory, SQLite pour les
   repositories).
 - **`agent/ports.py`** : interfaces (`StudentMemoryPort`, `AuditLogPort`) —
@@ -145,8 +145,8 @@ c'est la configuration recommandée dès qu'un worker séparé est utilisé.
   délègue tout à `TutorAgent`/`Indexer`/les repositories.
 - **`workers/`** : même remarque — le worker ne fait qu'invoquer le pipeline
   d'ingestion du cœur.
-- **`agent-tuteur-frontend/`** : aucun accès direct au cœur, à la base ou au
-  vectorstore. Seul `services/api_client.py` communique avec l'API (HTTP/SSE).
+- **`agent-tuteur-web/`** : aucun accès direct au cœur, à la base ou au
+  vectorstore. Seul `src/services/api.js` communique avec l'API (HTTP/SSE + JWT).
 
 ## 5. Mapping taxonomie curriculaire
 
@@ -171,10 +171,12 @@ competence, examen_associe, type_chunk, source_document`.
 
 ## 6. Isolation multi-tenant
 
-`tenant_id` figure sur les 6 tables Postgres (y compris `messages`/`feedback`,
-dénormalisé depuis leur parent — écart volontaire par rapport à un schéma qui
-ne l'aurait mis que sur les tables racines, pour simplifier le filtrage et les
-policies RLS sans jointure). Défense en profondeur à deux niveaux :
+`tenant_id` figure sur les 6 tables **métier** Postgres (`progress`, `audit_log`,
+`conversations`, `messages`, `feedback`, `documents` — y compris `messages`/
+`feedback`, dénormalisé depuis leur parent, écart volontaire pour simplifier le
+filtrage et les policies RLS sans jointure). La table `users` (7ᵉ table, §7)
+porte aussi `tenant_id` mais reste **hors RLS**. Défense en profondeur à deux
+niveaux :
 
 1. **Applicatif** : chaque méthode de repository filtre explicitement par
    `tenant_id` (jamais de requête sans ce filtre).
@@ -185,5 +187,30 @@ policies RLS sans jointure). Défense en profondeur à deux niveaux :
    **non-superuser** (`NOSUPERUSER NOBYPASSRLS`) — un superuser Postgres
    contourne toujours RLS. Voir `agent-tuteur-deploy/postgres-init/01-app-role.sh`.
 
-Le tenant est lu depuis l'en-tête `X-Tenant-Id` (défaut `settings.default_tenant`) ;
-l'authentification JWT complète est différée (cf. ADR).
+Le tenant n'est plus déclaratif : il est **prouvé par le jeton JWT** (§7),
+`get_tenant_id` le dérive du `Principal` décodé. Il n'y a plus d'en-tête
+`X-Tenant-Id`.
+
+## 7. Authentification et rôles
+
+L'API exige un jeton JWT `Bearer` sur toutes les routes métier (`/health` reste
+public). Le flux :
+
+- **Comptes** : table `users` (migration `0005_add_users`), **hors RLS** car le
+  login recherche l'utilisateur par email *avant* de connaître le tenant. Email
+  unique **global** ; rôle `admin` | `student` ; `student_id` relie un compte
+  élève à l'identifiant utilisé par le cœur (progression, conversations, audit).
+- **`api/security.py`** : hachage bcrypt des mots de passe, signature/décodage
+  JWT (HS256, `JWT_SECRET`), dataclass `Principal` (user_id, tenant_id, role,
+  email, student_id).
+- **`api/routes/auth.py`** : `POST /api/auth/login` (émet le jeton), `GET
+  /api/auth/me` (restaure la session), `POST|GET /api/auth/users` (admin).
+- **`api/dependencies.py`** : `get_current_user` (décode le `Bearer` → 401 si
+  invalide), `get_tenant_id` (dérivé du jeton), `require_admin` (403 sinon),
+  `get_optional_user` (pour `/health` public).
+- **Autorisation** : les routes de l'espace admin (`documents`, `search`,
+  `logs`) exigent `require_admin` ; `chat`/`conversations`/`progression`
+  cloisonnent chaque élève à sa propre identité (dérivée du jeton, jamais du
+  corps de requête).
+- **Amorçage** : aucun compte par défaut. Premier admin via
+  `scripts/create_user.py` (ou le profil `seed` du docker-compose).

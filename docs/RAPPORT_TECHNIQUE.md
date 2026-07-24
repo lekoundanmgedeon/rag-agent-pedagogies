@@ -50,10 +50,10 @@ Quatre différenciateurs guident les choix techniques qui suivent :
 ## 2. Vue d'ensemble de l'architecture
 
 ```
-┌─────────────────────┐        ┌──────────────────────────────────────┐
-│  agent-tuteur-       │  HTTP  │  agent-tuteur-api                    │
-│  frontend             │◄──────►│  ┌────────────────────────────────┐ │
-│  (Streamlit)          │  SSE   │  │ api/  (FastAPI, routes, deps)  │ │
+┌─────────────────────┐  HTTP  ┌──────────────────────────────────────┐
+│  agent-tuteur-web    │  +JWT  │  agent-tuteur-api                    │
+│  (Vue 3 SPA :        │◄──────►│  ┌────────────────────────────────┐ │
+│   élève + admin)     │  SSE   │  │ api/  (FastAPI, routes, deps)  │ │
 └─────────────────────┘        │  └───────────────┬────────────────┘ │
                                  │                  │                  │
                                  │  ┌───────────────▼────────────────┐ │
@@ -76,7 +76,7 @@ Quatre différenciateurs guident les choix techniques qui suivent :
 
 Le principe qui gouverne tout : le **cœur métier** (`agent/`, `vectorstore/`,
 `ingestion/`, `tools/`, `config/`, `domain/`) ne dépend jamais de FastAPI, de
-SQLAlchemy côté logique, ni de Streamlit. C'est une architecture **ports &
+SQLAlchemy côté logique, ni du frontend. C'est une architecture **ports &
 adaptateurs** (hexagonale) : le cœur définit des interfaces (`agent/ports.py`),
 `persistence/` les implémente pour Postgres, `api/` et `workers/` orchestrent
 le cœur pour le web et la queue. Un test du cœur ne nécessite jamais de lancer
@@ -91,8 +91,9 @@ d'y injecter la logique d'indice/frustration inline. Le coût de la séparation
 la politique pédagogique — la partie la plus susceptible d'évoluer avec les
 retours enseignants) reste testable en quelques millisecondes sans
 infrastructure, et n'importe quelle pièce périphérique (Qdrant → pgvector,
-FastAPI → autre chose, Streamlit → React) est remplaçable sans toucher au
-raisonnement pédagogique. Sur un projet destiné à itérer sur la pédagogie
+FastAPI → autre chose, frontend → autre framework) est remplaçable sans toucher
+au raisonnement pédagogique. Le remplacement du frontend Streamlit initial par
+un SPA Vue 3 (sans toucher au cœur) a d'ailleurs validé ce compromis en pratique. Sur un projet destiné à itérer sur la pédagogie
 plus que sur l'infrastructure, ce compromis a semblé justifié.
 
 ---
@@ -116,37 +117,38 @@ rag-agent-pedagogie/
 │   ├── tests/                     Miroir de la structure src/ (unit + intégration)
 │   ├── corpus/                    5 documents d'exemple (format pivot, annotés)
 │   ├── scripts/demo.py            Démo 100% hors-ligne (mock + in-memory)
+│   ├── scripts/create_user.py     Amorçage d'un compte (admin/élève)
 │   ├── Dockerfile, pyproject.toml, requirements.txt, .env.example
 │
-├── agent-tuteur-frontend/       Client Streamlit — AUCUN accès direct au cœur
-│   ├── streamlit_app.py          Page Chat (accueil)
-│   ├── pages/                    Upload, Progression
-│   ├── services/api_client.py    Seul point de contact avec le backend (HTTP/SSE)
-│   ├── Dockerfile, requirements.txt, .env.example
+├── agent-tuteur-web/            Frontend Vue 3 (SPA) — AUCUN accès direct au cœur
+│   ├── src/views/                Espace élève (Chat, Progression) + admin/ (Documents, Recherche, Logs, Comptes)
+│   ├── src/stores/               Pinia (auth, chat)
+│   ├── src/services/api.js       Seul point de contact avec le backend (HTTP/SSE + JWT)
+│   ├── Dockerfile, nginx.conf, package.json, vite.config.js, .env.example
 │
 ├── agent-tuteur-deploy/          Orchestration
-│   ├── docker-compose.dev.yml    Postgres+Redis+Qdrant+api+worker+frontend
+│   ├── docker-compose.dev.yml    Postgres+Redis+Qdrant+api+worker+web
 │   ├── docker-compose.prod.yml   Secrets via .env.prod, nginx en frontal
-│   ├── nginx/nginx.conf           SSL, rate limiting, en-têtes SSE/WebSocket
+│   ├── nginx/nginx.conf           SSL, rate limiting, en-têtes SSE
 │   ├── postgres-init/             Rôle applicatif non-superuser (condition RLS)
 │   └── scripts/                   setup.sh, deploy.sh, backup.sh
 │
 └── docs/
     ├── architecture.md            Composants, flux, frontières, mapping taxonomie
     ├── api.md                     Chaque endpoint (requête/réponse/SSE)
-    ├── adr/0001…0008               8 décisions d'architecture (format court)
+    ├── adr/0001…0009               9 décisions d'architecture (format court)
     ├── migration.md                Méthode d'import de données antérieures
     └── RAPPORT_TECHNIQUE.md        Ce document
 ```
 
 **Pourquoi trois sous-projets séparés (et pas un monorepo Python unique avec
 un seul `pyproject.toml`).** Chacun a un cycle de déploiement et des
-dépendances propres : le frontend n'a besoin ni de SQLAlchemy ni de LangGraph,
-l'API n'a besoin ni de Streamlit. Séparer les `requirements.txt` et
-`Dockerfile` évite qu'une image de déploiement embarque des dépendances
-inutiles (poids de l'image, surface d'attaque), et permet de scaler l'API et
-le frontend indépendamment (`docker compose up --scale worker=3` par exemple,
-sans toucher au frontend).
+dépendances propres : le frontend est un projet Node/npm (aucun SQLAlchemy ni
+LangGraph), l'API un projet Python (aucune dépendance frontend). Séparer les
+gestionnaires de dépendances et `Dockerfile` évite qu'une image de déploiement
+embarque des dépendances inutiles (poids de l'image, surface d'attaque), et
+permet de scaler l'API et le frontend indépendamment (`docker compose up
+--scale worker=3` par exemple, sans toucher au frontend).
 
 ---
 
@@ -220,17 +222,20 @@ FastAPI (même processus) — le même code de pipeline est appelé dans les deu
 cas, seul l'exécuteur change. Ce n'est pas un filet de sécurité théorique : il
 a été testé en coupant Redis délibérément.
 
-### Streamlit pour le frontend
+### Vue 3 (SPA) pour le frontend
 
-Le frontend est un **client pur** de l'API (aucun import du cœur métier). Pour
-un produit dont l'essentiel de la valeur est côté agent/pédagogie, Streamlit
-permet une interface fonctionnelle (chat streamé, upload, tableaux de
-progression) sans investir dans une SPA React/Next.js à ce stade. Le compromis
-assumé : Streamlit recharge (rerun) tout le script à chaque interaction, ce
-qui impose des contournements (`st.session_state`, `st.rerun()` explicite
-après le streaming) plutôt qu'un modèle de composants réactifs natif — acceptable
-pour un frontend de pilotage/démonstration, à reconsidérer si l'produit vise
-un usage grand public à fort trafic.
+Le frontend est un **client pur** de l'API (aucun import du cœur métier). Le
+premier jet utilisait Streamlit — rapide à écrire pour une démo de pilotage,
+mais son modèle « rerun tout le script à chaque interaction » (contournements
+`st.session_state`/`st.rerun()`, pas de composants réactifs natifs, rendu LaTeX
+qui fuyait) devenait limitant pour un produit destiné aux élèves. Il a été
+remplacé par un **SPA Vue 3** (Vite, Pinia, vue-router) offrant deux espaces
+distincts (élève / administration), un thème clair-sombre, un rendu LaTeX robuste
+(KaTeX), et un modèle réactif natif. Le compromis assumé : une SPA impose une
+étape de build (Node/npm) et une gestion explicite de l'état/routing/auth côté
+client — justifié dès lors que l'interface devient un livrable à part entière et
+non un simple tableau de bord. Le cœur métier n'a pas été touché lors de ce
+remplacement (validation concrète de l'architecture ports & adaptateurs).
 
 ### SymPy en sandbox (pas un appel LLM pour le calcul)
 
@@ -292,12 +297,11 @@ mérite d'être explicite pour quiconque retouche ce code.
 qu'un seul client pour l'instant ?* Parce que le retrofit du multi-tenant sur
 un schéma déjà peuplé est un projet à part entière (migration de données,
 fenêtre de risque de fuite inter-tenant). Le coût de l'ajouter dès la première
-migration est faible ; le coût de l'ajouter après est élevé. Ce qui n'a **pas**
-été fait en contrepartie, et qu'il faut avoir en tête : l'en-tête `X-Tenant-Id`
-n'est aujourd'hui pas authentifié — n'importe quel client peut prétendre
-appartenir à n'importe quel tenant. Acceptable pour un pilote interne,
-bloquant pour une exposition publique multi-institution sans couche JWT
-devant l'API (voir §9).
+migration est faible ; le coût de l'ajouter après est élevé. Le tenant n'est
+plus déclaratif : depuis l'ajout de l'authentification JWT (voir §8 et
+`docs/architecture.md` §7), il est **prouvé par le jeton** (`get_tenant_id` le
+dérive du `Principal` décodé), et un client ne peut plus prétendre appartenir à
+un tenant arbitraire. L'ancien en-tête `X-Tenant-Id` a été retiré.
 
 ### Row Level Security + rôle non-superuser
 
@@ -424,9 +428,12 @@ que **la revue de code et les tests unitaires ne remplacent pas un vrai
 - **Rate limiting à deux niveaux** : slowapi côté application (`/api/chat`,
   `/api/upload`) et nginx en frontal en production (défense en profondeur,
   utile si l'application est contournée ou si nginx sert plusieurs backends).
-- **Gap assumé** : pas de JWT/authentification utilisateur complète — le
-  tenant est un en-tête non authentifié. Voir §9 et
-  [ADR 0006](adr/0006-tenant-id-des-le-depart.md).
+- **Authentification JWT + rôles** : toutes les routes métier exigent un jeton
+  `Bearer` (bcrypt + JWT HS256) ; le tenant et l'identité élève sont **prouvés
+  par le jeton**, plus par un en-tête déclaratif. Les routes admin sont
+  protégées par rôle (`require_admin`), les élèves cloisonnés à leur propre
+  identité. Voir `docs/architecture.md` §7. Gaps résiduels (§9) : pas de refresh
+  token ni de réinitialisation de mot de passe (jeton unique, expiration 7 j).
 
 ---
 
@@ -438,17 +445,18 @@ Listées sans les minimiser — un rapport technique honnête doit les nommer :
 |---|---|---|
 | Vectorstore in-memory non partagé entre processus | Un document ingéré par le worker n'est pas visible en recherche côté API si `VECTOR_BACKEND=memory` | Utiliser `VECTOR_BACKEND=qdrant` (défaut de `docker-compose.dev.yml`) dès qu'un worker séparé tourne — validé en conditions réelles |
 | Client Qdrant synchrone (`qdrant_client.QdrantClient`, pas `AsyncQdrantClient`) | Bloquerait la boucle événementielle FastAPI le temps d'un appel réseau si Qdrant est utilisé en production à fort trafic | Non corrigé — acceptable en usage pilote, à corriger avant montée en charge |
-| Pas d'authentification JWT | `X-Tenant-Id` non authentifié, usurpable par tout client | Acceptable pour un déploiement pilote/interne uniquement |
+| Auth sans refresh token ni reset mot de passe | Un jeton expiré (7 j) impose de se reconnecter ; pas de flux « mot de passe oublié » en self-service | Régénération/réinitialisation par un admin (`/api/auth/users`) — suffisant pour un pilote |
 | Pas de stockage d'objets (fichiers originaux) | `/reindex` exige de refournir le fichier ; pas d'archive des documents sources | Documenté dans `docs/api.md` et l'ADR correspondant |
-| Rendu Streamlit non vérifié en navigateur | Le frontend a été validé par compilation/imports et par la robustesse de l'API qu'il consomme, mais pas par une capture d'écran réelle | Bibliothèques système manquantes dans l'environnement de développement (pas d'accès root) — à revalider dès qu'un environnement avec navigateur est disponible |
+| Rendu visuel du frontend web non capturé | Le SPA Vue a été validé par le build, par un test unitaire du rendu LaTeX, et par la vérification end-to-end du contrat API qu'il consomme (login → SSE → gating), mais pas par une capture d'écran navigateur pilotée | À revalider visuellement dans un navigateur ; le contrat backend, lui, est couvert par les tests |
 | Statut d'ingestion exposé par sondage (pas d'événements fins) | `/api/documents/{id}/status` sonde la base toutes les 500 ms plutôt que de relayer des événements extract/normalize/chunk/embed publiés par le worker | Contrat SSE observable stable, amélioration possible sans le casser |
 
 ---
 
 ## 10. Prochaines étapes
 
-- **Authentification JWT** devant l'API, pour remplacer l'en-tête `X-Tenant-Id`
-  non authentifié — condition avant toute exposition multi-institution réelle.
+- ~~**Authentification JWT** devant l'API~~ — **fait** : login/JWT + rôles
+  admin/élève, tenant prouvé par le jeton (§7-§8, `docs/architecture.md` §7).
+  Reste à envisager : refresh token, réinitialisation de mot de passe.
 - **Client Qdrant asynchrone** (`AsyncQdrantClient`) si le trafic justifie de
   lever la limitation actuelle.
 - **BGE-M3 réel** en remplacement de l'embedder léger déterministe, une fois la

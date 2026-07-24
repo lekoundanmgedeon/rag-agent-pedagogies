@@ -1,7 +1,13 @@
 # État de reprise — Agent Tuteur Sénégal
 
-*Dernière mise à jour : 2026-07-10. Point de reprise pour une nouvelle session
+*Dernière mise à jour : 2026-07-24. Point de reprise pour une nouvelle session
 (humaine ou Claude) — pas une doc de référence finale (voir index ci-dessous).*
+
+> **Tournant projet (2026-07-24)** : le frontend Streamlit est **abandonné** au
+> profit d'un frontend **Vue 3** (`agent-tuteur-web/`, espaces élève + admin), et
+> l'API impose désormais une **authentification JWT + rôles** (bascule dure, plus
+> d'en-tête `X-Tenant-Id`). Détail : `docs/architecture.md` §7 et
+> `docs/GUIDE_LANCEMENT.md`. Les mentions « Streamlit » plus bas sont historiques.
 
 ## Où trouver quoi (ne pas dupliquer ici)
 
@@ -19,12 +25,14 @@
 
 Cœur RAG + agent LangGraph (indice 0-4, frustration, garde-fous, fallback LLM
 Mistral→Ollama→Mock) + persistance PostgreSQL (RLS) + API FastAPI (SSE) +
-ingestion asynchrone ARQ + frontend Streamlit + déploiement Docker Compose +
+ingestion asynchrone ARQ + frontend web + déploiement Docker Compose +
 documentation complète. Détail exhaustif : `docs/RAPPORT_TECHNIQUE.md`.
 
 **Ajouté après la clôture initiale des 8 étapes** :
+- **Authentification JWT + rôles** (admin/élève) et **frontend Vue 3**
+  (`agent-tuteur-web/`) remplaçant Streamlit — voir `docs/architecture.md` §7.
 - Logging JSON structuré (`agent_tuteur/observability.py`) + trace
-  d'orchestration nœud-par-nœud persistée et visible dans Streamlit (page Logs).
+  d'orchestration nœud-par-nœud persistée et visible dans l'espace admin (page Logs).
 - Détection des documents « orphelins » : un document marqué `indexed` dont les
   vecteurs ont disparu du vectorstore (ex. après un changement de
   `VECTOR_BACKEND`) est maintenant détecté (`POST /api/documents/verify-all` +
