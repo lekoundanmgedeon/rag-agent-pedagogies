@@ -13,9 +13,41 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    role: str
+    tenant_id: str
+    student_id: str | None = None
+    display_name: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+class CreateUserRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=6, max_length=256)
+    role: Literal["admin", "student"] = "student"
+    student_id: str | None = Field(default=None, max_length=128)
+    display_name: str | None = Field(default=None, max_length=128)
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
-    student_id: str = Field(min_length=1, max_length=128)
+    #: Optionnel : ignoré pour un élève (dérivé de son jeton). Un admin peut le
+    #: fournir pour dialoguer au nom d'un élève donné.
+    student_id: str | None = Field(default=None, max_length=128)
     conversation_id: str | None = None
     curriculum_context: dict[str, str] = Field(default_factory=dict)
 

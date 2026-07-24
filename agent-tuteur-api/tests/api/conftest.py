@@ -4,18 +4,27 @@ Comme pour ``tests/persistence``, ces tests exigent ``TEST_DATABASE_URL``
 (skip automatique sinon). ``LLM_BACKEND=mock`` force une chaîne déterministe
 sans appel réseau réel ; ``VECTOR_BACKEND=memory`` évite toute dépendance à un
 serveur Qdrant — le corpus d'exemple est auto-ingéré par le lifespan.
+
+**Authentification.** Toutes les routes métier exigent désormais un JWT ``Bearer``.
+``get_current_user`` se contente de *décoder* le jeton (aucune lecture en base,
+sauf ``/auth/me`` et ``/auth/login``), donc la plupart des tests forgent un jeton
+signé valide via ``auth_header`` sans seed. Les fixtures ``admin_headers`` /
+``student_headers`` couvrent les cas courants ; ``seed_user`` crée un vrai compte
+en base pour les tests de login.
 """
 
 from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Awaitable, Callable
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from agent_tuteur.api.rate_limit import limiter
+from agent_tuteur.api.security import Principal, create_access_token, hash_password
 from agent_tuteur.config.settings import get_settings
 
 
@@ -54,3 +63,74 @@ async def api_client(monkeypatch):
 def tenant_id() -> str:
     """Tenant unique par test : évite toute interférence de données dans Postgres partagé."""
     return f"test_{uuid.uuid4().hex[:10]}"
+
+
+# ── Authentification : forge de jetons signés valides (sans seed) ────────────
+
+
+def auth_header(
+    *,
+    tenant_id: str,
+    role: str = "admin",
+    student_id: str | None = None,
+    user_id: str | None = None,
+    email: str | None = None,
+) -> dict[str, str]:
+    """En-tête ``Authorization: Bearer`` pour un principal forgé.
+
+    Le jeton est signé avec le ``jwt_secret`` courant : ``get_current_user`` le
+    décode sans consulter la base, donc aucun compte n'a besoin d'exister.
+    """
+    principal = Principal(
+        user_id=user_id or f"user_{uuid.uuid4().hex[:8]}",
+        tenant_id=tenant_id,
+        role=role,
+        email=email or "test@example.com",
+        student_id=student_id,
+    )
+    return {"Authorization": f"Bearer {create_access_token(principal)}"}
+
+
+@pytest.fixture
+def make_headers() -> Callable[..., dict[str, str]]:
+    """Fabrique d'en-têtes d'auth (ex. pour un second tenant/élève dans un test)."""
+    return auth_header
+
+
+@pytest.fixture
+def admin_headers(tenant_id: str) -> dict[str, str]:
+    return auth_header(tenant_id=tenant_id, role="admin")
+
+
+@pytest.fixture
+def student_headers(tenant_id: str) -> dict[str, str]:
+    return auth_header(tenant_id=tenant_id, role="student", student_id="eleve1")
+
+
+@pytest.fixture
+def seed_user(api_client) -> Callable[..., Awaitable]:
+    """Crée un vrai compte en base (pour les tests de login/me).
+
+    Dépend de ``api_client`` pour que l'engine soit initialisé (lifespan actif).
+    """
+    from agent_tuteur.persistence.db import session_scope
+    from agent_tuteur.persistence.repositories import UserRepository
+
+    async def _seed(
+        *,
+        email: str,
+        password: str,
+        tenant_id: str,
+        role: str = "admin",
+        student_id: str | None = None,
+    ):
+        async with session_scope(None) as session:
+            return await UserRepository(session).create(
+                tenant_id=tenant_id,
+                email=email,
+                password_hash=hash_password(password),
+                role=role,
+                student_id=student_id,
+            )
+
+    return _seed

@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 25
     default_tenant: str = "default"
     jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_hours: int = 168  # 7 jours — durée de vie du jeton de session
     cors_origins: str = "*"  # liste séparée par des virgules, ou "*" (dev)
     rate_limit_chat: str = "20/minute"
     rate_limit_upload: str = "10/minute"

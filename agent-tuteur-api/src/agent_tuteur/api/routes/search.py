@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from agent_tuteur.api.dependencies import get_retriever
+from agent_tuteur.api.dependencies import get_retriever, require_admin
 from agent_tuteur.api.schemas import SearchRequest, SearchResultOut
 from agent_tuteur.vectorstore.retriever import HybridRetriever
 
-router = APIRouter(prefix="/api/search", tags=["search"])
+# Recherche RAG de débogage : espace administrateur uniquement.
+router = APIRouter(prefix="/api/search", tags=["search"], dependencies=[Depends(require_admin)])
 
 
 @router.post("", response_model=list[SearchResultOut])

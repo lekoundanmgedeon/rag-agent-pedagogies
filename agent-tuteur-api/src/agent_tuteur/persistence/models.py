@@ -120,6 +120,36 @@ class Feedback(Base):
     message: Mapped[Message] = relationship(back_populates="feedback")
 
 
+class User(Base):
+    """Compte authentifiable — porte du système (login) et rôle (admin/élève).
+
+    **Hors RLS** (contrairement aux autres tables) : le login cherche l'utilisateur
+    par email *avant* de connaître le tenant, donc aucun ``app.tenant_id`` n'est
+    positionné à ce moment. L'email est donc unique **globalement** (pas par
+    tenant) pour que la recherche au login soit sans ambiguïté. Le ``tenant_id``
+    reste porté par la ligne : il est injecté dans le JWT après login et sert de
+    contexte à toutes les requêtes ultérieures.
+
+    ``student_id`` relie un compte élève à l'identifiant déjà utilisé partout dans
+    le cœur (progression, conversations, audit) ; ``None`` pour un admin.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('admin', 'student')", name="ck_users_role"),
+        Index("ix_users_tenant", "tenant_id"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="student")
+    student_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (Index("ix_documents_tenant_status", "tenant_id", "status"),)

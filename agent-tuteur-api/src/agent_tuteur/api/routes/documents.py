@@ -29,7 +29,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent_tuteur.api.dependencies import document_repo, get_indexer, get_session, get_tenant_id
+from agent_tuteur.api.dependencies import (
+    document_repo,
+    get_indexer,
+    get_session,
+    get_tenant_id,
+    require_admin,
+)
 from agent_tuteur.api.rate_limit import limiter
 from agent_tuteur.api.schemas import (
     DocumentConsistencyOut,
@@ -49,7 +55,8 @@ from agent_tuteur.persistence.models import Document
 from agent_tuteur.persistence.repositories import DocumentRepository
 from agent_tuteur.vectorstore.indexer import Indexer
 
-router = APIRouter(prefix="/api/documents", tags=["documents"])
+# Espace administrateur : toutes les routes documents exigent le rôle admin.
+router = APIRouter(prefix="/api/documents", tags=["documents"], dependencies=[Depends(require_admin)])
 _logger = get_logger("agent_tuteur.api.routes.documents")
 
 

@@ -28,9 +28,10 @@ from agent_tuteur.agent.frustration import SessionState
 from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.agent.guardrails import PromptInjectionError, sanitize
 from agent_tuteur.agent.llm.base import LLMError
-from agent_tuteur.api.dependencies import get_agent, get_tenant_id
+from agent_tuteur.api.dependencies import get_agent, get_current_user
 from agent_tuteur.api.rate_limit import limiter
 from agent_tuteur.api.schemas import ChatRequest
+from agent_tuteur.api.security import Principal
 from agent_tuteur.api.streaming import sse_event
 from agent_tuteur.config.settings import get_settings
 from agent_tuteur.observability import get_logger, log_event
@@ -71,7 +72,9 @@ def _reconstruct_course_state(past_messages: list) -> dict | None:
     return None
 
 
-async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) -> AsyncIterator[str]:
+async def _chat_stream(
+    agent: TutorAgent, payload: ChatRequest, tenant_id: str, student_id: str
+) -> AsyncIterator[str]:
     async with session_scope(tenant_id) as session:
         memory = ProgressRepository(session)
         audit = AuditLogRepository(session)
@@ -89,7 +92,7 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
             history = [{"role": m.role, "content": m.content} for m in past_messages]
             course_state = _reconstruct_course_state(past_messages)
 
-        session_state = SessionState(student_id=payload.student_id, tenant_id=tenant_id)
+        session_state = SessionState(student_id=student_id, tenant_id=tenant_id)
         # Recharge la fenêtre de répétition depuis l'historique persisté : sans ça,
         # la détection de frustration repart à zéro à chaque requête HTTP.
         session_state.recent_questions = [m["content"] for m in history if m["role"] == "user"]
@@ -136,7 +139,7 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
 
         if conversation is None:
             conversation = await conv_repo.create(
-                tenant_id, payload.student_id, title=_make_title(prepared.question)
+                tenant_id, student_id, title=_make_title(prepared.question)
             )
         conversation_id = conversation.id
 
@@ -167,12 +170,24 @@ async def _chat_stream(agent: TutorAgent, payload: ChatRequest, tenant_id: str) 
         )
 
 
+def _effective_student_id(payload: ChatRequest, principal: Principal) -> str:
+    """Élève concerné par le tour de chat.
+
+    Un élève est toujours lui-même (identité prouvée par le jeton — il ne peut pas
+    dialoguer au nom d'un autre). Un admin peut cibler un élève via ``student_id``
+    (utile pour tester/déboguer), à défaut son propre identifiant de compte.
+    """
+    if principal.role == "student":
+        return principal.student_id or principal.user_id
+    return payload.student_id or principal.user_id
+
+
 @router.post("/api/chat")
 @limiter.limit(get_settings().rate_limit_chat)
 async def chat(
     request: Request,
     payload: ChatRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    principal: Principal = Depends(get_current_user),
 ) -> StreamingResponse:
     try:
         sanitize(payload.question)
@@ -180,8 +195,9 @@ async def chat(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     agent = get_agent(request)
+    student_id = _effective_student_id(payload, principal)
     return StreamingResponse(
-        _chat_stream(agent, payload, tenant_id),
+        _chat_stream(agent, payload, principal.tenant_id, student_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -18,7 +18,15 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent_tuteur.persistence.models import AuditLog, Conversation, Document, Feedback, Message, Progress
+from agent_tuteur.persistence.models import (
+    AuditLog,
+    Conversation,
+    Document,
+    Feedback,
+    Message,
+    Progress,
+    User,
+)
 
 
 def _iso(dt: datetime) -> str:
@@ -126,6 +134,49 @@ class AuditLogRepository:
             }
             for r in rows
         ]
+
+
+class UserRepository:
+    """Accès aux comptes. **Ne filtre pas par tenant** : la table ``users`` est
+    hors RLS et l'email est unique globalement (recherche au login sans tenant).
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_email(self, email: str) -> User | None:
+        stmt = select(User).where(User.email == email.strip().lower())
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def get_by_id(self, user_id: str) -> User | None:
+        stmt = select(User).where(User.id == user_id)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def create(
+        self,
+        *,
+        tenant_id: str,
+        email: str,
+        password_hash: str,
+        role: str = "student",
+        student_id: str | None = None,
+        display_name: str | None = None,
+    ) -> User:
+        user = User(
+            tenant_id=tenant_id,
+            email=email.strip().lower(),
+            password_hash=password_hash,
+            role=role,
+            student_id=student_id,
+            display_name=display_name,
+        )
+        self._session.add(user)
+        await self._session.flush()
+        return user
+
+    async def list_for_tenant(self, tenant_id: str) -> list[User]:
+        stmt = select(User).where(User.tenant_id == tenant_id).order_by(User.created_at.desc())
+        return list((await self._session.execute(stmt)).scalars().all())
 
 
 class ConversationRepository:

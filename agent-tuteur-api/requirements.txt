@@ -26,6 +26,10 @@ uvicorn[standard]>=0.30
 slowapi>=0.1.9
 python-multipart>=0.0.9
 
+# --- Authentification (login + JWT + rôles) ---
+pyjwt>=2.8
+bcrypt>=4.1
+
 # --- Ingestion asynchrone (étape 6) ---
 arq>=0.25
 redis>=5.0
