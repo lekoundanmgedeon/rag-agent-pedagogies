@@ -93,8 +93,11 @@ export const useChatStore = defineStore('chat', {
       if (this.streaming || !question.trim()) return
       this.error = ''
       this.messages.push({ role: 'user', content: question })
-      const assistant = { role: 'assistant', content: '', trace: null, messageId: null, generation: null, feedback: 0 }
-      this.messages.push(assistant)
+      this.messages.push({ role: 'assistant', content: '', trace: null, messageId: null, generation: null, feedback: 0 })
+      // `push` stocke l'objet *brut* : il faut le relire depuis le state pour
+      // obtenir le proxy réactif. Muter la référence locale passée à `push`
+      // n'invaliderait aucun effet — la bulle resterait vide tout le stream.
+      const assistant = this.messages[this.messages.length - 1]
       this.streaming = true
 
       try {
