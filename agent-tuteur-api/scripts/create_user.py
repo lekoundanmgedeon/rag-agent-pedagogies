@@ -35,8 +35,10 @@ async def _create(args: argparse.Namespace) -> int:
         async with session_scope(None) as session:
             repo = UserRepository(session)
             if await repo.get_by_email(args.email) is not None:
-                print(f"⚠️  Un compte existe déjà avec l'email {args.email}.", file=sys.stderr)
-                return 1
+                # Idempotent : un re-run (ex. `docker compose up` répété) ne doit
+                # pas échouer si le compte a déjà été amorcé.
+                print(f"ℹ️  Le compte {args.email} existe déjà — rien à faire.")
+                return 0
             user = await repo.create(
                 tenant_id=args.tenant,
                 email=args.email,
