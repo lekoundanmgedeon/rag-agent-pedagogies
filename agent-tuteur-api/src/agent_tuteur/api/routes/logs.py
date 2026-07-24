@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from agent_tuteur.api.dependencies import get_tenant_id, message_repo
+from agent_tuteur.api.dependencies import get_tenant_id, message_repo, require_admin
 from agent_tuteur.api.schemas import ChatLogEntry
 from agent_tuteur.persistence.repositories import MessageRepository
 
-router = APIRouter(prefix="/api/logs", tags=["logs"])
+# Vue d'orchestration multi-élèves : espace administrateur uniquement.
+router = APIRouter(prefix="/api/logs", tags=["logs"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/chat", response_model=list[ChatLogEntry])
