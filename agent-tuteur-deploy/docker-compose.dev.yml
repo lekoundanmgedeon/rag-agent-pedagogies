@@ -134,6 +134,21 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  # Ingestion du corpus d'exemple via l'API (upload authentifié), pour une démo
+  # peuplée dès le premier `up`. Idempotent (saute les documents déjà présents).
+  # Attend que l'API soit prête ; ne bloque jamais le démarrage de la stack.
+  seedcorpus:
+    build: ../agent-tuteur-api
+    environment:
+      API_BASE_URL: http://api:8000
+      SEED_ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@tuteur.sn}
+      SEED_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+    command: ["python", "scripts/seed_corpus.py"]
+    depends_on:
+      createadmin:
+        condition: service_completed_successfully
+    restart: "no"
+
 volumes:
   postgres_data:
   qdrant_data:
