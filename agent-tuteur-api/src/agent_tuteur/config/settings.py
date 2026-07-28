@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     rate_limit_chat: str = "20/minute"
     rate_limit_upload: str = "10/minute"
 
+    # Répertoire du build statique du SPA Vue (`agent-tuteur-web/dist`). Vide par
+    # défaut : en dev comme en Docker Compose, c'est nginx qui sert le SPA et
+    # l'API n'expose que /api + /health. Renseigné uniquement dans l'image
+    # mono-conteneur (Dockerfile.render), où FastAPI sert aussi le frontend.
+    spa_dist_dir: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.cors_origins.strip() == "*":
