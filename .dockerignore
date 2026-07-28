@@ -1,0 +1,19 @@
+# Contexte de build racine (Dockerfile.render, qui a besoin à la fois de
+# agent-tuteur-api/ et de agent-tuteur-web/). Sans ce fichier, le contexte
+# embarquerait .venv, node_modules et .git — plusieurs centaines de Mo envoyés
+# au démon Docker à chaque build.
+
+.git
+.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+.pytest_cache
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+agent-tuteur-frontend
+lessons
+docs
