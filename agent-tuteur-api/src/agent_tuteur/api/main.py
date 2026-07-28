@@ -13,8 +13,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from arq.connections import ArqRedis, RedisSettings, create_pool
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -116,6 +117,47 @@ async def _try_create_arq_pool(redis_url: str) -> ArqRedis | None:
         return None
 
 
+def _mount_spa(app: FastAPI, dist_dir: str) -> None:
+    """Sert le build statique du SPA Vue depuis l'API elle-même.
+
+    Utilisé par l'image mono-conteneur (``Dockerfile.render``) : un seul service
+    à déployer, donc même origine pour le SPA et l'API — pas de CORS, et le flux
+    SSE de ``/api/chat`` n'est relayé par aucun proxy intermédiaire susceptible
+    de le bufferiser. En dev et en Docker Compose, ``spa_dist_dir`` est vide et
+    cette fonction ne fait rien (c'est nginx qui sert le SPA).
+
+    La route attrape-tout doit rester déclarée **après** tous les routers, sinon
+    elle masquerait les endpoints /api. Les chemins /api et /health non reconnus
+    doivent répondre 404 (erreur d'API), pas ``index.html``.
+    """
+    root = Path(dist_dir).resolve()
+    index = root / "index.html"
+    if not index.is_file():
+        log_event(_logger, "spa:dist_not_found", log_level=30, dist_dir=str(root))
+        return
+
+    @app.get("/{spa_path:path}", include_in_schema=False)
+    async def serve_spa(spa_path: str) -> FileResponse:
+        if spa_path.startswith(("api/", "health")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        if spa_path:
+            candidate = (root / spa_path).resolve()
+            # `is_relative_to` neutralise les remontées de chemin ("../..").
+            if candidate.is_file() and candidate.is_relative_to(root):
+                headers = (
+                    # Les noms des assets Vite portent un hash de contenu :
+                    # immuables, donc cachables agressivement.
+                    {"Cache-Control": "public, max-age=31536000, immutable"}
+                    if spa_path.startswith("assets/")
+                    else None
+                )
+                return FileResponse(candidate, headers=headers)
+        # Toute autre route est gérée côté client par vue-router.
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+    log_event(_logger, "spa:mounted", dist_dir=str(root))
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
@@ -146,6 +188,9 @@ def create_app() -> FastAPI:
     app.include_router(feedback.router)
     app.include_router(health.router)
     app.include_router(logs.router)
+
+    if settings.spa_dist_dir:
+        _mount_spa(app, settings.spa_dist_dir)
 
     return app
 
