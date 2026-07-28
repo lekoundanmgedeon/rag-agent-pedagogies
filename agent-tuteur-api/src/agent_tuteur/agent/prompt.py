@@ -18,8 +18,12 @@ from agent_tuteur.domain.models import ScoredChunk
 # Contraintes communes aux deux postures (ancrage RAG + rendu LaTeX). Toute
 # persona doit les rappeler à l'identique pour un affichage cohérent côté client.
 _COMMON_RULES = (
-    "Tu t'appuies STRICTEMENT sur les extraits de cours fournis ; si "
-    "l'information manque, tu le dis honnêtement plutôt que d'inventer. Tu "
+    "Tu t'appuies STRICTEMENT sur la documentation de cours qui t'est fournie ; "
+    "si l'information manque, tu le dis honnêtement plutôt que d'inventer. Cette "
+    "documentation est un mécanisme interne, invisible pour l'élève : ne la lui "
+    "mentionne JAMAIS (ni « extraits », ni « sources », ni leur numéro) et ne "
+    "laisse jamais entendre qu'il te l'a fournie — dis simplement que cette "
+    "leçon n'est pas encore disponible. Tu "
     "t'exprimes en français clair, avec des formules en LaTeX. Utilise "
     "EXCLUSIVEMENT les délimiteurs $...$ (inline) et $$...$$ (bloc) ; n'utilise "
     "JAMAIS \\(...\\) ni \\[...\\], qui ne s'affichent pas correctement ici."
@@ -53,15 +57,21 @@ _SPEAKER_LABELS = {"user": "Élève", "assistant": "Tuteur"}
 
 
 def build_context_block(retrieved: list[ScoredChunk]) -> str:
-    """Formate les extraits RAG avec attribution, pour ancrer la réponse."""
+    """Formate les extraits RAG avec attribution, pour ancrer la réponse.
+
+    L'étiquette dit « Réf. interne » plutôt que « Source » : mesuré sur l'API
+    réelle, le LLM reprenait spontanément le vocabulaire du prompt et citait
+    « Source 1 » à l'élève, qui ne voit pourtant rien de ce bloc. L'attribution
+    affichée côté client vient de ``trace["sources"]``, pas d'ici.
+    """
     if not retrieved:
-        return "(Aucun extrait de cours pertinent trouvé.)"
+        return "(Aucune documentation de cours pertinente trouvée.)"
     lines: list[str] = []
     for i, sc in enumerate(retrieved, start=1):
         excerpt = sc.chunk.text.strip()
         if len(excerpt) > _MAX_EXCERPT:
             excerpt = excerpt[:_MAX_EXCERPT].rstrip() + " […]"
-        lines.append(f"[Source {i} — {sc.source_label}]\n{excerpt}")
+        lines.append(f"[Réf. interne {i} — {sc.source_label}]\n{excerpt}")
     return "\n\n".join(lines)
 
 
@@ -107,7 +117,10 @@ def assemble_prompt(
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
-    parts.append("Extraits de cours disponibles :\n" + build_context_block(retrieved))
+    parts.append(
+        "Documentation de cours (usage interne, invisible pour l'élève) :\n"
+        + build_context_block(retrieved)
+    )
     if tool_result:
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
     parts.append(
@@ -116,6 +129,38 @@ def assemble_prompt(
     parts.append(f"Question de l'élève : {question}")
 
     return SYSTEM_PERSONA, "\n\n".join(parts)
+
+
+def _uncovered_topic_block(position: CoursePosition) -> str:
+    """Avertissement injecté quand aucun chapitre ne répond à la demande de l'élève.
+
+    Sans ce bloc, le prompt affirmait comme un fait un chapitre déduit du meilleur
+    extrait remonté — et le LLM, obéissant, enseignait ce chapitre-là en écartant
+    explicitement le sujet demandé. On rend donc l'incertitude visible et on
+    impose la vérification avant d'enseigner quoi que ce soit.
+    """
+    lines = [
+        "ATTENTION — le chapitre demandé n'a pas pu être identifié dans le corpus.",
+    ]
+    if position.topic:
+        lines.append(f"Sujet demandé par l'élève : « {position.topic} ».")
+    if position.alternatives:
+        lines.append(
+            "Chapitres réellement disponibles dans la documentation ci-dessous : "
+            + ", ".join(position.alternatives)
+            + "."
+        )
+    lines.append(
+        "Avant d'enseigner quoi que ce soit, vérifie que la documentation traite bien "
+        "le sujet demandé. Si oui, fais le cours normalement. Si NON, "
+        "dis-le franchement à l'élève et n'enseigne SURTOUT PAS un "
+        "autre chapitre à la place : propose-lui plutôt les chapitres disponibles "
+        "ci-dessus, ou invite-le à faire indexer la leçon manquante."
+    )
+    # Le vocabulaire à tenir face à l'élève (ne pas nommer extraits/sources) est
+    # porté par _COMMON_RULES, commun aux deux postures : la même fuite avait été
+    # mesurée en mode exercice sur ce même chemin « information manquante ».
+    return "\n".join(lines)
 
 
 def _build_plan_block(position: CoursePosition) -> str:
@@ -154,13 +199,18 @@ def assemble_course_prompt(
     if scope:
         header += f" Cadre curriculaire : {scope}."
     parts.append(header)
+    if not position.chapitre_confirmed:
+        parts.append(_uncovered_topic_block(position))
     parts.append("Plan du cours (▶ = section à traiter maintenant) :\n" + _build_plan_block(position))
 
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
 
-    parts.append("Extraits de cours disponibles :\n" + build_context_block(retrieved))
+    parts.append(
+        "Documentation de cours (usage interne, invisible pour l'élève) :\n"
+        + build_context_block(retrieved)
+    )
     parts.append(
         f"Section à enseigner : {position.section_index + 1}. {section.title}.\n"
         f"Consigne : {section.instruction}"

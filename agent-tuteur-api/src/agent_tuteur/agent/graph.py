@@ -42,7 +42,12 @@ from dataclasses import dataclass, field
 
 from langgraph.graph import END, START, StateGraph
 
-from agent_tuteur.agent.course_plan import CoursePosition, advance, plan_titles
+from agent_tuteur.agent.course_plan import (
+    CoursePosition,
+    advance,
+    plan_titles,
+    resolve_chapitre,
+)
 from agent_tuteur.agent.frustration import SessionState, detect_frustration
 from agent_tuteur.agent.guardrails import clamp_hint_level, moderate, sanitize
 from agent_tuteur.agent.hint_strategy import (
@@ -313,10 +318,15 @@ class TutorAgent:
         retrieved = state.get("retrieved", [])
         nav_raw = state.get("intent_nav")
         navigation = Navigation(nav_raw) if nav_raw else None
-        chapitre_fallback = _infer_chapitre(ctx, retrieved)
+        # Le chapitre est lié à la DEMANDE de l'élève, pas au meilleur extrait ;
+        # un contexte curriculaire explicite reste prioritaire (l'élève a choisi).
+        binding = resolve_chapitre(
+            state["question"], [sc.chunk.metadata.chapitre for sc in retrieved]
+        )
         position = advance(
             state.get("course_state"), navigation, state["question"],
-            chapitre_fallback=chapitre_fallback,
+            chapitre_fallback=ctx.get("chapitre"),
+            binding=binding,
         )
         section = position.section
         course_section = {
@@ -325,12 +335,23 @@ class TutorAgent:
             "section_key": section.key,
             "section_title": section.title,
             "reason": position.reason,
+            "chapitre_confirmed": position.chapitre_confirmed,
+            "alternatives": list(position.alternatives),
+            "topic": position.topic,
         }
+        # Un cours ne doit pas piocher dans les autres chapitres remontés par le
+        # RAG : on restreint les extraits au chapitre enseigné (sauf si cela ne
+        # laisse rien, auquel cas mieux vaut un contexte large que pas de contexte).
+        focused = _focus_on_chapitre(retrieved, position.chapitre)
         return {
+            "retrieved": focused,
             "course_section": course_section,
             "node_trace": [
                 {"node": "course_planner", "section": section.key,
-                 "section_index": position.section_index}
+                 "section_index": position.section_index,
+                 "chapitre": position.chapitre,
+                 "chapitre_confirmed": position.chapitre_confirmed,
+                 "n_sources_focused": len(focused)}
             ],
         }
 
@@ -343,7 +364,12 @@ class TutorAgent:
         moderation = moderate(question)
 
         position = CoursePosition(
-            chapitre=cs["chapitre"], section_index=cs["section_index"], reason=cs.get("reason", "")
+            chapitre=cs["chapitre"],
+            section_index=cs["section_index"],
+            reason=cs.get("reason", ""),
+            chapitre_confirmed=cs.get("chapitre_confirmed", True),
+            alternatives=tuple(cs.get("alternatives", ())),
+            topic=cs.get("topic", ""),
         )
         system, user_prompt = assemble_course_prompt(
             question, position, retrieved, ctx, state.get("conversation_history", []),
@@ -367,6 +393,9 @@ class TutorAgent:
                 "section_index": cs["section_index"],
                 "section_key": cs["section_key"],
                 "section_title": cs["section_title"],
+                # Faux quand la demande de l'élève n'a matché aucun chapitre du
+                # corpus : le tour suivant hérite ainsi de la posture prudente.
+                "chapitre_confirmed": cs.get("chapitre_confirmed", True),
                 "plan": plan_titles(),
             },
             "sources": _sources_payload(retrieved),
@@ -614,14 +643,19 @@ def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
     ]
 
 
-def _infer_chapitre(ctx: dict, retrieved: list[ScoredChunk]) -> str | None:
-    """Chapitre du cours : celui du contexte, sinon du meilleur extrait annoté."""
-    if ctx.get("chapitre"):
-        return ctx["chapitre"]
-    for sc in retrieved:
-        if sc.chunk.metadata.chapitre:
-            return sc.chunk.metadata.chapitre
-    return None
+def _focus_on_chapitre(
+    retrieved: list[ScoredChunk], chapitre: str | None
+) -> list[ScoredChunk]:
+    """Restreint les extraits au chapitre enseigné, si cela laisse de quoi travailler.
+
+    Une requête « nombres complexes » remonte aussi des extraits d'arithmétique :
+    les laisser dans le prompt d'un cours de complexes n'apporte que du bruit. On
+    ne filtre jamais jusqu'au vide — sans extrait, le LLM n'a plus d'ancrage du tout.
+    """
+    if not chapitre:
+        return retrieved
+    focused = [sc for sc in retrieved if sc.chunk.metadata.chapitre == chapitre]
+    return focused or retrieved
 
 
 def _competence_from_context(ctx: dict, retrieved: list[ScoredChunk]) -> str | None:
