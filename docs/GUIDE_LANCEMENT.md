@@ -33,6 +33,9 @@ les combinaisons de configuration possibles. Complète `docs/architecture.md`
 Le code applicatif (API, worker, frontend) est **identique** dans les 3 modes —
 seule la façon de lancer l'infrastructure et les processus change.
 
+Pour une **démo publique hébergée** (mono-conteneur SPA + API, sans worker ni
+Qdrant), voir [`DEPLOIEMENT_RENDER.md`](DEPLOIEMENT_RENDER.md).
+
 ---
 
 ## 2. Prérequis

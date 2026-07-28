@@ -14,6 +14,8 @@ agent-tuteur-api/       Cœur métier + API FastAPI + worker ARQ
 agent-tuteur-web/       Frontend Vue 3 (SPA élève + admin, aucun accès direct au cœur)
 agent-tuteur-deploy/    docker-compose (dev/prod), nginx, scripts
 docs/                   architecture.md, api.md, adr/, migration.md
+Dockerfile.render       Image mono-conteneur (SPA + API) pour une démo hébergée
+render.yaml             Blueprint Render correspondant
 ```
 
 ## Architecture (résumé)
@@ -30,6 +32,7 @@ Détails complets : [`docs/architecture.md`](docs/architecture.md) (composants,
 flux RAG streamé, ingestion asynchrone, isolation multi-tenant),
 [`docs/api.md`](docs/api.md) (chaque endpoint), [`docs/adr/`](docs/adr/)
 (décisions techniques), [`docs/migration.md`](docs/migration.md).
+Démo publique hébergée : [`docs/DEPLOIEMENT_RENDER.md`](docs/DEPLOIEMENT_RENDER.md).
 
 ## Prérequis
 
