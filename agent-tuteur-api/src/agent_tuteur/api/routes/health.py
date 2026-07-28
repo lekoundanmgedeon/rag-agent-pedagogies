@@ -18,10 +18,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 
-from agent_tuteur.api.dependencies import document_repo, get_tenant_id
+from agent_tuteur.api.dependencies import get_optional_user
 from agent_tuteur.api.schemas import HealthOut
+from agent_tuteur.api.security import Principal
 from agent_tuteur.config.settings import get_settings
-from agent_tuteur.persistence.db import get_engine
+from agent_tuteur.persistence.db import get_engine, session_scope
 from agent_tuteur.persistence.repositories import DocumentRepository
 
 router = APIRouter(tags=["health"])
@@ -43,8 +44,7 @@ async def _check_db() -> bool:
 @router.get("/health", response_model=HealthOut)
 async def health(
     request: Request,
-    tenant_id: str = Depends(get_tenant_id),
-    repo: DocumentRepository = Depends(document_repo),
+    principal: Principal | None = Depends(get_optional_user),
 ) -> HealthOut:
     settings = get_settings()
     db_ok = await _check_db()
@@ -64,10 +64,17 @@ async def health(
 
     redis_status = "ok" if getattr(request.app.state, "arq_pool", None) is not None else "degraded"
 
-    try:
-        orphaned_count = await repo.count_by_status(tenant_id, "orphaned")
-    except Exception:  # noqa: BLE001 — une sonde de santé ne doit jamais lever.
-        orphaned_count = 0
+    # Sonde publique de liveness : le compteur d'orphelins (par tenant) n'est
+    # renseigné que si l'appelant est authentifié — sinon on ne connaît pas le tenant.
+    orphaned_count = 0
+    if principal is not None and db_ok:
+        try:
+            async with session_scope(principal.tenant_id) as session:
+                orphaned_count = await DocumentRepository(session).count_by_status(
+                    principal.tenant_id, "orphaned"
+                )
+        except Exception:  # noqa: BLE001 — une sonde de santé ne doit jamais lever.
+            orphaned_count = 0
 
     status = "ok" if db_ok else "degraded"
     return HealthOut(

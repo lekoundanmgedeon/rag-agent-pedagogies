@@ -51,10 +51,11 @@ Si une plateforme antérieure a des données de progression élève à conserver
 ## 3. Comptes / tenants
 
 Attribuer un `tenant_id` stable à chaque école/institution important des
-données, cohérent avec celui qui sera utilisé en production (en-tête
-`X-Tenant-Id`) — un tenant mal aligné entre l'import et l'usage réel rendrait
-les données importées invisibles (RLS + filtrage applicatif les isoleraient
-silencieusement dans le mauvais tenant).
+données, cohérent avec celui porté par les comptes utilisateurs de ce tenant
+(le `tenant_id` est désormais dérivé du jeton JWT à l'usage, cf.
+[ADR 0009](adr/0009-authentification-jwt-roles.md)) — un tenant mal aligné entre
+l'import et les comptes rendrait les données importées invisibles (RLS +
+filtrage applicatif les isoleraient silencieusement dans le mauvais tenant).
 
 ## 4. Ce qui n'est délibérément pas couvert
 

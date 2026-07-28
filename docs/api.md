@@ -1,8 +1,31 @@
 # API — Agent Tuteur Sénégal
 
-Base URL par défaut : `http://localhost:8000`. Toutes les routes (sauf
-`/health`) lisent le tenant depuis l'en-tête `X-Tenant-Id` (défaut `default`).
-Authentification JWT complète différée (cf. `docs/adr/0006-tenant-id-des-le-depart.md`).
+Base URL par défaut : `http://localhost:8000`.
+
+## Authentification
+
+Toutes les routes métier exigent un jeton **JWT** dans l'en-tête
+`Authorization: Bearer <token>` (seul `/health` est public). Le tenant et
+l'identité élève sont **dérivés du jeton** — il n'y a plus d'en-tête
+`X-Tenant-Id`.
+
+- `POST /api/auth/login` — corps `{"email": "...", "password": "..."}` →
+  `{"access_token": "...", "token_type": "bearer", "user": {...}}`. `401` si
+  identifiants invalides.
+- `GET /api/auth/me` — profil du compte courant (restauration de session).
+- `POST /api/auth/users` *(admin)* — crée un compte
+  `{"email", "password", "role": "admin|student", "student_id?", "display_name?"}`.
+  `201` ; `409` si l'email existe déjà.
+- `GET /api/auth/users` *(admin)* — liste les comptes du tenant.
+
+**Rôles** : les routes de l'espace admin (`/api/documents*`, `/api/search`,
+`/api/logs*`) exigent le rôle `admin` (`403` sinon). Les routes élève
+(`/api/chat`, `/api/conversations*`, `/api/progression/*`) cloisonnent chaque
+élève à sa propre identité. Codes transverses : `401` (jeton absent/invalide/
+expiré), `403` (rôle insuffisant).
+
+Aucun compte n'existe par défaut — amorcer le premier admin avec
+`scripts/create_user.py` (ou le profil `seed` du docker-compose).
 
 ## POST /api/chat
 
@@ -15,11 +38,13 @@ génération LLM token par token.
 ```json
 {
   "question": "comment dériver un quotient de fonctions ?",
-  "student_id": "eleve1",
   "conversation_id": null,
   "curriculum_context": {"serie": "S1", "discipline": "Mathématiques"}
 }
 ```
+
+`student_id` est dérivé du jeton pour un élève (le champ du corps est ignoré) ;
+un admin peut éventuellement le fournir pour dialoguer au nom d'un élève donné.
 
 **Réponse** — `text/event-stream`, dans l'ordre :
 
