@@ -14,8 +14,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
+    # Pas d'exposition sur l'hôte : évite tout conflit avec un Postgres déjà
+    # installé sur la machine (port 5432). Les services y accèdent en interne via
+    # le nom `postgres`. Pour déboguer depuis l'hôte, ajouter un override avec
+    # `ports: ["55432:5432"]`.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tuteur"]
       interval: 5s
@@ -24,8 +26,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Pas d'exposition sur l'hôte (évite un conflit avec un Redis local sur 6379).
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -100,15 +101,53 @@ services:
       qdrant:
         condition: service_healthy
 
-  frontend:
-    build: ../agent-tuteur-frontend
-    environment:
-      API_BASE_URL: http://api:8000
-      DEFAULT_TENANT: default
+  # Frontend web (Vue 3) : sert le SPA et proxifie /api + /health vers l'API.
+  # UI accessible sur http://localhost:8080
+  web:
+    build: ../agent-tuteur-web
     ports:
-      - "8501:8501"
+      - "8080:80"
     depends_on:
       - api
+
+  # Amorçage d'un compte admin, exécuté à chaque `up` (idempotent : ne fait rien
+  # si le compte existe déjà). Sans lui, personne ne pourrait se connecter.
+  # Identifiants par défaut (dev) : admin@tuteur.sn / changeme123 — surchargeables
+  # via ADMIN_EMAIL / ADMIN_PASSWORD.
+  createadmin:
+    build: ../agent-tuteur-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tuteur_app:tuteur_app_password@postgres:5432/tuteur
+    command:
+      - python
+      - scripts/create_user.py
+      - --email
+      - ${ADMIN_EMAIL:-admin@tuteur.sn}
+      - --password
+      - ${ADMIN_PASSWORD:-changeme123}
+      - --role
+      - admin
+      - --tenant
+      - ${DEFAULT_TENANT:-default}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # Ingestion du corpus d'exemple via l'API (upload authentifié), pour une démo
+  # peuplée dès le premier `up`. Idempotent (saute les documents déjà présents).
+  # Attend que l'API soit prête ; ne bloque jamais le démarrage de la stack.
+  seedcorpus:
+    build: ../agent-tuteur-api
+    environment:
+      API_BASE_URL: http://api:8000
+      SEED_ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@tuteur.sn}
+      SEED_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+    command: ["python", "scripts/seed_corpus.py"]
+    depends_on:
+      createadmin:
+        condition: service_completed_successfully
+    restart: "no"
 
 volumes:
   postgres_data:
