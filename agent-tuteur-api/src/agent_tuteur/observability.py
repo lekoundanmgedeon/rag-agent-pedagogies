@@ -10,7 +10,7 @@ sans avoir à grep plusieurs flux.
 Ce module ne fait que du logging : il n'est pas la source de vérité de l'état
 (qui reste en base — ``messages.trace``, ``documents.log``). Les logs servent
 au diagnostic technique en temps réel ; l'état persisté sert à l'affichage
-Streamlit après coup.
+dans le frontend web après coup.
 
 **Isolation du contexte métier.** ``log_event`` place tout le contexte sous
 une unique clé (``record.ctx``) plutôt que d'utiliser ``extra=`` à plat : le

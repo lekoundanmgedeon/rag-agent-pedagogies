@@ -29,7 +29,7 @@ concurrentes, chacune avec sa propre session DB, sans état partagé entre elles
 reconstituer tout le fil d'exécution d'une question dans les logs. Le détail
 (nom du nœud, durée, sortie clé) est aussi accumulé dans ``node_trace`` et
 exposé sur ``Prepared`` — c'est ce qu'affiche l'onglet « orchestration » du
-frontend Streamlit et ce qui est persisté dans ``messages.trace``.
+frontend web et ce qui est persisté dans ``messages.trace``.
 """
 
 from __future__ import annotations

@@ -12,7 +12,7 @@ renvoyer un vrai HTTP 400 — impossible de changer le status code une fois la
 
 Observabilité : ``meta`` inclut ``trace_id``/``node_trace`` (détail nœud-par-nœud
 de l'orchestration a→e, cf. ``agent/graph.py``) — c'est ce qu'affiche l'onglet
-« orchestration » du chat Streamlit. Le ``trace`` persisté dans ``messages.trace``
+« orchestration » du chat côté web. Le ``trace`` persisté dans ``messages.trace``
 regroupe la question, le node_trace et les stats de génération, pour que la page
 Logs puisse reconstituer tout le tour sans consulter les logs bruts.
 """
@@ -144,7 +144,7 @@ async def _chat_stream(
         conversation_id = conversation.id
 
         # Trace complète persistée : question + orchestration a→e + génération —
-        # c'est ce que relit GET /api/logs/chat pour la page Logs Streamlit.
+        # c'est ce que relit GET /api/logs/chat pour la page Logs de l'admin.
         full_trace = {
             **prepared.trace,
             "question": prepared.question,

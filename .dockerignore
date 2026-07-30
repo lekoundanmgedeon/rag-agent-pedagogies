@@ -14,6 +14,5 @@
 **/.env.*
 !**/.env.example
 *.log
-agent-tuteur-frontend
 lessons
 docs
