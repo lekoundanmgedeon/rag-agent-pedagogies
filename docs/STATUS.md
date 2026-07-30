@@ -7,7 +7,10 @@
 > profit d'un frontend **Vue 3** (`agent-tuteur-web/`, espaces élève + admin), et
 > l'API impose désormais une **authentification JWT + rôles** (bascule dure, plus
 > d'en-tête `X-Tenant-Id`). Détail : `docs/architecture.md` §7 et
-> `docs/GUIDE_LANCEMENT.md`. Les mentions « Streamlit » plus bas sont historiques.
+> `docs/GUIDE_LANCEMENT.md`. Le code Streamlit (`agent-tuteur-frontend/`) a été
+> **supprimé du dépôt le 2026-07-30** — il ne pouvait plus s'authentifier (401 sur
+> toutes les routes) ; il reste récupérable dans l'historique git. Les mentions
+> « Streamlit » plus bas sont historiques.
 
 ## Où trouver quoi (ne pas dupliquer ici)
 
