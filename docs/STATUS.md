@@ -24,6 +24,9 @@
 | **Mettre en ligne sur un VPS (test d'équipe)** | [`docs/DEPLOIEMENT_TEST.md`](DEPLOIEMENT_TEST.md) |
 | ADR individuelles | [`docs/adr/`](adr/) |
 | Import de données antérieures | [`docs/migration.md`](migration.md) |
+| **Comparatif avec le dépôt `nuru-binta` (fusion)** | [`docs/COMPARATIF_ARCHITECTURES.md`](COMPARATIF_ARCHITECTURES.md) |
+| Version courte pour la réunion technique | [`docs/SYNTHESE_REUNION_TECHNIQUE.md`](SYNTHESE_REUNION_TECHNIQUE.md) |
+| Schémas et extraits de refactoring de la cible | [`docs/ARCHITECTURE_CIBLE.md`](ARCHITECTURE_CIBLE.md) |
 
 ## Ce qui est fait (étapes 1 à 8, complètes)
 
