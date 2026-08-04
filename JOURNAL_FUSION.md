@@ -177,6 +177,131 @@ recherché.
 
 ---
 
+## Module 2 : Priorité au cours dans la recherche
+
+**Le problème à résoudre.** Quand un élève demande « explique-moi les nombres
+complexes », il veut un **cours**. Mais le corpus est fait aux trois quarts de
+TD et d'annales : la recherche lui remonte donc des énoncés d'exercices. C'est
+le principal apport de NURU sur la partie recherche.
+
+### Ce qui a été gardé
+
+- **Le classement RRF d'ATS, intact.** C'est le point important : on ne
+  remplace pas la façon dont les résultats sont classés, on **range** le
+  résultat en deux tas. Aucun calcul n'est fait sur les scores.
+
+  > **RRF** (*Reciprocal Rank Fusion*) : méthode qui combine plusieurs
+  > classements en comparant les **rangs** (1er, 2e, 3e…) plutôt que les
+  > scores. On ne peut pas additionner ou pondérer ces scores : leur échelle
+  > n'a pas de signification interprétable.
+
+- **La méthode `retrieve()` existante** — inchangée. Le mode exercice continue
+  de l'utiliser telle quelle : quand l'élève bloque sur un exercice, ce sont
+  justement les énoncés et corrigés qu'on veut voir remonter en premier.
+
+### Ce qui a été retiré
+
+- **`_classify_doc_type` de NURU** — cette fonction devinait la nature d'un
+  document en cherchant des mots dans son texte, **à chaque requête**. On fait
+  le classement **une seule fois, à l'ingestion** : c'est plus rapide et surtout
+  plus stable (le même document est toujours classé pareil).
+- **Le rerangement TF-IDF de NURU** — déjà écarté par le plan : il réapprenait
+  un modèle statistique sur une quarantaine de documents à chaque question.
+
+### Ce qui a été ajouté ou modifié
+
+**1. La taxonomie sait dire ce qui est du cours** (`config/taxonomy.py`)
+
+Deux nouveaux types de morceaux (`solution` pour un corrigé, `exemple`), et
+surtout une fonction `est_chunk_de_cours(...)` qui répond à la question « ce
+morceau est-il du cours ? ».
+
+**Elle croise deux signaux, et c'est un écart assumé avec le plan.** Le
+document `ARCHITECTURE_CIBLE.md` (§3a) proposait de se fier au seul découpage
+structurel : un morceau intitulé « Chapitre… » est du cours, un morceau
+« Exercice… » ne l'est pas. Testé sur le corpus réel, **ça ne marche pas** :
+un TD sans titres explicites est découpé par une heuristique qui produit des
+« sous-notions », lesquelles passent alors pour du cours.
+
+Mesure faite sur les 2 564 morceaux issus du dossier `exercices/` :
+
+| Règle de classement | Morceaux de TD pris pour du cours |
+|---|---|
+| Découpage structurel seul (§3a du plan) | **1 922** (74 %) |
+| Règle retenue (découpage **+** nature du fichier source) | **0** (0 %) |
+
+La nature du fichier (`data/raw/exercices/…`) tranche donc en dernier ressort :
+un TD ne fournit jamais de cours principal, même quand il commence par des
+« rappels de cours ».
+
+**2. Le retriever sait chercher le cours d'abord** (`vectorstore/retriever.py`)
+
+Nouvelle méthode `retrieve_course_first()`, qui renvoie un objet
+`ResultatsPedagogiques` à trois informations : le `cours`, les `complements`
+(limités à 2 par défaut), et `a_du_cours` — un simple oui/non.
+
+Elle ratisse 4 fois plus large que nécessaire avant de séparer les deux tas :
+sans ce sur-échantillonnage, les premiers résultats étant souvent tous des
+exercices, il ne resterait aucun cours à mettre en tête.
+
+**3. L'agent avoue au lieu d'inventer** (`agent/graph.py`, `agent/prompt.py`)
+
+C'est l'apport le plus important pour l'élève. Quand `a_du_cours` est faux —
+le corpus n'a que des TD sur cette notion — une consigne est ajoutée au prompt :
+
+> *« N'extrais que les éléments de cours réellement présents. Indique clairement
+> que le cours complet n'est pas disponible. N'invente sous aucun prétexte le
+> contenu manquant. »*
+
+Un cours inventé est bien plus nuisible pour un élève qu'un « je ne l'ai pas ».
+
+**4. Le chaînon manquant du module 1 a été branché** (`ingestion/pipeline.py`)
+
+Les extracteurs de métadonnées du module 1 n'étaient appelés par personne. Ils
+sont maintenant une étape à part entière du pipeline, entre la normalisation et
+le découpage. L'ordre de priorité est explicite :
+
+1. ce qu'on **devine** (nom de fichier, dossier, en-tête) — le plus faible ;
+2. le **frontmatter** du document, s'il y en a un ;
+3. ce qui est **saisi à la main** au téléversement — fait toujours foi.
+
+Un paramètre `source_path` a été ajouté : lors d'une ingestion par lot depuis
+le disque, le dossier parent est un indice fort que le seul nom de fichier ne
+donne pas.
+
+### Vérification faite sur les données réelles
+
+Les 103 PDF ont été passés dans le **pipeline complet** (lecture, nettoyage,
+métadonnées, découpage, annotation) :
+
+| Dossier source | Morceaux « cours » | Morceaux « complément » |
+|---|---|---|
+| `cours/` | 2 943 (85 %) | 500 |
+| `exercices/` | **0** | 2 564 (100 %) |
+
+**6 007 morceaux produits, aucune erreur.** Les 500 compléments trouvés dans
+`cours/` sont les exercices d'application intégrés aux polycopiés — c'est le
+résultat attendu, pas une erreur de classement.
+
+### Tests
+
+**+18 tests** (177 → **195**, tous au vert).
+
+### Impact sur le reste du projet
+
+- Le mode cours et le mode exercice utilisent désormais **deux chemins de
+  recherche différents**. Si vous modifiez `retrieve()`, vous ne touchez que le
+  mode exercice ; pensez à `retrieve_course_first()` pour l'autre.
+- `CurriculumMetadata` a un nouveau champ, `type_document` (la nature du
+  fichier source). À ne pas confondre avec `type_chunk`, qui décrit un
+  *morceau* de ce fichier.
+- **Les documents déjà indexés doivent être ré-ingérés** pour recevoir ce
+  nouveau champ. Sans cela, ils seront tous traités comme des compléments.
+- Deux tests existants ont été ajustés : le pipeline compte une étape de plus
+  (`metadata`), et l'alias `TS1` du module 1 modifie une liste attendue.
+
+---
+
 ## ⚠️ Points à valider
 
 *Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
@@ -264,3 +389,28 @@ servir pour autre chose (par exemple étiqueter le type d'exercice), ou
 simplement l'ignorer ?
 
 ---
+
+### V4 — Le jeu d'évaluation de recherche n'existe pas (étape sautée)
+
+**À signaler franchement** : l'étape P1.4 du plan — construire 30 à 50 questions
+d'élèves réelles avec le chapitre attendu, et mesurer le `recall@5` — **n'a pas
+été faite**, parce qu'elle demande des questions d'élèves réelles que je ne peux
+pas inventer sans fausser la mesure.
+
+> **`recall@5`** : sur 5 documents remontés, la part de fois où le bon document
+> s'y trouve. C'est la mesure de base de la qualité d'une recherche.
+
+**Conséquence directe** : l'étape P2.4 (« conserver le re-ranker seulement s'il
+améliore le taux de *cours en tête* sans dégrader le `recall@5` ») n'a pas pu
+être appliquée. Ce qui est prouvé aujourd'hui :
+
+- ✅ le **classement** cours/complément est juste (mesuré : 0 faux positif sur
+  2 564 morceaux de TD) ;
+- ❌ le fait que remonter le cours en tête **améliore réellement les réponses**
+  n'est pas mesuré — c'est une hypothèse raisonnable, pas un résultat.
+
+Le plan lui-même le dit : *« sans cette mesure, tous les arbitrages RAG
+resteront des opinions invérifiables. »* C'est le point le plus important à
+programmer, et il demande une contribution humaine (un enseignant, ou les
+questions réellement posées par des élèves).
+

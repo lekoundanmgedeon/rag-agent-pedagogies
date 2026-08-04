@@ -86,6 +86,8 @@ def ingest_corpus(indexer: Indexer, corpus_dir: str | Path) -> int:
     """Ingestion + indexation de tous les .md d'un dossier corpus."""
     total = 0
     for path in sorted(Path(corpus_dir).glob("*.md")):
-        result = ingest_and_index(path.name, path.read_bytes(), indexer)
+        result = ingest_and_index(
+            path.name, path.read_bytes(), indexer, source_path=path
+        )
         total += result.n_chunks
     return total

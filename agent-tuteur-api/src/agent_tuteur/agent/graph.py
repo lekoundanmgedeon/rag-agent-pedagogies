@@ -218,9 +218,28 @@ class TutorAgent:
     @_timed_node("retrieve_context")
     async def _n_retrieve(self, state: AgentState) -> dict:
         query = _condense_retrieval_query(state["question"], state.get("conversation_history", []))
-        retrieved = self._retriever.retrieve(
-            query, state.get("curriculum_context", {}), top_k=self._top_k
-        )
+        context = state.get("curriculum_context", {})
+
+        # En mode cours, l'élève demande une explication : on cherche d'abord du
+        # cours, et on ne joint des exercices qu'en complément. En mode
+        # exercice, l'ordre du RRF convient tel quel — c'est justement les
+        # énoncés et corrigés que l'on veut voir remonter.
+        if state.get("intent") == Intent.COURS.value:
+            resultats = self._retriever.retrieve_course_first(
+                query, context, top_k=self._top_k
+            )
+            return {
+                "retrieved": resultats.tous(),
+                "has_course": resultats.a_du_cours,
+                "node_trace": [{
+                    "node": "retrieve_context",
+                    "n_sources": len(resultats.tous()),
+                    "n_course": len(resultats.cours),
+                    "has_course": resultats.a_du_cours,
+                }],
+            }
+
+        retrieved = self._retriever.retrieve(query, context, top_k=self._top_k)
         return {
             "retrieved": retrieved,
             "node_trace": [{"node": "retrieve_context", "n_sources": len(retrieved)}],
@@ -373,6 +392,7 @@ class TutorAgent:
         )
         system, user_prompt = assemble_course_prompt(
             question, position, retrieved, ctx, state.get("conversation_history", []),
+            has_course=state.get("has_course", True),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"

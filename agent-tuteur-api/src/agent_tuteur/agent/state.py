@@ -44,6 +44,10 @@ class AgentState(TypedDict, total=False):
 
     # --- Produits des nœuds a→e ---
     retrieved: list[ScoredChunk]
+    #: Mode cours uniquement : le corpus a-t-il fourni du cours, ou seulement
+    #: des TD et exercices ? Quand c'est faux, le prompt interdit explicitement
+    #: d'inventer le cours manquant (cf. ``prompt.assemble_course_prompt``).
+    has_course: bool
     frustration_score: float
     repetitions: int
     markers: int
