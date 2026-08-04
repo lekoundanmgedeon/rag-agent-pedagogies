@@ -7,7 +7,7 @@ pour éviter toute collision inter-tests.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -101,8 +101,8 @@ async def test_expired_token_is_rejected(api_client, tenant_id):
             "role": "admin",
             "email": "a@b.c",
             "student_id": None,
-            "iat": datetime.now(timezone.utc) - timedelta(hours=2),
-            "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+            "iat": datetime.now(UTC) - timedelta(hours=2),
+            "exp": datetime.now(UTC) - timedelta(hours=1),
         },
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,

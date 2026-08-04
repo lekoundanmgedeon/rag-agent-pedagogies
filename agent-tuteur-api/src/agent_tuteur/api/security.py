@@ -10,7 +10,7 @@ login dans ``api/routes/auth.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -64,7 +64,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_access_token(principal: Principal) -> str:
     """Signe un JWT portant l'identité complète (tenant + rôle + student_id)."""
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": principal.user_id,
         "tenant_id": principal.tenant_id,
@@ -115,7 +115,7 @@ def create_quiz_token(*, competence: str, correct_answer: str, explanation: str)
     V6 de JOURNAL_FUSION.md pour l'arbitrage laissé ouvert.
     """
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "competence": competence,
         "correct_answer": correct_answer,

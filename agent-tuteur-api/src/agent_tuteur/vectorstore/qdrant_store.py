@@ -83,7 +83,10 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
         from qdrant_client import models as qm
 
         points = []
-        for chunk, emb in zip(chunks, embeddings):
+        # strict=True : si l'embedder renvoie moins de vecteurs que de chunks,
+        # zip() tronquerait en silence et des morceaux ne seraient jamais
+        # indexés — panne invisible jusqu'à ce qu'un élève ne trouve rien.
+        for chunk, emb in zip(chunks, embeddings, strict=True):
             indices = list(emb.sparse.keys())
             values = [emb.sparse[i] for i in indices]
             points.append(

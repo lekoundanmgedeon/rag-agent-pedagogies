@@ -99,7 +99,7 @@ class InMemoryVectorStore(BaseVectorStore):
     def upsert(self, chunks: list[Chunk], embeddings: list[Embedding]) -> None:
         if len(chunks) != len(embeddings):
             raise ValueError("chunks et embeddings doivent avoir la même longueur")
-        for chunk, emb in zip(chunks, embeddings):
+        for chunk, emb in zip(chunks, embeddings, strict=True):
             self._records[chunk.id] = _Record(chunk=chunk, dense=emb.dense, sparse=emb.sparse)
 
     @staticmethod

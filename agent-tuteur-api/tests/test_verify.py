@@ -7,7 +7,6 @@ qui notaient la « cohérence » en comptant les mots « donc » et « ainsi » 
 
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 
-
 # --- Contrôle 1 : niveau du vocabulaire --------------------------------------
 
 

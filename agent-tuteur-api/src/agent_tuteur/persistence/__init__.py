@@ -9,15 +9,15 @@ from agent_tuteur.persistence.repositories import (
 )
 
 __all__ = [
+    "AuditLogRepository",
     "Base",
-    "init_engine",
+    "ConversationRepository",
+    "DocumentRepository",
+    "FeedbackRepository",
+    "MessageRepository",
+    "ProgressRepository",
     "get_engine",
     "get_session_factory",
+    "init_engine",
     "session_scope",
-    "ProgressRepository",
-    "AuditLogRepository",
-    "ConversationRepository",
-    "MessageRepository",
-    "FeedbackRepository",
-    "DocumentRepository",
 ]

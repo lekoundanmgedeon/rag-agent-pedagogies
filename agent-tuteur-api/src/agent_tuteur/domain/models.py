@@ -51,7 +51,7 @@ class CurriculumMetadata(BaseModel):
     chapitre_key: str | None = None
 
     @model_validator(mode="after")
-    def _enrichir(self) -> "CurriculumMetadata":
+    def _enrichir(self) -> CurriculumMetadata:
         # Aligne serie_alias[] sur les classes d'équivalence si non fourni.
         if self.serie and not self.serie_alias:
             self.serie_alias = serie_aliases(self.serie)

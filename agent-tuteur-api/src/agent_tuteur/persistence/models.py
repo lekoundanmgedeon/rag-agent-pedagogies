@@ -12,7 +12,7 @@ JSONB en production, JSON générique en test (SQLite), sans dupliquer le schém
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     CheckConstraint,
@@ -25,8 +25,8 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.types import JSON, Boolean, DateTime, Float, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON, Boolean, DateTime, Float, Uuid
 
 from agent_tuteur.persistence.db import Base
 
@@ -38,7 +38,7 @@ def _uuid() -> str:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Progress(Base):
@@ -88,7 +88,7 @@ class Conversation(Base):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
-    messages: Mapped[list["Message"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
+    messages: Mapped[list[Message]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
 
 
 class Message(Base):
@@ -107,7 +107,7 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
-    feedback: Mapped[list["Feedback"]] = relationship(back_populates="message", cascade="all, delete-orphan")
+    feedback: Mapped[list[Feedback]] = relationship(back_populates="message", cascade="all, delete-orphan")
 
 
 class Feedback(Base):

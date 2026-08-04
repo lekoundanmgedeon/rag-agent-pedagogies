@@ -59,15 +59,14 @@ class MistralLLM(BaseLLM):
     async def generate_stream(self, prompt: str, *, system: str | None = None) -> AsyncIterator[str]:
         payload = {"model": self._model, "messages": self._messages(prompt, system), "stream": True}
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                async with client.stream(
-                    "POST", _ENDPOINT, headers=self._headers(), json=payload
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        token = _parse_sse_line(line)
-                        if token is not None:
-                            yield token
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client, client.stream(
+                "POST", _ENDPOINT, headers=self._headers(), json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    token = _parse_sse_line(line)
+                    if token is not None:
+                        yield token
         except httpx.HTTPError as exc:
             raise LLMError(f"Mistral stream a échoué : {exc}") from exc
 

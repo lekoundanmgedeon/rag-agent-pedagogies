@@ -19,7 +19,7 @@ class MockLLM(BaseLLM):
     name = "mock"
 
     async def generate(self, prompt: str, *, system: str | None = None) -> str:
-        level, label = self._extract_hint(prompt)
+        _level, label = self._extract_hint(prompt)
         intro = "Voici comment je t'accompagne"
         if label:
             intro += f" (niveau « {label} »)"

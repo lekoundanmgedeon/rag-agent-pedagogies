@@ -18,7 +18,7 @@ async def redis_pool():
     settings.conn_retries = 0
     try:
         pool = await create_pool(settings)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         pytest.skip(f"Redis de test injoignable : {exc}")
     yield pool
     await pool.aclose()

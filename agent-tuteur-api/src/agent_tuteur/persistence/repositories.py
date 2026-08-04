@@ -12,7 +12,7 @@ indépendante des policies RLS (cf. ``persistence/db.py::set_tenant_context``).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -500,7 +500,7 @@ class MasteryRepository:
 
         row.attempts += 1
         row.successes += 1 if est_une_reussite(observe) else 0
-        row.last_seen = datetime.now(timezone.utc)
+        row.last_seen = datetime.now(UTC)
         if chapitre and not row.chapitre:
             row.chapitre = chapitre
         await self._session.flush()

@@ -15,7 +15,6 @@ from agent_tuteur.persistence.repositories import (
     UserRepository,
 )
 
-
 # --- Maîtrise ----------------------------------------------------------------
 
 

@@ -11,7 +11,6 @@ from agent_tuteur.domain.mastery import (
     statut_maitrise,
 )
 
-
 # --- Ramener un résultat à une note ------------------------------------------
 
 

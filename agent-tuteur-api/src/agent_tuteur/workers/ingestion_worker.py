@@ -23,7 +23,7 @@ car il est ingéré directement par le processus API à son démarrage.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from arq.connections import RedisSettings
 
@@ -72,7 +72,7 @@ async def ingest_document_task(
                       duration_ms=duration_ms, n_chunks=result.n_chunks)
             await repo.update_status(document_id, "indexed", tenant_id=tenant_id, log=steps)
             log_event(_logger, "ingestion:job_done", document_id=document_id, filename=filename, status="indexed")
-        except Exception as exc:  # noqa: BLE001 — toute erreur d'ingestion doit aboutir en 'failed'.
+        except Exception as exc:
             log_event(_logger, "ingestion:job_failed", document_id=document_id, filename=filename,
                       error=str(exc), log_level=40)
             await repo.update_status(document_id, "failed", error=str(exc), tenant_id=tenant_id, log=steps)
@@ -91,7 +91,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Point d'entrée ARQ : ``arq agent_tuteur.workers.ingestion_worker.WorkerSettings``."""
 
-    functions = [ingest_document_task]
+    functions: ClassVar[list] = [ingest_document_task]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

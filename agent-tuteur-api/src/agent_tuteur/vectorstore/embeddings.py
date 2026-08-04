@@ -122,7 +122,7 @@ class BGEM3Embedder(BaseEmbedder):
         )
         dense = np.asarray(result["dense_vecs"], dtype=np.float32)
         out: list[Embedding] = []
-        for i, text in enumerate(texts):
+        for i in range(len(texts)):
             lexical = result["lexical_weights"][i]
             sparse = {int(k): float(v) for k, v in lexical.items()}
             out.append(Embedding(dense=dense[i], sparse=sparse))

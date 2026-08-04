@@ -48,7 +48,7 @@ _logger = get_logger("agent_tuteur.api.main")
 CORPUS_DIR = Path(__file__).resolve().parents[3] / "corpus"
 
 
-def _handle_rate_limit(request, exc):  # noqa: ANN001 - signature imposée par slowapi
+def _handle_rate_limit(request, exc):
     from fastapi.responses import JSONResponse
 
     return JSONResponse(status_code=429, content={"detail": "Trop de requêtes, réessayez plus tard."})
@@ -107,7 +107,7 @@ async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:
                 orphaned_count=len(result.orphaned),
                 orphaned_files=[o.filename for o in result.orphaned],
             )
-    except Exception as exc:  # noqa: BLE001 — un contrôle de démarrage ne doit jamais bloquer l'API.
+    except Exception as exc:
         log_event(_logger, "consistency:startup_check_failed", log_level=30, error=str(exc))
 
 
@@ -116,7 +116,7 @@ async def _try_create_arq_pool(redis_url: str) -> ArqRedis | None:
     settings.conn_retries = 0  # échec immédiat si Redis est indisponible, pas de blocage au démarrage
     try:
         return await create_pool(settings)
-    except Exception:  # noqa: BLE001 — Redis absent au démarrage : mode dégradé, pas une erreur fatale.
+    except Exception:
         return None
 
 

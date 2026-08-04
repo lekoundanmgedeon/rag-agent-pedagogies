@@ -38,9 +38,10 @@ async def api_client_with_redis(monkeypatch):
     from agent_tuteur.api.main import create_app
 
     app = create_app()
-    async with app.router.lifespan_context(app):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            yield client
+    async with app.router.lifespan_context(app), AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client
 
     get_settings.cache_clear()
 
