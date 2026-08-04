@@ -19,16 +19,16 @@ RLS activée comme dans ``0002_enable_rls``, y compris ``FORCE`` : sans lui, le
 propriétaire de la table (souvent l'utilisateur applicatif) échapperait à la
 policy.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0006_pedagogical_progress"
-down_revision: Union[str, Sequence[str], None] = "0005_add_users"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "0005_add_users"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 TENANT_TABLES = (
     "concept_mastery",

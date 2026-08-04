@@ -15,15 +15,15 @@ SQLite ne sait pas modifier une contrainte en place ; le mode « batch »
 d'Alembic reconstruit la table. Sans cela, la migration ne passerait que sur
 PostgreSQL et les tests sur SQLite divergeraient de la production.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0007_extend_roles"
-down_revision: Union[str, Sequence[str], None] = "0006_pedagogical_progress"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "0006_pedagogical_progress"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 ROLES_ETENDUS = "role IN ('admin', 'teacher', 'parent', 'student')"
 ROLES_INITIAUX = "role IN ('admin', 'student')"

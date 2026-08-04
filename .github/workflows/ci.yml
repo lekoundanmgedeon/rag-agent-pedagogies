@@ -1,0 +1,105 @@
+name: CI
+
+# C'est le garde-fou qui empêche les deux moitiés du projet de re-diverger :
+# une pull request qui casse les tests ou l'analyse statique ne peut pas être
+# fusionnée. Sans cela, la fusion NURU × ATS se referait dans six mois.
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+# Une nouvelle poussée annule la vérification en cours sur la même branche :
+# inutile de payer deux exécutions pour un commit déjà remplacé.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Analyse statique (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer ruff
+        # Version bornée comme dans pyproject.toml : une nouvelle règle activée
+        # en amont ne doit pas faire échouer une PR qui n'a rien changé.
+        run: pip install "ruff>=0.6,<1"
+      - name: Vérifier
+        working-directory: agent-tuteur-api
+        run: ruff check .
+
+  tests:
+    name: Tests (avec PostgreSQL)
+    runs-on: ubuntu-latest
+
+    # Les tests d'API et de persistance exigent une vraie base : sans elle, 96
+    # tests sont silencieusement ignorés — dont tous les tests de contrôle
+    # d'accès, précisément ceux qu'on ne veut jamais voir sauter.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: fusion_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent-tuteur-api/requirements.txt
+
+      - name: Installer les dépendances
+        working-directory: agent-tuteur-api
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Appliquer les migrations
+        working-directory: agent-tuteur-api
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/fusion_ci
+        run: alembic upgrade head
+
+      - name: Lancer la suite complète
+        working-directory: agent-tuteur-api
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/fusion_ci
+        run: pytest -q
+
+      - name: Vérifier que le schéma OpenAPI se génère
+        # Le schéma est le contrat avec le frontend : s'il ne se construit plus,
+        # les types TypeScript ne peuvent plus être régénérés.
+        working-directory: agent-tuteur-api
+        run: python scripts/export_openapi.py /tmp/openapi.json
+
+  frontend:
+    name: Build du frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: agent-tuteur-web/package-lock.json
+      - name: Installer
+        working-directory: agent-tuteur-web
+        run: npm ci
+      - name: Construire
+        working-directory: agent-tuteur-web
+        run: npm run build

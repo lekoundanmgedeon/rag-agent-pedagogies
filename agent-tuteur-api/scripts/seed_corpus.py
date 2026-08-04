@@ -37,7 +37,7 @@ def _wait_api(timeout: float = 120.0) -> bool:
             resp = httpx.get(f"{API}/health", timeout=5)
             if resp.status_code == 200 and resp.json().get("db"):
                 return True
-        except Exception:  # noqa: BLE001 — l'API n'est peut-être pas encore démarrée.
+        except Exception:
             pass
         time.sleep(2)
     return False
@@ -59,7 +59,7 @@ def main() -> int:
         )
         resp.raise_for_status()
         token = resp.json()["access_token"]
-    except Exception as exc:  # noqa: BLE001 — sans admin, on n'ingère pas mais on ne bloque pas.
+    except Exception as exc:
         print(f"Login admin échoué ({exc}) — ingestion ignorée.", file=sys.stderr)
         return 0
 
@@ -67,7 +67,7 @@ def main() -> int:
     try:
         listed = httpx.get(f"{API}/api/documents", headers=headers, timeout=10).json()
         existing = {d["filename"] for d in listed}
-    except Exception:  # noqa: BLE001 — au pire on tentera d'uploader (l'API dédoublonne par contenu).
+    except Exception:
         existing = set()
 
     uploaded = 0
@@ -84,7 +84,7 @@ def main() -> int:
             resp.raise_for_status()
             uploaded += 1
             print(f"  + {path.name}")
-        except Exception as exc:  # noqa: BLE001 — on continue sur les fichiers suivants.
+        except Exception as exc:
             print(f"  ! {path.name} : {exc}", file=sys.stderr)
 
     print(f"Corpus : {uploaded} document(s) téléversé(s), {len(existing)} déjà présent(s).")

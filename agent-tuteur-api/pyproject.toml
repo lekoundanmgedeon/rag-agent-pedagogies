@@ -115,6 +115,10 @@ ignore = [
 # d'assertion qui ne sont pas toutes relues. On n'y applique pas la même
 # exigence qu'au code de production.
 "tests/**" = ["RUF012", "RUF059"]
+# Les migrations sont des **archives** : une fois appliquées en production, leur
+# contenu ne doit plus bouger. On n'y reformate donc pas une déclaration de
+# colonne pour trois caractères de trop.
+"migrations/versions/**" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
