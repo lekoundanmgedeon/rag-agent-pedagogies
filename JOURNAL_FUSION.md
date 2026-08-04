@@ -694,6 +694,111 @@ Dont, en particulier :
 
 ---
 
+## Module 6 : Gemini et chaîne de repli configurable
+
+**Objectif** : pouvoir utiliser Gemini (le modèle qu'employait NURU) **sans**
+en dépendre, et pouvoir changer de fournisseur sans toucher au code.
+
+> **Chaîne de repli** (*fallback*) : une liste de fournisseurs essayés l'un
+> après l'autre. Si le premier tombe en panne, le deuxième prend le relais, et
+> ainsi de suite. L'élève ne voit rien de tout ça.
+
+### Ce qui a été gardé
+
+- **Gemini comme fournisseur** — c'est le modèle sur lequel NURU s'appuyait, et
+  il a de bons résultats en français mathématique.
+- **Toute la mécanique de repli d'ATS** — elle n'a pas été touchée, seulement
+  étendue.
+
+### Ce qui a été retiré
+
+- **La dépendance à un fournisseur unique.** Chez NURU, si la clé Gemini
+  manquait ou si le service était en panne, l'élève recevait… **un mode
+  d'emploi de configuration d'API**. Ici, le dernier maillon est toujours le
+  simulacre : il y a toujours une réponse.
+- **Le SDK `google-generativeai`** (celui de NURU) — non porté, et c'est
+  délibéré : ce SDK est **synchrone**. Chaque génération bloquerait le serveur
+  entier pendant plusieurs secondes, pour *toutes* les requêtes en cours. Il
+  n'offre pas non plus de streaming asynchrone utilisable. On passe donc par
+  `httpx`, exactement comme le fournisseur Mistral existant.
+- **Le modèle codé en dur** (`gemini-3.1-pro-preview` dans le `generate.py` de
+  NURU) — ce fichier n'a jamais été porté ; le modèle est désormais un réglage
+  (`GEMINI_MODEL`), avec une seule source de vérité.
+
+### Ce qui a été ajouté ou modifié
+
+**1. Le fournisseur Gemini** (`agent/llm/gemini.py`)
+
+Volontairement symétrique de `mistral.py` : mêmes conventions, même gestion
+d'erreur, même style de streaming. Qui sait lire l'un sait lire l'autre.
+
+Deux particularités de Gemini ont demandé attention :
+
+- **La consigne système a son propre champ** (`systemInstruction`). La glisser
+  dans les messages comme chez Mistral la ferait passer pour une réplique de
+  l'élève.
+- **Une réponse peut être vide sans être une erreur HTTP** : quand le filtre de
+  sécurité de Google bloque tout, l'API répond `200` sans contenu. On en fait
+  une erreur — donc un basculement vers le fournisseur suivant — plutôt que de
+  renvoyer une réponse vide à l'élève.
+
+**2. La chaîne devient un réglage** (`agent/llm/router.py`, `config/settings.py`)
+
+```bash
+# .env — change le fournisseur principal sans toucher au code
+LLM_CHAIN=gemini,mistral,mock
+```
+
+C'est la réponse au point **Q2** de la synthèse, qui laissait l'arbitrage
+Gemini/Mistral en suspens : il n'y a plus d'arbitrage à faire dans le code. On
+essaie, on mesure, on change une ligne de configuration.
+
+Deux garde-fous :
+
+- **le simulacre est toujours ajouté en fin de chaîne**, même si on l'oublie
+  dans le `.env` — sans lui, une panne générale laisserait l'élève sans
+  réponse ;
+- **un nom inconnu est ignoré** plutôt que de faire échouer le démarrage : une
+  faute de frappe dans un `.env` ne doit pas empêcher le service de répondre.
+
+Sans `LLM_CHAIN`, la composition automatique reste en place et **le
+comportement existant est inchangé** (c'est testé explicitement).
+
+### Vérification faite sur la configuration réelle
+
+Les cinq configurations ont été essayées en modifiant réellement
+l'environnement, depuis un répertoire vierge :
+
+| Configuration | Chaîne obtenue |
+|---|---|
+| Aucune clé | `mock` |
+| Clé Mistral seule | `mistral → ollama → mock` |
+| Clé Gemini seule | `gemini → ollama → mock` |
+| Les deux clés | `mistral → gemini → ollama → mock` |
+| `LLM_CHAIN=gemini,mistral,mock` | `gemini → mistral → mock` |
+
+> À noter au passage : une première tentative de vérification avait donné des
+> résultats faux, parce que le fichier `.env` du projet contient déjà une clé
+> Mistral que les variables d'environnement ne remplacent pas. Si vous testez
+> des configurations, faites-le depuis un répertoire sans `.env`.
+
+Cela satisfait le **critère de sortie n° 8** du plan : *« un changement de LLM
+ne demande aucune modification de code »*.
+
+### Tests
+
+**+27 tests** (290 → **317** hors base, **413** avec PostgreSQL).
+
+### Impact sur le reste du projet
+
+- Deux nouveaux réglages : `GEMINI_API_KEY` et `GEMINI_MODEL`. Sans eux, rien
+  ne change — Gemini est simplement absent de la chaîne.
+- `LLM_CHAIN` **l'emporte** sur `LLM_BACKEND` quand les deux sont renseignés.
+- `/health` affiche la chaîne effective : c'est le moyen le plus rapide de
+  vérifier quelle configuration tourne réellement en production.
+
+---
+
 ## ⚠️ Points à valider
 
 *Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
