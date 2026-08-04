@@ -49,6 +49,17 @@ SYSTEM_PERSONA_COURSE = (
     "explicitement de passer à la section suivante (ou de poser une question)."
 )
 
+#: Posture d'évaluation : ni indices, ni exposé — on interroge.
+#: Volontairement sèche : la sortie attendue est un objet JSON, pas un discours.
+#: Les règles communes n'y figurent pas car elles portent sur la façon de
+#: s'adresser à l'élève, ce qui n'a pas de sens ici.
+SYSTEM_PERSONA_QUIZ = (
+    "Tu es un concepteur de sujets d'évaluation pour le programme scolaire "
+    "sénégalais. Tu produis des questions justes, sans ambiguïté, dont une "
+    "seule proposition est correcte. Tu réponds EXCLUSIVEMENT par l'objet JSON "
+    "demandé, sans aucun texte avant ni après, sans balise markdown."
+)
+
 _MAX_EXCERPT = 600
 #: Nombre de messages (élève + tuteur confondus) réinjectés dans le prompt.
 _MAX_HISTORY_MESSAGES = 6

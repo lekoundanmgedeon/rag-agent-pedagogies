@@ -15,6 +15,12 @@ from __future__ import annotations
 from collections import Counter
 from typing import Protocol, runtime_checkable
 
+from agent_tuteur.domain.mastery import (
+    est_une_reussite,
+    maitrise_mise_a_jour,
+    score_observe,
+)
+
 
 @runtime_checkable
 class StudentMemoryPort(Protocol):
@@ -73,3 +79,122 @@ class InMemoryAuditLog:
             for e in self._events
             if e.get("student_id") == student_id and e.get("tenant_id", "default") == tenant_id
         ]
+
+
+@runtime_checkable
+class MasteryPort(Protocol):
+    """Niveau de maîtrise par compétence (« mastery learning »).
+
+    Séparé de ``StudentMemoryPort`` à dessein : la mémoire élève enregistre des
+    *événements* (telle question a été posée avec tel niveau d'indice), la
+    maîtrise porte un *état* dérivé (cette compétence est acquise à 72 %).
+    """
+
+    async def record_attempt(
+        self,
+        *,
+        student_id: str,
+        competence: str,
+        is_correct: bool | None = None,
+        score: float | None = None,
+        chapitre: str | None = None,
+        tenant_id: str = "default",
+    ) -> dict: ...
+
+    async def list_for_student(self, student_id: str, tenant_id: str = "default") -> list[dict]: ...
+
+    async def weakest(
+        self, student_id: str, tenant_id: str = "default", limit: int = 3
+    ) -> list[dict]: ...
+
+
+@runtime_checkable
+class EvaluationPort(Protocol):
+    """Historique brut des exercices et quiz terminés."""
+
+    async def record(self, entry: dict) -> dict: ...
+    async def list_for_student(
+        self, student_id: str, tenant_id: str = "default", limit: int = 50
+    ) -> list[dict]: ...
+
+
+class InMemoryMastery:
+    """Adaptateur maîtrise en RAM (démo/tests).
+
+    Applique **les mêmes règles de calcul** que le dépôt PostgreSQL, puisque
+    toutes deux appellent ``domain/mastery.py`` : un test hors-ligne mesure donc
+    le vrai comportement, pas une approximation.
+    """
+
+    def __init__(self) -> None:
+        self._lignes: dict[tuple[str, str, str], dict] = {}
+
+    async def record_attempt(
+        self,
+        *,
+        student_id: str,
+        competence: str,
+        is_correct: bool | None = None,
+        score: float | None = None,
+        chapitre: str | None = None,
+        tenant_id: str = "default",
+    ) -> dict:
+        observe = score_observe(is_correct=is_correct, score=score)
+        cle = (tenant_id, student_id, competence)
+        ligne = self._lignes.get(cle)
+        if ligne is None:
+            ligne = {
+                "student_id": student_id,
+                "competence": competence,
+                "chapitre": chapitre,
+                "mastery_score": maitrise_mise_a_jour(None, observe),
+                "attempts": 0,
+                "successes": 0,
+            }
+            self._lignes[cle] = ligne
+        else:
+            ligne["mastery_score"] = maitrise_mise_a_jour(ligne["mastery_score"], observe)
+
+        ligne["attempts"] += 1
+        ligne["successes"] += 1 if est_une_reussite(observe) else 0
+        if chapitre and not ligne.get("chapitre"):
+            ligne["chapitre"] = chapitre
+        return dict(ligne)
+
+    async def list_for_student(self, student_id: str, tenant_id: str = "default") -> list[dict]:
+        lignes = [
+            dict(v)
+            for (t, s, _), v in self._lignes.items()
+            if s == student_id and t == tenant_id
+        ]
+        return sorted(lignes, key=lambda m: m["mastery_score"])
+
+    async def weakest(
+        self, student_id: str, tenant_id: str = "default", limit: int = 3
+    ) -> list[dict]:
+        tentees = [m for m in await self.list_for_student(student_id, tenant_id) if m["attempts"] > 0]
+        return tentees[:limit]
+
+
+class InMemoryEvaluation:
+    """Adaptateur historique d'exercices en RAM (démo/tests)."""
+
+    def __init__(self) -> None:
+        self._entrees: list[dict] = []
+
+    async def record(self, entry: dict) -> dict:
+        enregistre = dict(entry)
+        enregistre.setdefault("tenant_id", "default")
+        enregistre.setdefault("exercise_type", "exercice")
+        self._entrees.append(enregistre)
+        return enregistre
+
+    async def list_for_student(
+        self, student_id: str, tenant_id: str = "default", limit: int = 50
+    ) -> list[dict]:
+        retenues = [
+            dict(e)
+            for e in self._entrees
+            if e.get("student_id") == student_id and e.get("tenant_id", "default") == tenant_id
+        ]
+        return list(reversed(retenues))[:limit]
