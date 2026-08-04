@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Backends « réels » activables par configuration (import tardif dans le code).
+parsing = ["pymupdf>=1.24"]              # extraction PDF fidèle aux formules
 embeddings = ["FlagEmbedding>=1.2"]      # BGE-M3
 vectorstore = ["qdrant-client>=1.9"]     # Qdrant serveur
 persistence = [                            # étape 4 : PostgreSQL + Alembic

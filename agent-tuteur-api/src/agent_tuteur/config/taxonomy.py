@@ -51,8 +51,12 @@ class TypeChunk(str, Enum):
 # Chaque groupe = un même parcours désigné par des libellés interchangeables.
 # Le premier élément est la forme *canonique* retenue en interne.
 SERIE_EQUIVALENCES: list[list[str]] = [
-    # Scientifiques
-    ["S1"], ["S2"], ["S3"], ["S4"], ["S5"], ["F6"],
+    # Scientifiques. Les formes « TS1 »/« TS2 » (pour « Terminale S1 ») sont
+    # omniprésentes dans les noms de fichiers et sous la plume des élèves : ce
+    # sont des alias de la série, pas des séries distinctes. Attention à ne pas
+    # les confondre avec « T1 »/« T2 » ci-dessous, qui désignent les séries
+    # techniques (STIDD).
+    ["S1", "TS1"], ["S2", "TS2"], ["S3"], ["S4"], ["S5"], ["F6"],
     # Littéraires
     ["L1a"], ["L1b"], ["L'1"], ["L2"], ["LA"],
     # Techniques / gestion — ancienne ↔ nouvelle nomenclature

@@ -20,7 +20,9 @@ def test_process_markdown_document_annotates_chunks():
     assert result.n_chunks == 2
     for chunk in result.chunks:
         assert chunk.metadata.serie == "S1"
-        assert chunk.metadata.serie_alias == ["S1"]
+        # « TS1 » (Terminale S1) est un alias de la série S1 : c'est la forme
+        # employée dans les noms de fichiers du corpus et par les élèves.
+        assert chunk.metadata.serie_alias == ["S1", "TS1"]
         assert chunk.metadata.source_document == "cours.md"
         assert chunk.metadata.examen_associe == "Baccalauréat"
     # ids uniques et déterministes.
