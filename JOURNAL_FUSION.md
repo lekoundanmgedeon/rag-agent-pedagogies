@@ -153,6 +153,7 @@ Les 103 PDF du corpus ont donc été passés en revue :
 Le nettoyage retire jusqu'à 40 % d'un document court : c'est normal, ces
 fichiers répètent l'en-tête de l'établissement à chaque page.
 
+
 ### Tests
 
 **+32 tests** (145 → **177**, tous au vert).
