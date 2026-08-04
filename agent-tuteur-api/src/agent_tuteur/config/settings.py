@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EmbeddingBackend = Literal["light", "bge_m3"]
 VectorBackend = Literal["memory", "qdrant"]
-LLMBackend = Literal["auto", "mistral", "ollama", "mock"]
+LLMBackend = Literal["auto", "mistral", "gemini", "ollama", "mock"]
 
 
 class Settings(BaseSettings):
@@ -46,9 +46,16 @@ class Settings(BaseSettings):
     # --- LLM ---
     mistral_api_key: str = ""
     mistral_model: str = "mistral-small-latest"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:8b"
     llm_backend: LLMBackend = "auto"
+    #: Ordre explicite de la chaîne de repli, ex. ``"gemini,mistral,mock"``.
+    #: Vide = composition automatique selon les clés disponibles. Renseigné, il
+    #: l'emporte sur ``llm_backend`` : changer de fournisseur principal devient
+    #: un réglage de `.env`, sans modification de code ni redéploiement.
+    llm_chain: str = ""
 
     # --- API / tenant ---
     api_base_url: str = "http://localhost:8000"

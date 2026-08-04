@@ -53,8 +53,11 @@ def build_llm(settings: Settings | None = None, *, probe_ollama: bool = True) ->
     settings = settings or get_settings()
     return build_router(
         backend=settings.llm_backend,
+        chain=settings.llm_chain,
         mistral_api_key=settings.mistral_api_key,
         mistral_model=settings.mistral_model,
+        gemini_api_key=settings.gemini_api_key,
+        gemini_model=settings.gemini_model,
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         probe_ollama=probe_ollama,
