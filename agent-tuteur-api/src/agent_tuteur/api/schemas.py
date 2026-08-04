@@ -38,7 +38,10 @@ class TokenOut(BaseModel):
 class CreateUserRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=6, max_length=256)
-    role: Literal["admin", "student"] = "student"
+    #: Les quatre rôles acceptés en base depuis la migration 0007. Un rôle
+    #: `teacher`/`parent` ne donne par lui-même aucun accès aux données d'un
+    #: élève : c'est la table `student_links` qui l'autorise, élève par élève.
+    role: Literal["admin", "teacher", "parent", "student"] = "student"
     student_id: str | None = Field(default=None, max_length=128)
     display_name: str | None = Field(default=None, max_length=128)
 
@@ -194,3 +197,97 @@ class ChatLogEntry(BaseModel):
     student_id: str
     created_at: datetime
     trace: dict
+
+
+# --- Domaine pédagogique -----------------------------------------------------
+
+
+class QuizRequest(BaseModel):
+    #: Compétence à évaluer. Absente, elle est déduite du cadre curriculaire et
+    #: des extraits remontés par la recherche.
+    competence: str | None = Field(default=None, max_length=255)
+    quiz_type: Literal["qcm", "vrai_faux"] = "qcm"
+    curriculum_context: dict[str, str] = Field(default_factory=dict)
+
+
+class QuizChoiceOut(BaseModel):
+    id: str
+    text: str
+
+
+class QuizOut(BaseModel):
+    """Quiz remis à l'élève. **Sans la bonne réponse** — voir ``quiz_token``."""
+
+    competence: str
+    quiz_type: str
+    #: Faux quand le modèle n'a pas produit de quiz exploitable. Les autres
+    #: champs sont alors vides : l'interface doit afficher ``instructions``.
+    available: bool
+    question: str = ""
+    choices: list[QuizChoiceOut] = Field(default_factory=list)
+    #: Correction scellée et signée, à renvoyer tel quel à ``/api/quiz/answer``.
+    #: Opaque pour le client : il ne peut ni la lire ni la modifier.
+    quiz_token: str = ""
+    instructions: str = ""
+
+
+class QuizAnswerRequest(BaseModel):
+    quiz_token: str = Field(min_length=1)
+    answer: str = Field(min_length=1, max_length=64)
+    #: Optionnel : ignoré pour un élève (dérivé de son jeton d'identité).
+    student_id: str | None = Field(default=None, max_length=128)
+
+
+class MasteryEntryOut(BaseModel):
+    competence: str
+    chapitre: str | None = None
+    mastery_score: float
+    attempts: int
+    successes: int
+    #: « maitrise » | « en_cours » | « faible » | « non_commence ».
+    statut: str
+    last_seen: str | None = None
+
+
+class BadgeOut(BaseModel):
+    code: str
+    label: str
+    description: str | None = None
+    earned_at: str
+
+
+class QuizCorrectionOut(BaseModel):
+    is_correct: bool
+    correct_answer: str
+    given_answer: str
+    explanation: str
+    score: float
+    #: Nouvel état de maîtrise de la compétence après ce résultat.
+    mastery: MasteryEntryOut | None = None
+    #: Badges débloqués par ce résultat (vide la plupart du temps).
+    badges: list[BadgeOut] = Field(default_factory=list)
+
+
+class ExerciseResultOut(BaseModel):
+    id: str
+    competence: str | None = None
+    chapitre: str | None = None
+    exercise_type: str
+    difficulty: str
+    is_correct: bool | None = None
+    score: float | None = None
+    created_at: str
+
+
+class EvaluationHistoryOut(BaseModel):
+    student_id: str
+    results: list[ExerciseResultOut]
+
+
+class MasteryOut(BaseModel):
+    student_id: str
+    #: Toutes les compétences travaillées, de la moins à la mieux maîtrisée.
+    competences: list[MasteryEntryOut]
+    #: Les compétences à retravailler en priorité (jamais celles non tentées).
+    weakest: list[MasteryEntryOut]
+    badges: list[BadgeOut]
