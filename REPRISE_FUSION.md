@@ -1,4 +1,4 @@
-# Reprise du travail de fusion — état au 4 août 2026 (backend terminé)
+# Reprise du travail de fusion — état au 4 août 2026 (backend + consolidation terminés)
 
 Ce document sert à **reprendre le travail sans rien relire d'autre**. Il dit où
 en est la fusion, comment relancer l'environnement, et ce qu'il reste à faire.
@@ -10,13 +10,17 @@ en est la fusion, comment relancer l'environnement, et ce qu'il reste à faire.
 
 ## 1. Où en est-on
 
-**Branche** : `feat/fusion` — 8 commits, tout est sauvegardé, rien en attente.
+**Branche** : `feat/fusion` — 12 commits, tout est sauvegardé, rien en attente.
 La branche `main` n'a pas bougé.
 
-**Le backend de la fusion est terminé** (modules 0 à 6). Restent le frontend,
-volontairement hors périmètre, et la consolidation.
+**Le backend et la consolidation sont terminés** (modules 0 à 7). Il ne reste
+que le frontend, volontairement hors périmètre de ces sessions.
 
 ```
+1ddb6a7  M7  documentations fusionnées, journal complété
+6fee1aa  M7  intégration continue + analyse statique
+6330277  (commit intermédiaire)
+9d49ed5  (résumé final du journal)
 4664114  M6  GeminiLLM et chaîne de repli configurable
 a946e46  M5  routes quiz, évaluation et maîtrise
 4a19f94  (document de reprise)
@@ -39,8 +43,8 @@ cab7ecf  (départ, sur main)
 | M4 | Quiz, vérification, maîtrise (P3.3-P3.5) | ✅ terminé |
 | M5 | Routes API (P4) | ✅ terminé |
 | M6 | Gemini + chaîne LLM configurable (P6) | ✅ terminé |
-| — | Frontend (P5) | ⬜ hors périmètre décidé |
-| — | Consolidation, ADR, CI (P7) | ⬜ **prochaine étape** |
+| M7 | Consolidation : ADR, épinglages, ruff, CI (P7) | ✅ terminé |
+| — | Frontend (P5) | ⬜ **seul poste restant** |
 
 ### Nombre de tests
 
@@ -52,7 +56,7 @@ cab7ecf  (départ, sur main)
 | Après M3 | 235 | 286 |
 | Après M4 | 290 | 341 |
 | Après M5 | 290 | 386 |
-| **Actuel (M6)** | **317** | **413** |
+| **Actuel (M7)** | **317** | **413** |
 
 > Le total « sans base » ne bouge pas au module 5 : les tests ajoutés sont des
 > tests d'API, qui exigent PostgreSQL et sont donc ignorés sans lui.
@@ -85,12 +89,15 @@ DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
 ```bash
 cd agent-tuteur-api
 
-# Rapide, sans infrastructure (290 tests)
+# Rapide, sans infrastructure (317 tests)
 ../.venv/bin/python -m pytest -q
 
-# Complet, avec PostgreSQL (359 tests)
+# Complet, avec PostgreSQL (413 tests)
 TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
   ../.venv/bin/python -m pytest -q
+
+# Analyse statique (ce que vérifie aussi l'intégration continue)
+../.venv/bin/ruff check .
 ```
 
 ### Dépendance ajoutée
@@ -99,11 +106,12 @@ PyMuPDF a été installé dans `.venv` et déclaré dans `pyproject.toml` comme
 option `parsing`. Sur une machine neuve :
 
 ```bash
-pip install -e '.[parsing]'
+pip install -r requirements.txt      # versions exactes validées
+pip install -e '.[parsing,dev]'      # PyMuPDF + ruff
 ```
 
-Sans elle, la lecture des PDF retombe sur `pypdf` et **abîme les formules** sans
-prévenir.
+Sans l'option `parsing`, la lecture des PDF retombe sur `pypdf` et **abîme les
+formules** sans prévenir — seulement une ligne de journal.
 
 ### Le corpus
 
@@ -136,21 +144,17 @@ Les 103 PDF sont dans `~/nuru/nuru-binta/data/raw/` (dossiers `cours/` et
 - **M6** — Gemini ajouté comme fournisseur, et l'ordre de la chaîne de repli
   devient un réglage `.env` (`LLM_CHAIN`). Changer de modèle ne demande plus
   aucune modification de code.
+- **M7** — ADR 0010, dépendances épinglées, analyse statique configurée, et
+  **intégration continue** : quatre vérifications sur chaque proposition de
+  modification (ruff, tests avec PostgreSQL, schéma OpenAPI, build frontend).
+  Un défaut réel trouvé au passage : `zip()` sans garde à l'indexation laissait
+  des morceaux non indexés en silence.
 
 ---
 
 ## 4. Ce qu'il reste à faire
 
-### 4.1 P7 — Consolidation *(prochaine étape)*
-
-1. ADR `docs/adr/0010-fusion-nuru-ats.md` — la trace de la décision.
-2. Répartir le contenu utile de `DOCUMENTATION_TECHNIQUE.md` de NURU (93 Ko)
-   dans `architecture.md` / `api.md` — **pas de recopie en bloc**.
-3. Épingler les versions critiques dans `pyproject.toml`.
-4. **Mettre en place l'intégration continue** (`pytest` + `ruff` + build du
-   frontend). C'est la garantie que les deux dépôts ne re-divergeront pas.
-
-### 4.2 P5 — Frontend *(hors périmètre de cette session)*
+### 4.1 P5 — Frontend *(seul poste restant)*
 
 Le poste le plus long du plan (10 à 15 jours). Le contrat est prêt : le schéma
 OpenAPI se génère par `python scripts/export_openapi.py`, et les types
@@ -158,7 +162,7 @@ TypeScript s'en déduisent (`npx openapi-typescript`). Voir §7 de
 `docs/ARCHITECTURE_CIBLE.md` pour les trois acquis à porter impérativement
 (jeton JWT, garde de route, streaming SSE).
 
-### 4.3 Ce qui n'a pas été fait et qui demande une décision humaine
+### 4.2 Ce qui n'a pas été fait et qui demande une décision humaine
 
 - **Le jeu d'évaluation de recherche** (P1.4) — 30 à 50 vraies questions
   d'élèves avec le chapitre attendu. Sans lui, on ne peut pas prouver que le
@@ -169,7 +173,10 @@ TypeScript s'en déduisent (`npx openapi-typescript`). Voir §7 de
   été vérifié de bout en bout (6 007 morceaux produits), mais rien n'a été
   indexé : cela suppose un serveur Qdrant et le modèle d'embeddings BGE-M3, tous
   deux absents de cette machine.
-- **Le frontend** (P5) — hors périmètre décidé pour cette session.
+- **Le frontend** (P5) — hors périmètre décidé pour ces sessions.
+- **L'archivage de `nuru-binta`** en lecture seule, avec un `README` renvoyant
+  ici. Cette action appartient à son propriétaire : elle n'a pas été faite
+  depuis ce dépôt.
 
 ---
 
@@ -226,8 +233,10 @@ git log --oneline -9          # retrouver le fil
 cd agent-tuteur-api
 TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
   ../.venv/bin/python -m pytest -q      # doit afficher 413 passed
+
+../.venv/bin/ruff check .               # doit afficher : All checks passed!
 ```
 
-Si ces 413 tests passent, l'état est sain. La suite naturelle est le §4.1
-(consolidation : ADR, épinglage des versions, intégration continue), ou le §4.2
-(frontend) si l'équipe a tranché la question Q1 du plan.
+Si ces 413 tests passent et que l'analyse statique est propre, l'état est sain.
+Le seul poste restant est le frontend (§4.1) — il suppose que l'équipe ait
+tranché la question Q1 du plan (Next.js ou Vue).
