@@ -30,11 +30,16 @@ from agent_tuteur.api.security import AuthError, Principal, decode_access_token
 from agent_tuteur.persistence.db import session_scope
 from agent_tuteur.persistence.repositories import (
     AuditLogRepository,
+    BadgeRepository,
     ConversationRepository,
     DocumentRepository,
+    ExerciseResultRepository,
     FeedbackRepository,
+    MasteryRepository,
     MessageRepository,
     ProgressRepository,
+    RecommendationRepository,
+    StudentLinkRepository,
     UserRepository,
 )
 from agent_tuteur.vectorstore.indexer import Indexer
@@ -84,6 +89,58 @@ async def require_admin(principal: Principal = Depends(get_current_user)) -> Pri
     return principal
 
 
+#: Rôles autorisés à consulter un élève **auquel ils sont liés** (et eux seuls).
+ROLES_ENCADRANTS = ("teacher", "parent")
+
+
+async def ensure_can_access_student(
+    principal: Principal,
+    student_id: str,
+    links: StudentLinkRepository,
+) -> None:
+    """Autorise, ou refuse, la consultation des données d'un élève.
+
+    **La règle d'accès centrale du projet.** Elle est écrite ici une seule fois
+    pour que toutes les routes s'y conforment de la même manière — une règle
+    recopiée dans dix routes finit toujours par diverger dans l'une d'elles.
+
+    Trois cas, et rien d'autre :
+
+    * **admin** — tous les élèves de son établissement (le tenant est prouvé par
+      le jeton, et la RLS l'applique en base) ;
+    * **élève** — lui-même, uniquement ;
+    * **enseignant / parent** — seulement les élèves auxquels une ligne de
+      ``student_links`` le rattache, vérifiée en base pour **son** compte.
+
+    Un rôle inconnu ne donne aucun accès : c'est le défaut, pas une exception.
+
+    Lève ``HTTPException`` 403 si l'accès n'est pas autorisé.
+    """
+    if principal.is_admin:
+        return
+
+    if principal.role == "student":
+        if student_id == (principal.student_id or principal.user_id):
+            return
+        raise HTTPException(
+            status_code=403, detail="Accès aux données d'un autre élève refusé."
+        )
+
+    if principal.role in ROLES_ENCADRANTS:
+        autorise = await links.can_access(
+            user_id=principal.user_id,
+            student_id=student_id,
+            tenant_id=principal.tenant_id,
+        )
+        if autorise:
+            return
+        raise HTTPException(
+            status_code=403, detail="Cet élève ne vous est pas rattaché."
+        )
+
+    raise HTTPException(status_code=403, detail="Accès refusé.")
+
+
 async def get_tenant_id(principal: Principal = Depends(get_current_user)) -> str:
     """Tenant prouvé par le jeton (plus d'en-tête déclaratif)."""
     return principal.tenant_id
@@ -127,6 +184,31 @@ async def feedback_repo(session: AsyncSession = Depends(get_session)) -> Feedbac
 
 async def document_repo(session: AsyncSession = Depends(get_session)) -> DocumentRepository:
     return DocumentRepository(session)
+
+
+# --- Domaine pédagogique -----------------------------------------------------
+
+
+async def link_repo(session: AsyncSession = Depends(get_session)) -> StudentLinkRepository:
+    return StudentLinkRepository(session)
+
+
+async def mastery_repo(session: AsyncSession = Depends(get_session)) -> MasteryRepository:
+    return MasteryRepository(session)
+
+
+async def exercise_repo(session: AsyncSession = Depends(get_session)) -> ExerciseResultRepository:
+    return ExerciseResultRepository(session)
+
+
+async def badge_repo(session: AsyncSession = Depends(get_session)) -> BadgeRepository:
+    return BadgeRepository(session)
+
+
+async def recommendation_repo(
+    session: AsyncSession = Depends(get_session),
+) -> RecommendationRepository:
+    return RecommendationRepository(session)
 
 
 def get_agent(request: Request) -> TutorAgent:
