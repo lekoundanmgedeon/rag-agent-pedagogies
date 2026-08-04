@@ -100,7 +100,7 @@ async def _ingest_in_background(
                       duration_ms=duration_ms, n_chunks=result.n_chunks)
             await repo.update_status(document_id, "indexed", tenant_id=tenant_id, log=steps)
             log_event(_logger, "ingestion:job_done", document_id=document_id, filename=filename, status="indexed")
-        except Exception as exc:  # noqa: BLE001 — toute erreur d'ingestion doit aboutir en 'failed', pas planter le worker.
+        except Exception as exc:
             log_event(_logger, "ingestion:job_failed", document_id=document_id, filename=filename,
                       error=str(exc), log_level=40)
             await repo.update_status(document_id, "failed", error=str(exc), tenant_id=tenant_id, log=steps)

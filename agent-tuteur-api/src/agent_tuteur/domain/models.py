@@ -14,6 +14,7 @@ from agent_tuteur.config.taxonomy import (
     EXAMEN_PAR_NIVEAU,
     Niveau,
     TypeChunk,
+    est_chunk_de_cours,
     serie_aliases,
     taxonomy_key,
 )
@@ -34,6 +35,11 @@ class CurriculumMetadata(BaseModel):
     examen_associe: str | None = None
     type_chunk: str = TypeChunk.CHAPITRE.value
     source_document: str | None = None
+    #: Nature du **document source** (« cours », « td », « annales »…), déduite
+    #: de son dossier et de son nom à l'ingestion. À ne pas confondre avec
+    #: ``type_chunk``, qui décrit un *morceau* de ce document. Les deux
+    #: ensemble décident si un chunk relève du cours (cf. ``est_chunk_de_cours``).
+    type_document: str | None = None
 
     # Clés de filtrage normalisées (accents/casse/article neutralisés), dérivées
     # des libellés ci-dessus. Elles sont indexées et interrogées à leur place ;
@@ -45,7 +51,7 @@ class CurriculumMetadata(BaseModel):
     chapitre_key: str | None = None
 
     @model_validator(mode="after")
-    def _enrichir(self) -> "CurriculumMetadata":
+    def _enrichir(self) -> CurriculumMetadata:
         # Aligne serie_alias[] sur les classes d'équivalence si non fourni.
         if self.serie and not self.serie_alias:
             self.serie_alias = serie_aliases(self.serie)
@@ -71,6 +77,11 @@ class Chunk(BaseModel):
     id: str
     text: str
     metadata: CurriculumMetadata
+
+    @property
+    def est_cours(self) -> bool:
+        """Ce chunk relève-t-il du cours (par opposition à un complément) ?"""
+        return est_chunk_de_cours(self.metadata.type_chunk, self.metadata.type_document)
 
 
 class ScoredChunk(BaseModel):

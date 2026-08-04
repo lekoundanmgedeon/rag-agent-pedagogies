@@ -1,7 +1,5 @@
 from collections.abc import AsyncIterator
 
-import pytest
-
 from agent_tuteur.agent.llm.base import BaseLLM, LLMError
 from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.llm.router import FallbackRouter, build_router

@@ -33,7 +33,7 @@ def _target_student_id(principal: Principal, requested: str | None) -> str:
     return requested or principal.user_id
 
 
-def _assert_can_access(principal: Principal, conversation) -> None:  # noqa: ANN001 - Conversation ORM
+def _assert_can_access(principal: Principal, conversation) -> None:
     """Un élève ne peut accéder qu'à ses propres conversations (admin : tout le tenant)."""
     if principal.role == "student":
         owner = principal.student_id or principal.user_id

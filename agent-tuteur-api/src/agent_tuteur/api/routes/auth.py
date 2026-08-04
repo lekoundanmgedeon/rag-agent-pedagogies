@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _logger = get_logger("agent_tuteur.api.routes.auth")
 
 
-def _principal_of(user) -> Principal:  # noqa: ANN001 - User ORM
+def _principal_of(user) -> Principal:
     return Principal(
         user_id=user.id,
         tenant_id=user.tenant_id,

@@ -20,7 +20,8 @@ from sympy.parsing.sympy_parser import (
 )
 
 # convert_xor : « ^ » signifie puissance (usage scolaire), pas XOR bit-à-bit.
-_TRANSFORMS = standard_transformations + (
+_TRANSFORMS = (
+    *standard_transformations,
     convert_xor,
     implicit_multiplication_application,
 )

@@ -27,6 +27,8 @@ from enum import Enum
 class Intent(str, Enum):
     EXERCICE = "exercice"
     COURS = "cours"
+    #: L'élève demande à être interrogé (« teste-moi », « fais-moi un quiz »).
+    QUIZ = "quiz"
 
 
 class Navigation(str, Enum):
@@ -109,6 +111,32 @@ _EXERCISE_BREAKOUT = re.compile(
 )
 
 
+# --- Demande d'évaluation ----------------------------------------------------
+# Formulations par lesquelles un élève demande à être interrogé. Volontairement
+# étroit : ces tournures sont sans ambiguïté, et en cas de doute on retombe sur
+# le défaut sûr (EXERCICE) plutôt que d'interroger quelqu'un qui n'a rien
+# demandé. « quiz » est reconnu seul car le mot n'a pas d'autre usage ici.
+_QUIZ_REQUEST = re.compile(
+    r"\b(?:"
+    r"quiz"
+    r"|qcm"
+    r"|teste?[\s-]?(?:moi|nous)"
+    r"|interroge[\s-]?(?:moi|nous)"
+    r"|[ée]value[\s-]?(?:moi|nous)"
+    r"|pose[\s-]?(?:moi|nous)\s+(?:des|une|quelques)\s+questions?"
+    r"|(?:fais|donne)(?:[\s-]+moi)?\s+(?:un|des)\s+(?:test|exercices?\s+d[e']\s*[ée]valuation)"
+    r"|questionnaire"
+    r"|vrai\s*[/ou-]+\s*faux"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_quiz_request(question: str) -> bool:
+    """Vrai si l'élève demande explicitement à être interrogé."""
+    return bool(_QUIZ_REQUEST.search(question))
+
+
 def is_exercise_breakout(question: str) -> bool:
     """Vrai si la question est une demande de résolution qui doit sortir du cours."""
     return bool(_EXERCISE_BREAKOUT.search(question))
@@ -153,6 +181,12 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
     cas, une relance sans marqueur explicite reste dans le cours (poursuite du
     fil), sur la section courante.
     """
+    # Une demande d'évaluation prime sur tout le reste, y compris sur la
+    # continuité d'un cours : « teste-moi » pendant un cours veut bien dire
+    # « interroge-moi maintenant », pas « continue à m'expliquer ».
+    if is_quiz_request(question):
+        return IntentDecision(Intent.QUIZ, "demande explicite d'évaluation", None)
+
     nav = _detect_navigation(question, in_course=in_course)
 
     if nav == Navigation.START:

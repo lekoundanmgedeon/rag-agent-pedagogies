@@ -10,7 +10,7 @@ login dans ``api/routes/auth.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -64,7 +64,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_access_token(principal: Principal) -> str:
     """Signe un JWT portant l'identité complète (tenant + rôle + student_id)."""
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": principal.user_id,
         "tenant_id": principal.tenant_id,
@@ -95,3 +95,49 @@ def decode_access_token(token: str) -> Principal:
         )
     except KeyError as exc:
         raise AuthError(f"Jeton incomplet : champ manquant {exc}") from exc
+
+
+#: Durée de validité d'un quiz remis à un élève. Assez long pour réfléchir,
+#: assez court pour qu'un jeton ne traîne pas indéfiniment.
+QUIZ_TOKEN_MINUTES = 60
+
+
+def create_quiz_token(*, competence: str, correct_answer: str, explanation: str) -> str:
+    """Scelle la correction d'un quiz dans un jeton signé remis à l'élève.
+
+    **Pourquoi ce détour.** La bonne réponse ne doit pas descendre dans le
+    navigateur avec le quiz : un élève qui ouvre les outils de développement la
+    lirait avant de répondre, et l'évaluation ne mesurerait plus rien. Elle
+    voyage donc **signée** : le client la transporte sans pouvoir la lire ni la
+    modifier, et la route de correction la rouvre côté serveur.
+
+    C'est l'alternative sans état à une table de quiz en base — voir le point
+    V6 de JOURNAL_FUSION.md pour l'arbitrage laissé ouvert.
+    """
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload = {
+        "competence": competence,
+        "correct_answer": correct_answer,
+        "explanation": explanation,
+        "iat": now,
+        "exp": now + timedelta(minutes=QUIZ_TOKEN_MINUTES),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_quiz_token(token: str) -> dict:
+    """Rouvre un jeton de quiz, ou lève ``AuthError`` (signature/expiration)."""
+    settings = get_settings()
+    try:
+        claims = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as exc:
+        raise AuthError(f"Quiz expiré ou invalide : {exc}") from exc
+    try:
+        return {
+            "competence": claims["competence"],
+            "correct_answer": claims["correct_answer"],
+            "explanation": claims.get("explanation", ""),
+        }
+    except KeyError as exc:
+        raise AuthError(f"Jeton de quiz incomplet : champ manquant {exc}") from exc

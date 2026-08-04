@@ -8,6 +8,8 @@ est appliquée ici pour qu'une question en « STIDD1 » atteigne des chunks « T
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from agent_tuteur.config.taxonomy import (
     CHAMPS_INDEXES,
     CHAMPS_NORMALISES,
@@ -17,6 +19,16 @@ from agent_tuteur.config.taxonomy import (
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.vectorstore.embeddings import BaseEmbedder
 from agent_tuteur.vectorstore.store import BaseVectorStore, Filters
+
+#: Nombre de compléments (TD, exercices) joints par défaut à une réponse de
+#: cours : de quoi illustrer, pas de quoi noyer le cours lui-même.
+QUOTA_COMPLEMENTS_PAR_DEFAUT = 2
+
+#: Facteur de sur-échantillonnage avant partition. Il faut ratisser plus large
+#: que ``top_k`` pour qu'il reste des chunks de cours **et** des compléments
+#: après séparation : sur ce corpus, les premiers résultats sont souvent tous
+#: des exercices.
+FACTEUR_SUR_ECHANTILLONNAGE = 4
 
 
 def build_filters(context: dict) -> Filters:
@@ -53,6 +65,28 @@ def build_filters(context: dict) -> Filters:
     return filters
 
 
+@dataclass(frozen=True)
+class ResultatsPedagogiques:
+    """Résultats de recherche séparés selon leur nature pédagogique.
+
+    ``cours`` contient le cours proprement dit, ``complements`` les TD,
+    exercices et annales qui l'illustrent. ``a_du_cours`` dit si le corpus a
+    effectivement fourni du cours — c'est cette information qui permet à l'agent
+    d'avouer qu'il n'en a pas, au lieu d'en inventer.
+    """
+
+    cours: list[ScoredChunk]
+    complements: list[ScoredChunk]
+
+    @property
+    def a_du_cours(self) -> bool:
+        return bool(self.cours)
+
+    def tous(self) -> list[ScoredChunk]:
+        """Tous les résultats, cours en tête."""
+        return [*self.cours, *self.complements]
+
+
 class HybridRetriever:
     def __init__(
         self,
@@ -74,4 +108,35 @@ class HybridRetriever:
         query_emb = self._embedder.embed_query(query)
         return self._store.search(
             query_emb, top_k=top_k or self._top_k, filters=filters
+        )
+
+    def retrieve_course_first(
+        self,
+        query: str,
+        context: dict | None = None,
+        *,
+        top_k: int | None = None,
+        quota_complements: int = QUOTA_COMPLEMENTS_PAR_DEFAUT,
+    ) -> ResultatsPedagogiques:
+        """Recherche à deux niveaux : le cours d'abord, les compléments sous quota.
+
+        Utilisée quand l'élève demande une **explication** plutôt que de l'aide
+        sur un exercice. Sans elle, une question comme « explique-moi les
+        nombres complexes » remonte surtout des énoncés de TD, car ils sont
+        majoritaires dans le corpus.
+
+        Le classement produit par la fusion RRF est **conservé tel quel** : on
+        ne fait que le partitionner puis le tronquer. Aucun calcul n'est fait
+        sur les scores RRF, dont l'échelle (~1/(k+rang)) n'a pas de sens
+        interprétable — les additionner ou les pondérer donnerait un résultat
+        arbitraire.
+        """
+        k = top_k or self._top_k
+        vivier = self.retrieve(query, context, top_k=k * FACTEUR_SUR_ECHANTILLONNAGE)
+
+        cours = [sc for sc in vivier if sc.chunk.est_cours]
+        complements = [sc for sc in vivier if not sc.chunk.est_cours]
+        return ResultatsPedagogiques(
+            cours=cours[:k],
+            complements=complements[:quota_complements],
         )

@@ -37,7 +37,7 @@ async def _check_db() -> bool:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return True
-    except Exception:  # noqa: BLE001 — une sonde de santé ne doit jamais lever.
+    except Exception:
         return False
 
 
@@ -56,7 +56,7 @@ async def health(
             if indexer is not None:
                 indexer.count()  # sonde légère : lève si le serveur est injoignable
             qdrant_status = "ok"
-        except Exception:  # noqa: BLE001 — une sonde de santé ne doit jamais lever.
+        except Exception:
             qdrant_status = "unreachable"
 
     agent = getattr(request.app.state, "agent", None)
@@ -73,7 +73,7 @@ async def health(
                 orphaned_count = await DocumentRepository(session).count_by_status(
                     principal.tenant_id, "orphaned"
                 )
-        except Exception:  # noqa: BLE001 — une sonde de santé ne doit jamais lever.
+        except Exception:
             orphaned_count = 0
 
     status = "ok" if db_ok else "degraded"

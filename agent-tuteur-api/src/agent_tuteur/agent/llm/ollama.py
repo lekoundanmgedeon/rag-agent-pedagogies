@@ -56,20 +56,21 @@ class OllamaLLM(BaseLLM):
     async def generate_stream(self, prompt: str, *, system: str | None = None) -> AsyncIterator[str]:
         payload = {"model": self._model, "messages": self._messages(prompt, system), "stream": True}
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                async with client.stream("POST", f"{self._base_url}/api/chat", json=payload) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        token = chunk.get("message", {}).get("content")
-                        if token:
-                            yield token
-                        if chunk.get("done"):
-                            break
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client, client.stream(
+                "POST", f"{self._base_url}/api/chat", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    token = chunk.get("message", {}).get("content")
+                    if token:
+                        yield token
+                    if chunk.get("done"):
+                        break
         except httpx.HTTPError as exc:
             raise LLMError(f"Ollama stream a échoué : {exc}") from exc

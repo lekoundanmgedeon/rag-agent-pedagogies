@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from agent_tuteur.domain.models import Chunk
 from agent_tuteur.ingestion.annotation import annotate, parse_frontmatter
 from agent_tuteur.ingestion.chunking import chunk_document
 from agent_tuteur.ingestion.loaders import extract_text
+from agent_tuteur.ingestion.loaders.metadata import extraire_metadonnees
 from agent_tuteur.ingestion.normalize import to_pivot
 from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.vectorstore.indexer import Indexer
@@ -47,11 +49,23 @@ def process_document(
     form_metadata: dict | None = None,
     *,
     document_id: str | None = None,
+    source_path: str | Path | None = None,
 ) -> IngestionResult:
     """Transforme un fichier en chunks annotés (sans indexation).
 
-    Le frontmatter éventuel du document est fusionné avec les métadonnées du
-    formulaire d'upload (le formulaire est prioritaire pour les champs fournis).
+    Trois sources de métadonnées, de la plus faible à la plus forte :
+
+    1. ce que l'on **devine** du nom de fichier, du dossier et de l'en-tête
+       (``ingestion/loaders/metadata``) — c'est une déduction, elle cède
+       devant tout le reste ;
+    2. le **frontmatter** YAML en tête du document, quand il y en a un ;
+    3. les métadonnées **saisies** au téléversement, qui font toujours foi.
+
+    ``source_path`` sert à l'ingestion par lot depuis le disque : le dossier
+    parent (``data/raw/cours/…``) est un indice fort sur la nature du document,
+    que le seul nom de fichier ne donne pas. Hors de ce cas, ``filename``
+    suffit.
+
     ``document_id`` est facultatif (absent hors contexte d'upload, ex. démo) et
     sert uniquement à corréler les logs de cette ingestion.
     """
@@ -72,8 +86,15 @@ def process_document(
     _record("normalize", t0, pivot_chars=len(pivot))
 
     meta, body = parse_frontmatter(pivot)
-    merged = dict(meta)
-    merged.update({k: v for k, v in (form_metadata or {}).items() if v not in (None, "")})
+
+    t0 = time.perf_counter()
+    explicite = dict(meta)
+    explicite.update({k: v for k, v in (form_metadata or {}).items() if v not in (None, "")})
+    merged = extraire_metadonnees(
+        Path(source_path or filename), body, saisies=explicite
+    )
+    _record("metadata", t0, type_document=merged.get("type_document"),
+            chapitre=merged.get("chapitre"), serie=merged.get("serie"))
 
     t0 = time.perf_counter()
     drafts = chunk_document(body)
@@ -93,9 +114,12 @@ def ingest_and_index(
     form_metadata: dict | None = None,
     *,
     document_id: str | None = None,
+    source_path: str | Path | None = None,
 ) -> IngestionResult:
     """Ingestion complète + indexation (chemin direct, hors worker)."""
-    result = process_document(filename, data, form_metadata, document_id=document_id)
+    result = process_document(
+        filename, data, form_metadata, document_id=document_id, source_path=source_path
+    )
     t0 = time.perf_counter()
     indexer.index_chunks(result.chunks)
     duration_ms = round((time.perf_counter() - t0) * 1000, 2)
