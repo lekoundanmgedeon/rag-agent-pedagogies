@@ -121,3 +121,18 @@ async def test_course_binds_chapter_present_in_corpus(agent):
     assert {s["label"] for s in prep.trace["sources"]}
     chapters = {sc.chunk.metadata.chapitre for sc in prep.retrieved}
     assert chapters == {course["chapitre"]}
+
+
+async def test_le_mode_cours_passe_par_le_reranker_pedagogique(agent):
+    """Le nœud de recherche doit rendre compte de ce qu'il a trouvé comme cours."""
+    prep = await agent.prepare("explique-moi les dérivées", {"serie": "S1"})
+    retrieve = next(n for n in prep.node_trace if n["node"] == "retrieve_context")
+    assert "has_course" in retrieve
+    assert "n_course" in retrieve
+
+
+async def test_le_mode_exercice_n_utilise_pas_le_reranker(agent):
+    """Sur un exercice, l'ordre du RRF convient : pas de partition inutile."""
+    prep = await agent.prepare("je bloque sur l'exercice 3", {"serie": "S1"})
+    retrieve = next(n for n in prep.node_trace if n["node"] == "retrieve_context")
+    assert "has_course" not in retrieve

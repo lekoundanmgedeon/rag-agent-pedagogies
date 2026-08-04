@@ -3,18 +3,17 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
-
 # Layout src/ : rend agent_tuteur importable sans dépendre du PYTHONPATH appelant.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from agent_tuteur.config.settings import get_settings  # noqa: E402
-from agent_tuteur.persistence.db import Base  # noqa: E402
-from agent_tuteur.persistence import models  # noqa: E402,F401  (enregistre les tables sur Base.metadata)
+from agent_tuteur.config.settings import get_settings
+from agent_tuteur.persistence import models  # noqa: F401  (enregistre les tables sur Base.metadata)
+from agent_tuteur.persistence.db import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

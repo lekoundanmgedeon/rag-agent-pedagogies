@@ -49,6 +49,17 @@ SYSTEM_PERSONA_COURSE = (
     "explicitement de passer à la section suivante (ou de poser une question)."
 )
 
+#: Posture d'évaluation : ni indices, ni exposé — on interroge.
+#: Volontairement sèche : la sortie attendue est un objet JSON, pas un discours.
+#: Les règles communes n'y figurent pas car elles portent sur la façon de
+#: s'adresser à l'élève, ce qui n'a pas de sens ici.
+SYSTEM_PERSONA_QUIZ = (
+    "Tu es un concepteur de sujets d'évaluation pour le programme scolaire "
+    "sénégalais. Tu produis des questions justes, sans ambiguïté, dont une "
+    "seule proposition est correcte. Tu réponds EXCLUSIVEMENT par l'objet JSON "
+    "demandé, sans aucun texte avant ni après, sans balise markdown."
+)
+
 _MAX_EXCERPT = 600
 #: Nombre de messages (élève + tuteur confondus) réinjectés dans le prompt.
 _MAX_HISTORY_MESSAGES = 6
@@ -173,12 +184,28 @@ def _build_plan_block(position: CoursePosition) -> str:
     return "\n".join(lines)
 
 
+#: Consigne ajoutée quand la recherche n'a remonté aucun chunk de cours.
+#: Reprise de la doctrine du ``CoursAgent`` de NURU : sur un corpus fait
+#: surtout de TD, il est fréquent qu'aucun cours n'existe sur une notion. Le
+#: modèle doit alors le **dire**, pas combler le vide de lui-même — un cours
+#: inventé est bien plus nuisible qu'un « je ne l'ai pas ».
+AVERTISSEMENT_SANS_COURS = (
+    "ATTENTION : les extraits fournis sont des TD et des exercices, sans cours "
+    "explicite. N'extrais que les éléments de cours réellement présents "
+    "(rappels en tête de TD, énoncés de propriétés). Indique clairement en "
+    "introduction que le cours complet n'est pas disponible dans le corpus. "
+    "N'invente sous aucun prétexte le contenu manquant."
+)
+
+
 def assemble_course_prompt(
     question: str,
     position: CoursePosition,
     retrieved: list[ScoredChunk],
     curriculum_context: dict | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    *,
+    has_course: bool = True,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` pour le **mode cours**.
 
@@ -186,6 +213,9 @@ def assemble_course_prompt(
     position courante, historique récent, extraits RAG, puis la consigne de la
     section à enseigner et la relance de l'élève. Aucune notion d'indice ici :
     la progression est portée par ``position`` (cf. ``course_plan.py``).
+
+    ``has_course`` vient du re-ranker pédagogique : à faux, la consigne
+    d'honnêteté :data:`AVERTISSEMENT_SANS_COURS` est ajoutée au prompt.
     """
     ctx = curriculum_context or {}
     scope = ", ".join(
@@ -211,6 +241,8 @@ def assemble_course_prompt(
         "Documentation de cours (usage interne, invisible pour l'élève) :\n"
         + build_context_block(retrieved)
     )
+    if not has_course:
+        parts.append(AVERTISSEMENT_SANS_COURS)
     parts.append(
         f"Section à enseigner : {position.section_index + 1}. {section.title}.\n"
         f"Consigne : {section.instruction}"

@@ -11,9 +11,12 @@ symbolique.
 
 ```
 agent-tuteur-api/       Cœur métier + API FastAPI + worker ARQ
-agent-tuteur-web/       Frontend Vue 3 (SPA élève + admin, aucun accès direct au cœur)
+agent-tuteur-web-next/  Frontend Next.js 16 / React 19 / TypeScript (élève + admin)
+agent-tuteur-web/       Frontend Vue 3 historique — encore utilisé par la démo hébergée
 agent-tuteur-deploy/    docker-compose (dev/prod), nginx, scripts
 docs/                   architecture.md, api.md, adr/, migration.md
+JOURNAL_FUSION.md       Journal de la fusion NURU × ATS, module par module
+REPRISE_FUSION.md       État d'avancement et points de reprise
 Dockerfile.render       Image mono-conteneur (SPA + API) pour une démo hébergée
 render.yaml             Blueprint Render correspondant
 ```
@@ -25,13 +28,21 @@ Le **cœur métier** (`agent/`, `vectorstore/`, `ingestion/`, `tools/`,
 d'aucun framework web ni de base de données — il est testable et exécutable
 hors-ligne (LLM mock, vectorstore in-memory). `api/` (FastAPI), `workers/`
 (ARQ) et `persistence/` (PostgreSQL) sont aux extrémités et consomment ce
-cœur. Le frontend (SPA Vue 3, espaces élève + administration) ne parle qu'HTTP/SSE
-à l'API, authentifié par jeton JWT (rôles admin/élève).
+cœur. Le frontend (Next.js, espaces élève + administration) ne parle qu'HTTP/SSE
+à l'API, authentifié par jeton JWT (rôles `admin`, `teacher`, `parent`, `student`).
+Son contrat d'API est **généré depuis le schéma OpenAPI** : renommer un champ
+côté API casse la compilation du frontend, au lieu de passer inaperçu.
+
+L'agent tient **trois postures** : *exercice* (indices socratiques gradués,
+posture par défaut), *cours* (exposé section par section) et *quiz*
+(évaluation). Le suivi de la maîtrise, compétence par compétence, alimente
+badges et recommandations.
 
 Détails complets : [`docs/architecture.md`](docs/architecture.md) (composants,
 flux RAG streamé, ingestion asynchrone, isolation multi-tenant),
 [`docs/api.md`](docs/api.md) (chaque endpoint), [`docs/adr/`](docs/adr/)
-(décisions techniques), [`docs/migration.md`](docs/migration.md).
+(décisions techniques, dont [ADR 0010](docs/adr/0010-fusion-nuru-ats.md) sur la
+fusion des deux dépôts), [`docs/migration.md`](docs/migration.md).
 Démo publique hébergée : [`docs/DEPLOIEMENT_RENDER.md`](docs/DEPLOIEMENT_RENDER.md).
 
 ## Prérequis

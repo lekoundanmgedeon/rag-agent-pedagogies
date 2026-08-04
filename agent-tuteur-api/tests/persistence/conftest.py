@@ -14,8 +14,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from agent_tuteur.persistence.db import Base
 from agent_tuteur.persistence import models  # noqa: F401  (enregistre les tables)
+from agent_tuteur.persistence.db import Base
 
 
 @pytest_asyncio.fixture
