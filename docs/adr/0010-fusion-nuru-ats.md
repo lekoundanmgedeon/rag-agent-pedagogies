@@ -152,3 +152,29 @@ repli · observabilité JSON et trace par nœud.
 - **Le dépôt `nuru-binta` doit être archivé en lecture seule** avec un `README`
   pointant ici. Cette action appartient à son propriétaire — elle n'a pas été
   faite depuis ce dépôt.
+
+## Annexe — Devenir de la dette technique recensée par NURU
+
+`DOCUMENTATION_TECHNIQUE.md` (NURU) §17 listait la dette connue de ce dépôt.
+Elle n'a pas été recopiée : voici ce que la fusion en fait. C'est la partie de
+ce document qui garde une valeur — le reste décrivait une architecture
+désormais remplacée.
+
+| Dette relevée par NURU | Devenir |
+|---|---|
+| §17.1 Deux chemins de génération, le plus riche jamais appelé | **Sans objet** — un seul graphe, une seule entrée |
+| §17.1 `gemini-3.1-pro-preview` codé en dur | **Réglé** — `GEMINI_MODEL`, source de vérité unique (module 6) |
+| §17.2 `/student/generate-quiz` lève un `TypeError` | **Sans objet** — `agent/quiz.py` réécrit avec une signature unique, testée |
+| §17.3 Aucune autorisation sur les endpoints | **Réglé** — JWT partout, `ensure_can_access_student`, tests 401/403 |
+| §17.3 Compte super-admin en dur | **Sans objet** — aucun compte par défaut ; amorçage par `scripts/create_user.py` |
+| §17.3 `allow_origins=["*"]` avec identifiants | **Sans objet** — CORS piloté par `CORS_ORIGINS` |
+| §17.4 Doublon `users` / `teachers` | **Réglé** — une seule table `users`, un seul chemin d'authentification |
+| §17.5 `NameError` si `concept` absent | **Non reproduit** — le calcul est inconditionnel (`repositories.record_attempt`) |
+| §17.6 Statistiques admin en dur (3 chiffres différents) | **Sans objet** — `/health` interroge les services réels |
+| §17.7 `@app.on_event("startup")` déprécié | **Sans objet** — `lifespan` déjà utilisé |
+| §17.7 `sessions = {}` en mémoire, perdu au redémarrage | **Sans objet** — conversations et messages persistés en base |
+| §17.7 `cloudflared` (39 Mo) et `delete_file/` versionnés | **Hors de ce dépôt** — relève de l'archivage de `nuru-binta` |
+| §17.7 Corpus dupliqué (103 + 105 PDF) | **Ouvert** — le corpus n'entre pas dans Git (voir Q3 du plan) |
+
+Deux points de leur §17 restent donc à traiter, et **tous deux appartiennent au
+dépôt d'origine**, pas à celui-ci.

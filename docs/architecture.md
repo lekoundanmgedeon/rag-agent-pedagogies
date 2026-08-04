@@ -38,12 +38,12 @@ implémente ces ports pour PostgreSQL. Le frontend (SPA Vue) ne parle qu'HTTP/SS
 
 | Composant | Rôle | Dépend de |
 |---|---|---|
-| `config/` | `Settings` (env), `taxonomy` (niveaux, séries, alias) | rien |
-| `domain/` | `CurriculumMetadata`, `Chunk`, `ScoredChunk` — modèles partagés | `config` |
-| `ingestion/` | loaders (PDF/DOCX/TXT/MD) → normalize (pivot) → chunking structurel → annotation | `domain`, `config` |
-| `vectorstore/` | embeddings (léger/BGE-M3), store (in-memory/Qdrant), indexer, retriever hybride | `domain` |
+| `config/` | `Settings` (env), `taxonomy` (niveaux, séries, alias, nature cours/complément) | rien |
+| `domain/` | `CurriculumMetadata`, `Chunk`, `ScoredChunk`, `mastery` (règles de maîtrise, calcul pur) | `config` |
+| `ingestion/` | `loaders/` (PDF via PyMuPDF, nettoyage, extraction de métadonnées) → normalize (pivot) → chunking structurel → annotation | `domain`, `config` |
+| `vectorstore/` | embeddings (léger/BGE-M3), store (in-memory/Qdrant), indexer, retriever hybride + re-ranker pédagogique | `domain` |
 | `tools/` | calculatrice SymPy en sandbox | rien |
-| `agent/` | frustration, hint_strategy, guardrails, LLM+fallback, graphe LangGraph, `TutorAgent` | `vectorstore`, `tools`, `domain` |
+| `agent/` | frustration, hint_strategy, guardrails, `quiz`, `verify`, LLM+fallback (Mistral/Gemini/Ollama/mock), graphe LangGraph, `TutorAgent` | `vectorstore`, `tools`, `domain` |
 | `persistence/` | modèles ORM, repositories implémentant les ports de `agent/ports.py` | `agent.ports` (interfaces), SQLAlchemy async |
 | `api/` | routes FastAPI, auth JWT (`security.py`, `routes/auth.py`), dépendances (identité/tenant/session), streaming SSE, lifespan | `agent`, `persistence`, `vectorstore` |
 | `workers/` | worker ARQ (ingestion asynchrone) | `ingestion`, `vectorstore`, `persistence` |
@@ -134,9 +134,12 @@ c'est la configuration recommandée dès qu'un worker séparé est utilisé.
   qui ne sont pas couplés à une implémentation), ni au frontend. Testable
   entièrement hors-ligne (mock LLM, store in-memory, SQLite pour les
   repositories).
-- **`agent/ports.py`** : interfaces (`StudentMemoryPort`, `AuditLogPort`) —
-  le cœur en dépend, `persistence/` les implémente. Découplage classique
-  d'inversion de dépendance : le cœur ne connaît pas Postgres.
+- **`agent/ports.py`** : interfaces (`StudentMemoryPort`, `AuditLogPort`,
+  `MasteryPort`, `EvaluationPort`) — le cœur en dépend, `persistence/` les
+  implémente. Découplage classique d'inversion de dépendance : le cœur ne
+  connaît pas Postgres. Les adaptateurs en mémoire fournis pour les tests
+  appellent **le même** module de calcul (`domain/mastery.py`) que les
+  repositories PostgreSQL : un test hors-ligne mesure le vrai comportement.
 - **`persistence/`** : traduit les ports en requêtes SQLAlchemy async. Ne
   contient aucune règle pédagogique (pas de calcul de niveau d'indice, pas de
   détection de frustration ici).
@@ -152,7 +155,14 @@ c'est la configuration recommandée dès qu'un worker séparé est utilisé.
 
 `domain.models.CurriculumMetadata` fait foi — aucun schéma parallèle. Un chunk
 porte : `niveau, classe, serie, serie_alias[], discipline, chapitre,
-competence, examen_associe, type_chunk, source_document`.
+competence, examen_associe, type_chunk, type_document, source_document`.
+
+> `type_chunk` décrit un **morceau** (chapitre, exercice, solution…) ;
+> `type_document` décrit le **fichier source** dont il vient (cours, TD,
+> annales). Les deux ensemble décident si un morceau relève du cours —
+> `config.taxonomy.est_chunk_de_cours()`. Le second signal est indispensable :
+> un TD sans titres explicites est découpé en « sous-notions » et passerait
+> sinon pour du cours (mesuré : 74 % des morceaux de TD du corpus).
 
 - **Filtrage retriever** (`vectorstore/retriever.py::build_filters`) : traduit
   un contexte curriculaire (dict) en filtres de store sur les champs indexés
@@ -171,12 +181,12 @@ competence, examen_associe, type_chunk, source_document`.
 
 ## 6. Isolation multi-tenant
 
-`tenant_id` figure sur les 6 tables **métier** Postgres (`progress`, `audit_log`,
-`conversations`, `messages`, `feedback`, `documents` — y compris `messages`/
-`feedback`, dénormalisé depuis leur parent, écart volontaire pour simplifier le
-filtrage et les policies RLS sans jointure). La table `users` (7ᵉ table, §7)
-porte aussi `tenant_id` mais reste **hors RLS**. Défense en profondeur à deux
-niveaux :
+`tenant_id` figure sur les **11 tables métier** Postgres (`progress`,
+`audit_log`, `conversations`, `messages`, `feedback`, `documents`, plus les
+cinq tables pédagogiques du §8 — y compris `messages`/`feedback`, dénormalisé
+depuis leur parent, écart volontaire pour simplifier le filtrage et les policies
+RLS sans jointure). La table `users` porte aussi `tenant_id` mais reste **hors
+RLS** (§7). Défense en profondeur à deux niveaux :
 
 1. **Applicatif** : chaque méthode de repository filtre explicitement par
    `tenant_id` (jamais de requête sans ce filtre).
@@ -198,8 +208,9 @@ public). Le flux :
 
 - **Comptes** : table `users` (migration `0005_add_users`), **hors RLS** car le
   login recherche l'utilisateur par email *avant* de connaître le tenant. Email
-  unique **global** ; rôle `admin` | `student` ; `student_id` relie un compte
-  élève à l'identifiant utilisé par le cœur (progression, conversations, audit).
+  unique **global** ; rôle `admin` | `teacher` | `parent` | `student`
+  (migration `0007_extend_roles`) ; `student_id` relie un compte élève à
+  l'identifiant utilisé par le cœur (progression, conversations, audit).
 - **`api/security.py`** : hachage bcrypt des mots de passe, signature/décodage
   JWT (HS256, `JWT_SECRET`), dataclass `Principal` (user_id, tenant_id, role,
   email, student_id).
@@ -209,8 +220,81 @@ public). Le flux :
   invalide), `get_tenant_id` (dérivé du jeton), `require_admin` (403 sinon),
   `get_optional_user` (pour `/health` public).
 - **Autorisation** : les routes de l'espace admin (`documents`, `search`,
-  `logs`) exigent `require_admin` ; `chat`/`conversations`/`progression`
-  cloisonnent chaque élève à sa propre identité (dérivée du jeton, jamais du
-  corps de requête).
+  `logs`) exigent `require_admin` ; `chat`/`conversations` cloisonnent chaque
+  élève à sa propre identité (dérivée du jeton, jamais du corps de requête).
+- **Accès aux données d'un élève** — `dependencies.ensure_can_access_student()`
+  est la **seule** implémentation de cette règle, appelée par `progression`,
+  `evaluation`, `mastery` et `quiz/answer` :
+
+  | Rôle | Périmètre |
+  |---|---|
+  | `admin` | tous les élèves de son tenant |
+  | `student` | lui-même uniquement |
+  | `teacher` / `parent` | seulement les élèves liés par une ligne `student_links` |
+  | *(rôle inconnu)* | aucun accès — le refus est le défaut |
+
+  Un identifiant d'élève reçu du client n'ouvre **jamais** de droit : il est
+  systématiquement confronté à cette règle. Un rôle `teacher`/`parent` ne donne
+  par lui-même accès à rien tant qu'aucune liaison n'existe.
+- **Quiz** : la bonne réponse ne descend pas au client. Elle voyage scellée
+  dans un jeton signé (`create_quiz_token`), rouvert côté serveur à la
+  correction — voir [ADR 0010](adr/0010-fusion-nuru-ats.md).
 - **Amorçage** : aucun compte par défaut. Premier admin via
   `scripts/create_user.py` (ou le profil `seed` du docker-compose).
+
+## 8. Domaine pédagogique (mastery learning)
+
+Porté du dépôt NURU lors de la fusion — voir
+[ADR 0010](adr/0010-fusion-nuru-ats.md) et
+[`JOURNAL_FUSION.md`](../JOURNAL_FUSION.md) modules 3 à 5.
+
+L'idée : suivre ce qu'un élève **maîtrise**, compétence par compétence, plutôt
+que compter les exercices faits.
+
+### 8.1 Tables (migration `0006_pedagogical_progress`, toutes sous RLS)
+
+| Table | Contenu |
+|---|---|
+| `concept_mastery` | Niveau de maîtrise (0.0 → 1.0) par couple (élève, compétence) |
+| `exercise_results` | Historique brut de chaque exercice ou quiz terminé |
+| `badges` | Badges débloqués (unicité `tenant_id, student_id, code`) |
+| `recommendations` | Révisions conseillées ; auteur enseignant **ou** nul (automatique) |
+| `student_links` | Quel compte parent/enseignant peut consulter quel élève |
+
+Trois tables de NURU ont été **écartées** comme doublons : `students`
+(l'identité élève est déjà `student_id`), `interactions` (doublonne `messages`),
+`teachers` (un enseignant est un `User(role='teacher')` — un seul chemin
+d'authentification à sécuriser).
+
+### 8.2 Calcul de la maîtrise (`domain/mastery.py`)
+
+Module de **calcul pur** : ni base, ni framework, testable sans rien démarrer.
+
+Le score suit une **moyenne mobile exponentielle** (70 % de l'acquis + 30 % du
+nouveau résultat). Conséquence assumée : il dépend de l'ordre des tentatives et
+n'est donc pas recalculable depuis `attempts`/`successes` — mais il reste
+reconstituable en rejouant `exercise_results`. C'est la raison d'être des deux
+tables.
+
+Pourquoi pas un simple ratio : deux élèves ayant 5 échecs et 5 réussites ne sont
+pas dans le même état selon qu'ils progressent ou régressent.
+
+### 8.3 Parcours dans le graphe
+
+`detect_intent` route désormais vers **trois** postures — le défaut reste
+`exercice`, celle qui ne dévoile rien :
+
+| Intention | Branche | Comportement |
+|---|---|---|
+| `exercice` (défaut) | `detect_frustration → … → guardrail` | Indices socratiques gradués |
+| `cours` | `course_planner → guardrail_course` | Exposé section par section, recherche « cours d'abord » |
+| `quiz` | `quiz_planner → guardrail_quiz` | Génère un QCM ou vrai/faux |
+
+Deux nœuds terminaux clôturent le **graphe complet** (pas le streaming, qui
+produit la réponse hors graphe) :
+
+- `verify_response` — contrôles déterministes (`agent/verify.py`) : vocabulaire
+  hors-programme, et présence du résultat exact quand SymPy a calculé. Plus la
+  validation JSON du quiz.
+- `persist_progression` — met à jour la maîtrise **seulement** si le tour porte
+  un résultat corrigé (`exercise_outcome`). Poser une question ne prouve rien.
