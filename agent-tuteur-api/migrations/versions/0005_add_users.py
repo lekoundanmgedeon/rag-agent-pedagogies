@@ -12,16 +12,16 @@ Table des comptes authentifiables (login + rôle admin/élève). Voir
   n'est donc créée ici, contrairement à ``0002_enable_rls``.
 - **Email unique global** (pas par tenant) : recherche de login sans ambiguïté.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0005_add_users"
-down_revision: Union[str, Sequence[str], None] = "0004_add_conversation_title"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "0004_add_conversation_title"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
