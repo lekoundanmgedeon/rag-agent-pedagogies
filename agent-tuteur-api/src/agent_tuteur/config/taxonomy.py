@@ -45,6 +45,52 @@ class TypeChunk(str, Enum):
     CHAPITRE = "chapitre"
     SOUS_NOTION = "sous_notion"
     EXERCICE = "exercice"
+    SOLUTION = "solution"  # corrigé d'un exercice
+    EXEMPLE = "exemple"    # exemple d'application inséré dans un cours
+
+
+# --- Nature pédagogique : cours ou complément --------------------------------
+# Sur un corpus fait majoritairement de TD et d'annales, une question du type
+# « explique-moi les nombres complexes » remonte surtout des exercices. On
+# distingue donc, **une fois pour toutes à l'ingestion**, ce qui est du cours de
+# ce qui vient en complément. Le classement s'appuie sur deux signaux, car aucun
+# des deux ne suffit seul :
+#
+# 1. ``type_chunk`` — issu du découpage structurel (un « ## Chapitre : … » est
+#    du cours, un « ### Exercice 3 » ne l'est pas) ;
+# 2. ``type_document`` — la nature du fichier source, déduite de son dossier et
+#    de son nom (``data/raw/exercices/TD1-….pdf``).
+#
+# Pourquoi les deux : un TD sans titres explicites est découpé par
+# l'heuristique de titres numérotés, qui produit des ``sous_notion``. Sur le
+# seul ``type_chunk``, tout ce TD passerait pour du cours.
+
+#: Types de chunk qui constituent le cours proprement dit.
+TYPES_COURS: frozenset[str] = frozenset({
+    TypeChunk.COMPETENCE_COMPLETE.value,
+    TypeChunk.CHAPITRE.value,
+    TypeChunk.SOUS_NOTION.value,
+})
+
+#: Natures de document qui ne contiennent **jamais** de cours principal, quel
+#: que soit le découpage obtenu. Libellés produits par l'extraction de
+#: métadonnées (``ingestion/loaders/metadata``).
+TYPES_DOCUMENT_COMPLEMENT: frozenset[str] = frozenset({
+    "td", "tp", "exercice", "exercices", "devoir", "composition",
+    "annales", "sujet", "problème", "corrigé", "ds",
+})
+
+
+def est_chunk_de_cours(type_chunk: str | None, type_document: str | None = None) -> bool:
+    """Vrai si ce chunk relève du cours, faux s'il est un complément.
+
+    Un document de TD ou d'annales ne peut pas fournir de cours principal, même
+    quand son découpage produit des sections d'allure théorique — les « rappels
+    de cours » en tête de TD restent des compléments.
+    """
+    if type_document and type_document.strip().lower() in TYPES_DOCUMENT_COMPLEMENT:
+        return False
+    return type_chunk in TYPES_COURS
 
 
 # --- Séries du secondaire : classes d'équivalence ancienne/nouvelle nomenclature

@@ -141,3 +141,19 @@ def test_navigation_never_rebinds_the_chapter():
     # Un mot de sujet dans une relance ne doit pas faire dériver le cours.
     pos = advance(prev, Navigation.NEXT, "continue avec les nombres complexes")
     assert pos.chapitre == "Suites Numeriques"
+
+
+def test_sans_cours_le_prompt_interdit_d_inventer():
+    """Cas fréquent sur ce corpus : la notion n'existe qu'en TD."""
+    from agent_tuteur.agent.course_plan import CoursePosition
+    from agent_tuteur.agent.prompt import AVERTISSEMENT_SANS_COURS, assemble_course_prompt
+
+    position = CoursePosition(
+        chapitre="Probabilités", section_index=0, reason="test", chapitre_confirmed=True
+    )
+    _, sans = assemble_course_prompt("explique", position, [], has_course=False)
+    _, avec = assemble_course_prompt("explique", position, [], has_course=True)
+
+    assert AVERTISSEMENT_SANS_COURS in sans
+    assert AVERTISSEMENT_SANS_COURS not in avec
+    assert "N'invente sous aucun prétexte" in sans
