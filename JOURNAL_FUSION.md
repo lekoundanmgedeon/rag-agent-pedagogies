@@ -960,6 +960,40 @@ question ambiguë), il faudra la table. C'est une décision produit, pas
 technique : **à trancher en équipe**.
 
 
+### V7 — Bascule du déploiement vers le nouveau frontend
+
+Le frontend Next.js est **construit, testé et fonctionnel**. Mais le
+déploiement pointe toujours vers le frontend Vue, qui fait tourner la démo
+hébergée. Je ne l'ai pas basculé : cela touche la production, et cinq fichiers.
+
+**Ce qu'il faudrait changer** :
+
+| Fichier | Modification |
+|---|---|
+| `Dockerfile.render` | Construire `agent-tuteur-web-next` (et fournir `API_ORIGIN` **au build**) |
+| `render.yaml` | Variable `API_ORIGIN` |
+| `agent-tuteur-deploy/docker-compose.dev.yml` | Service frontend |
+| `agent-tuteur-deploy/docker-compose.prod.yml` | Service frontend + nginx |
+| `Makefile` | Cibles `web`, `web-build` |
+
+**Une différence de nature à connaître** : le frontend Vue est une application
+**statique** (nginx sert des fichiers). Next.js a besoin d'un **processus Node**
+qui tourne, à cause de la garde de route (`proxy.ts`) et du rendu serveur. Le
+conteneur unique de la démo Render doit donc faire tourner deux processus au
+lieu d'un, ou le proxy doit être confié à nginx.
+
+| Option | Effet |
+|---|---|
+| **A.** Basculer maintenant | Le nouveau frontend part en démo ; il faut retravailler l'image Render |
+| **B.** Laisser cohabiter | Les deux frontends sont construits par la CI ; on bascule quand l'image est prête |
+| **C.** Export statique de Next | Évite le processus Node, mais **supprime la garde de route** — à écarter |
+
+**Mon avis** : **B** pour l'instant. Le nouveau frontend est prêt et vérifié,
+mais rien ne presse de couper une démo qui fonctionne avant d'avoir retravaillé
+l'image et de l'avoir essayée. **À trancher**, avec le retrait de
+`agent-tuteur-web/` au même moment.
+
+
 ---
 
 ## Module 7 : Consolidation
@@ -1068,9 +1102,146 @@ Tous les liens internes de la documentation ont été vérifiés : aucun cassé.
 
 ---
 
-# Résumé final — la fusion du backend, module par module
+## Module 8 : Frontend Next.js (P5)
 
-*Le frontend (P5) reste hors périmètre — décision de cadrage.*
+**Objectif** : remplacer le frontend Vue par un frontend Next.js/TypeScript,
+avec un contrat d'API **vérifié à la compilation**.
+
+### La décision, et ce qui l'a précédée
+
+La question Q1 du plan (Next.js ou Vue ?) n'avait jamais été tranchée. Avant de
+la reposer, l'état réel des deux frontends a été mesuré — et le résultat
+**contredisait la recommandation initiale** :
+
+| Mesure | Résultat |
+|---|---|
+| Endpoints appelés par le frontend NURU | 14 |
+| Qui existent dans notre API | **2** (et avec des chemins différents) |
+| Qui visent des fonctionnalités reportées (enseignant/parent) ou retirées | 5 |
+| Streaming SSE dans le frontend NURU | **aucun** |
+| Streaming, JWT et garde de route dans le frontend Vue | **les trois, fonctionnels** |
+
+Le plan recommandait Next.js parce que NURU avait « 21 écrans déjà conçus ».
+La mesure montre que la plupart visent un backend qui n'existe plus.
+
+**L'équipe a maintenu le choix de Next.js** après avoir vu ces chiffres. C'est
+la décision retenue et appliquée ; la mesure est conservée ici pour mémoire.
+
+### Ce qui a été gardé
+
+- **Le design system de NURU** : couleurs identitaires sénégalaises, rendu
+  « manuel scolaire » du markdown mathématique. C'est son apport réel.
+- **Les trois acquis du frontend Vue**, que le plan exigeait de porter :
+  authentification par jeton, garde de route, et **streaming SSE**.
+- **Le frontend Vue lui-même**, pour l'instant : il fait tourner la démo
+  hébergée. Voir « bascule » ci-dessous.
+
+### Ce qui a été retiré
+
+- **`AuthContext` de NURU et son repli local.** Il déduisait le rôle de
+  l'adresse e-mail quand le backend ne répondait pas :
+
+  ```ts
+  if (email.includes('admin')) fallbackRole = 'admin';   // supprimé
+  ```
+
+  Couper son réseau et se connecter avec `admin@n-importe-quoi.fr` ouvrait
+  l'interface d'administration. Ici, un backend injoignable est une **erreur**,
+  pas une connexion réussie.
+- **Tous les replis de données fabriquées.** NURU renvoyait des statistiques
+  plausibles (`rag_vectors_count: 2635`) quand l'API échouait : une panne
+  devenait indétectable. Toute requête en échec lève désormais une erreur, et
+  chaque écran sait l'afficher.
+- **Les 19 pages de NURU sans contrepartie** : `centre-ia`, `scheduler`,
+  `familles-pedagogiques`, `cibles-cognitives`, `defis`… aucune n'a d'API.
+
+### Ce qui a été ajouté
+
+**1. Le contrat d'API est généré, pas écrit** (`src/types/api.d.ts`)
+
+1 583 lignes de types produites depuis le schéma OpenAPI. C'est le mécanisme
+central du module.
+
+**Vérifié pour de bon** : renommer `competence` en `concept` dans un schéma
+Pydantic côté API a bien produit **6 erreurs de compilation** pointant les
+lignes exactes du frontend. Sans ce mécanisme, on aurait eu un `undefined`
+silencieux en production, et un écran vide chez l'élève.
+
+**2. Neuf écrans**
+
+| Route | Pour qui | Contenu |
+|---|---|---|
+| `/login` | tous | Connexion |
+| `/` | élève | Tuteur — chat **streamé**, formules rendues |
+| `/quiz` | élève | Quiz, correction, badges |
+| `/progression` | élève | Maîtrise par compétence, historique |
+| `/admin` | admin | État réel des services |
+| `/admin/documents` | admin | Corpus et ingestion |
+| `/admin/utilisateurs` | admin | Comptes et rôles |
+| `/admin/recherche` | admin | Diagnostic de la recherche |
+| `/admin/journaux` | admin | Traces d'orchestration |
+
+**3. Une garde de route honnête** (`src/proxy.ts`)
+
+Elle évite d'afficher un écran vide — et **rien d'autre**. Son en-tête le dit
+explicitement : la seule autorité en matière de droits est l'API. Confondre les
+deux est exactement l'erreur qu'avait faite NURU.
+
+> Le fichier s'appelle `proxy.ts` : depuis Next 16, `middleware.ts` est déprécié.
+
+**4. Deux garde-fous anti-divergence dans l'intégration continue**
+
+- le schéma OpenAPI committé est régénéré et comparé — il échoue s'il a dérivé
+  du code ;
+- les types TypeScript sont régénérés et comparés — ils échouent s'ils ont
+  dérivé du schéma.
+
+Ensemble, ils garantissent que le frontend compile contre l'API réelle, et non
+contre le souvenir qu'il en a.
+
+### Vérification faite sur l'infrastructure réelle
+
+Le frontend a été construit, démarré, et interrogé **à travers son propre
+proxy**, contre une vraie API et une vraie base :
+
+| Vérification | Résultat |
+|---|---|
+| Connexion d'un compte réel | ✅ jeton obtenu |
+| Garde de route sans jeton (`/`, `/admin`) | ✅ redirigé vers le login |
+| Page publique `/login` | ✅ accessible |
+| Boucle quiz complète (correction, maîtrise, badges) | ✅ 3 badges, maîtrise à 100 % |
+| Quiz que le modèle ne sait pas produire | ✅ `available: false` → « réessayer », **jamais de QCM factice** |
+| Streaming SSE de bout en bout | ✅ événement `meta` puis 48 fragments |
+
+**Deux vrais défauts trouvés à cette occasion** — que ni le typage ni le build
+n'auraient révélés :
+
+1. **La garde de route interceptait `/health`** et le redirigeait vers le login.
+   Le tableau de bord d'administration s'affichait en erreur. Corrigé en
+   excluant ce chemin.
+2. **`API_ORIGIN` est lu au moment du *build*, pas au démarrage.** Next fige les
+   redirections dans le manifeste de construction. Un `npm run build` sans cette
+   variable produit une image qui pointera toujours vers `localhost:8000`, quoi
+   qu'on mette dans l'environnement ensuite. C'est documenté en évidence dans le
+   README du frontend, car c'est un piège classique en production.
+
+### Impact sur le reste du projet
+
+- **Après toute modification d'une route d'API**, deux commandes :
+  ```bash
+  cd agent-tuteur-api && python scripts/export_openapi.py openapi.json
+  cd ../agent-tuteur-web-next && npm run gen:api
+  ```
+  L'intégration continue échoue si vous les oubliez.
+- `agent-tuteur-api/openapi.json` est désormais **versionné** : c'est le contrat.
+- Le frontend Vue (`agent-tuteur-web/`) est toujours construit par la CI, parce
+  qu'il fait encore tourner le déploiement.
+
+---
+
+# Résumé final — la fusion, module par module
+
+*Toutes les phases du plan sont traitées, y compris le frontend (P5).*
 
 | # | Module | Ce qu'il apporte | Tests |
 |---|---|---|---|
@@ -1082,12 +1253,13 @@ Tous les liens internes de la documentation ont été vérifiés : aucun cassé.
 | 5 | [Routes API](#module-5--les-routes-de-lapi-pédagogique) | Tout devient utilisable, et protégé | +27 → 386 * |
 | 6 | [Gemini et chaîne LLM](#module-6--gemini-et-chaîne-de-repli-configurable) | Changer de modèle sans toucher au code | +27 → 413 * |
 | 7 | [Consolidation](#module-7--consolidation) | ADR, dépendances épinglées, analyse statique, intégration continue | 413 * |
+| 8 | [Frontend Next.js](#module-8--frontend-nextjs-p5) | 9 écrans, contrat d'API vérifié à la compilation | 413 * |
 
 \* avec PostgreSQL. Sans base de données : **317 tests**.
 
 **De 145 à 413 tests.** Aucun module n'a fait baisser ce nombre.
 
-## Les six choses à retenir
+## Les sept choses à retenir
 
 1. **On a gardé les fondations d'ATS et greffé le produit de NURU** — comme
    prévu. Aucune brique n'a été réécrite pour le plaisir.
@@ -1105,9 +1277,13 @@ Tous les liens internes de la documentation ont été vérifiés : aucun cassé.
 5. **Ce qui n'a pas pu être fait** : le jeu d'évaluation de recherche (il faut
    de vraies questions d'élèves) et l'indexation du corpus vers Qdrant (il faut
    le serveur et le modèle d'embeddings). Voir `REPRISE_FUSION.md`.
-6. **L'intégration continue est en place** : quatre vérifications sur chaque
-   proposition de modification, dont les tests contre un vrai PostgreSQL. C'est
-   ce qui empêchera les deux dépôts de re-diverger.
+6. **L'intégration continue est en place** : les tests contre un vrai
+   PostgreSQL, l'analyse statique, et **deux garde-fous anti-divergence** — le
+   schéma OpenAPI et les types TypeScript sont régénérés et comparés à chaque
+   proposition de modification. C'est ce qui empêchera les deux moitiés du
+   projet de re-diverger.
+7. **Le frontend Next.js est prêt mais pas déployé** : la bascule touche la
+   production et attend un arbitrage (point V7).
 
 ## Où continuer
 
