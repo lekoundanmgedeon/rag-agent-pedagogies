@@ -11,12 +11,19 @@
 #
 # Pour mettre à jour : relever une version, lancer la suite complète (avec
 # PostgreSQL), et ne committer que si elle passe.
+#
+# ⚠️ Les versions doivent s'installer sur **Python 3.11**, pas seulement sur la
+# version de votre machine. C'est le plancher déclaré par `pyproject.toml` et
+# la version de l'image Docker. Vérification :
+#
+#   docker run --rm -v "$PWD/requirements.txt:/r.txt:ro" python:3.11-slim \
+#     pip install --dry-run -q -r /r.txt
 
 # --- Cœur métier (étapes 1-3 : RAG + agent, exécutable hors-ligne) ---
 pydantic==2.13.4
 pydantic-settings==2.14.2
 pyyaml==6.0.3
-numpy==2.5.1
+numpy==2.4.6            # 2.5.x exige Python >= 3.12 ; l'image Docker est en 3.11
 sympy==1.14.0
 httpx==0.28.1
 pypdf==6.14.2

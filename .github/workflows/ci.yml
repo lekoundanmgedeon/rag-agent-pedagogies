@@ -130,6 +130,19 @@ jobs:
         working-directory: agent-tuteur-web-next
         run: npm run build
 
+  image-api:
+    name: Build de l'image Docker de l'API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construire l'image
+        # Les autres travaux tournent sur Python 3.12 ; l'image Docker est en
+        # **3.11**, le plancher déclaré par pyproject.toml. Sans cette étape, un
+        # épinglage valable seulement en 3.12 casse le déploiement sans que rien
+        # ne le signale — c'est exactement ce qui s'est produit avec
+        # `numpy==2.5.1` (voir JOURNAL_FUSION.md, module 7).
+        run: docker build -t agent-tuteur-api:ci agent-tuteur-api
+
   frontend-vue:
     # Frontend historique, encore utilisé par le déploiement Render tant que la
     # bascule n'est pas faite (cf. JOURNAL_FUSION.md, module 8). À retirer en
