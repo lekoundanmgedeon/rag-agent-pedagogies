@@ -26,10 +26,13 @@ from agent_tuteur.api.routes import (
     chat,
     conversations,
     documents,
+    evaluation,
     feedback,
     health,
     logs,
+    mastery,
     progression,
+    quiz,
     search,
 )
 from agent_tuteur.api.routes.documents import verify_tenant_consistency
@@ -185,6 +188,10 @@ def create_app() -> FastAPI:
     app.include_router(documents.router)
     app.include_router(search.router)
     app.include_router(progression.router)
+    # Domaine pédagogique porté de NURU (module 5 de la fusion).
+    app.include_router(quiz.router)
+    app.include_router(evaluation.router)
+    app.include_router(mastery.router)
     app.include_router(feedback.router)
     app.include_router(health.router)
     app.include_router(logs.router)

@@ -26,6 +26,10 @@ from agent_tuteur.persistence.repositories import StudentLinkRepository, UserRep
         ("GET", "/api/documents"),
         ("POST", "/api/search"),
         ("GET", "/api/logs/chat"),
+        ("POST", "/api/quiz"),
+        ("POST", "/api/quiz/answer"),
+        ("GET", "/api/evaluation/eleve1"),
+        ("GET", "/api/mastery/eleve1"),
     ],
 )
 async def test_aucune_route_metier_ne_repond_sans_jeton(api_client, method, path):

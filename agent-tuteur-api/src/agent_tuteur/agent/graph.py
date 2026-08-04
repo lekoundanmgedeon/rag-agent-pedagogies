@@ -219,6 +219,15 @@ class TutorAgent:
         self._full_graph = self._build_graph(include_compose=True)
 
     @property
+    def llm(self) -> BaseLLM:
+        """Modèle de langage utilisé par l'agent.
+
+        Exposé pour les usages hors graphe qui ont besoin de la **même** chaîne
+        de repli que le chat — la génération de quiz, par exemple.
+        """
+        return self._llm
+
+    @property
     def llm_chain(self) -> list[str]:
         """Chaîne de fallback LLM effective (exposée pour ``GET /health``)."""
         return self._llm.chain

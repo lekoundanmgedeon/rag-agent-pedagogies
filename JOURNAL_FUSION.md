@@ -564,6 +564,136 @@ hors-ligne mesure donc le vrai comportement, pas une approximation.
 
 ---
 
+## Module 5 : Les routes de l'API pédagogique
+
+**Objectif** : rendre utilisables depuis l'extérieur les briques construites aux
+modules 3 et 4 — générer un quiz, le corriger, consulter la progression — **sans
+rouvrir la faille de NURU**.
+
+### Ce qui a été gardé
+
+- **Le périmètre fonctionnel de NURU** : quiz, correction, historique,
+  progression. C'est ce que le dépôt ATS n'exposait pas.
+- **Les conventions d'API du projet** : chaque route derrière une dépendance
+  d'authentification, chaque réponse décrite par un modèle typé (jamais un
+  dictionnaire brut), une session de base par requête.
+
+### Ce qui a été retiré
+
+- **`GET /parent/students/{parent_id}` et ses semblables** — non portées.
+  Chez NURU, l'identifiant venait de l'URL : n'importe qui pouvait consulter
+  n'importe quel parent. Ici, **l'identité vient toujours du jeton**.
+- **Les routes `/teacher` et `/parent`** — reportées en v1.1, conformément à la
+  décision de cadrage. Le modèle de données est posé, les écrans viendront.
+- **`POST /chat/simple`** — le chemin de débogage parallèle de NURU, déjà écarté
+  par le plan.
+
+### Ce qui a été ajouté ou modifié
+
+**1. La règle d'accès, écrite une seule fois** (`api/dependencies.py`)
+
+`ensure_can_access_student()` répond à « ce compte peut-il voir les données de
+cet élève ? ». Trois cas, et rien d'autre :
+
+| Rôle | Ce qu'il voit |
+|---|---|
+| **admin** | Tous les élèves de son établissement |
+| **élève** | Lui-même, uniquement |
+| **enseignant / parent** | Seulement les élèves qui lui sont rattachés en base |
+| *(rôle inconnu)* | **Rien** — le refus est le défaut |
+
+Elle est centralisée parce qu'une règle recopiée dans dix routes finit toujours
+par diverger dans l'une d'elles — et c'est celle-là qui devient la faille.
+
+> ⚠️ **Un correctif important au passage.** L'ajout des rôles au module 3 avait
+> ouvert une brèche : l'ancien contrôle de `/api/progression` disait « si ce
+> n'est pas un élève, laisse passer ». Tant qu'il n'existait que `admin` et
+> `student`, c'était juste. Avec `teacher` et `parent`, **un parent pouvait
+> consulter n'importe quel élève**. Refermé, et couvert par des tests.
+
+**2. Trois nouveaux jeux de routes**
+
+| Route | Ce qu'elle fait |
+|---|---|
+| `POST /api/quiz` | Génère un quiz sur une compétence |
+| `POST /api/quiz/answer` | Corrige, enregistre le résultat, met à jour la maîtrise, attribue les badges |
+| `GET /api/evaluation/{eleve}` | Historique des exercices et quiz |
+| `GET /api/mastery/{eleve}` | Niveau par compétence, priorités de révision, badges |
+
+**3. La bonne réponse ne descend plus dans le navigateur**
+
+C'est le point le plus important du module, et il n'était pas prévu au plan.
+
+NURU renvoyait le quiz complet au navigateur, **bonne réponse incluse**. Un
+élève qui ouvre les outils de développement (F12) la lit avant de répondre :
+l'évaluation ne mesure plus rien.
+
+Désormais, `POST /api/quiz` renvoie la question et les propositions, mais la
+correction voyage **scellée** dans un jeton signé (`quiz_token`) que le client
+transporte sans pouvoir le lire ni le modifier. `POST /api/quiz/answer` le
+rouvre côté serveur. Un jeton bricolé est rejeté — c'est testé.
+
+Cette solution ne demande **aucune table supplémentaire**. L'alternative
+(stocker les quiz en base) est décrite au point V6 ci-dessous.
+
+**4. Un quiz absent n'est pas une erreur**
+
+Quand le modèle ne produit rien d'exploitable, la route répond `200` avec
+`available: false` et un message à afficher — pas une erreur technique.
+L'interface dit honnêtement « réessaie », plutôt que de montrer un
+questionnaire de remplissage. C'est la règle du module 4, remontée jusqu'à l'API.
+
+**5. Deux petits alignements**
+
+- La création de compte accepte les **quatre rôles** ; l'API en refusait encore
+  deux alors que la base les acceptait depuis la migration `0007`.
+- `TutorAgent` expose son modèle de langage (`agent.llm`), pour que la
+  génération de quiz utilise **la même chaîne de repli** que le chat.
+
+**6. Le contrat pour le frontend** (`scripts/export_openapi.py`)
+
+```bash
+python scripts/export_openapi.py            # -> openapi.json (21 chemins)
+npx openapi-typescript openapi.json -o src/types/api.d.ts
+```
+
+Générer les types plutôt que les écrire à la main : renommer un champ côté API
+casse alors la compilation du frontend, au lieu de produire un `undefined`
+silencieux en production. C'est le mécanisme qui empêchera les deux moitiés du
+projet de re-diverger.
+
+### Une étape du plan qui s'est révélée sans objet
+
+Le plan prévoyait de « brancher les ports pédagogiques sur le chat ». Vérification
+faite, `/api/chat` fonctionne **uniquement en streaming** : il s'arrête avant les
+étapes finales du graphe, et ne touche donc jamais à la maîtrise. C'est la route
+`/api/quiz/answer` qui la met à jour. Rien à brancher — mieux vaut le dire que
+d'ajouter un câblage inutile.
+
+### Tests
+
+**+27 tests d'API** (359 → **386** avec PostgreSQL ; inchangé à 290 sans base,
+ces tests exigeant PostgreSQL).
+
+Dont, en particulier :
+
+- un test **401 sans jeton** sur les 10 routes métier — le garde-fou qui
+  manquait totalement à NURU ;
+- des tests **403** par rôle : élève sur un autre élève, parent non rattaché,
+  rattachement d'un autre établissement, rôle inconnu ;
+- la preuve que la bonne réponse **n'est pas** dans la réponse HTTP.
+
+### Impact sur le reste du projet
+
+- **Règle à respecter pour toute nouvelle route** touchant les données d'un
+  élève : appeler `ensure_can_access_student(...)`. Ne jamais se fier à un
+  identifiant fourni par le client.
+- Le frontend devra envoyer `quiz_token` tel quel à la correction — il ne doit
+  ni le lire, ni le construire.
+- Le schéma OpenAPI a changé : régénérez les types côté frontend.
+
+---
+
 ## ⚠️ Points à valider
 
 *Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
@@ -700,4 +830,27 @@ chose à l'élève.
 Le comportement actuel est celui de NURU (option A), inchangé, et un test le
 documente explicitement. **À confirmer avant de le modifier**, car cela touche
 ce que voit l'élève.
+
+
+### V6 — Faut-il persister les quiz en base ?
+
+La bonne réponse voyage aujourd'hui **scellée dans un jeton signé**, valable une
+heure. Ça marche, c'est sûr, et ça n'a demandé aucune table.
+
+L'alternative serait de **stocker chaque quiz généré** dans une table, et de ne
+renvoyer au client qu'un identifiant.
+
+| | Jeton signé (retenu) | Table de quiz |
+|---|---|---|
+| Table supplémentaire | non | oui (+ migration) |
+| Réponse protégée | oui | oui |
+| Rejouer un quiz plus tard | non | oui |
+| Savoir quelles questions ont été posées | non | oui |
+| Repérer une question mal formulée (tout le monde se trompe) | non | **oui** |
+
+**Mon avis** : garder le jeton pour l'instant — il répond au besoin immédiat
+sans alourdir le modèle. Mais si vous voulez un jour **analyser la qualité des
+questions générées** (repérer celles où tous les élèves échouent, signe d'une
+question ambiguë), il faudra la table. C'est une décision produit, pas
+technique : **à trancher en équipe**.
 
