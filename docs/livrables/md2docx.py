@@ -366,6 +366,7 @@ if __name__ == "__main__":
     out = Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
     for name, toc in (
+        ("RAPPORT_FUSION", True),
         ("COMPARATIF_ARCHITECTURES", True),
         ("SYNTHESE_REUNION_TECHNIQUE", False),
         ("ARCHITECTURE_CIBLE", True),
