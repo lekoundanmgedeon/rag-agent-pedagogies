@@ -12,25 +12,96 @@ indépendante des policies RLS (cf. ``persistence/db.py::set_tenant_context``).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent_tuteur.domain.mastery import (
+    est_une_reussite,
+    maitrise_mise_a_jour,
+    score_observe,
+)
 from agent_tuteur.persistence.models import (
     AuditLog,
+    Badge,
+    ConceptMastery,
     Conversation,
     Document,
+    ExerciseResult,
     Feedback,
     Message,
     Progress,
+    Recommendation,
+    StudentLink,
     User,
 )
 
 
 def _iso(dt: datetime) -> str:
     return dt.isoformat()
+
+
+# --- Sérialisation des lignes pédagogiques -----------------------------------
+# Les repositories renvoient des dictionnaires simples, jamais des objets ORM :
+# le cœur métier et l'API restent ignorants de SQLAlchemy.
+
+
+def _mastery_dict(row: ConceptMastery) -> dict:
+    return {
+        "student_id": row.student_id,
+        "competence": row.competence,
+        "chapitre": row.chapitre,
+        "mastery_score": row.mastery_score,
+        "attempts": row.attempts,
+        "successes": row.successes,
+        "last_seen": _iso(row.last_seen),
+    }
+
+
+def _result_dict(row: ExerciseResult) -> dict:
+    return {
+        "id": row.id,
+        "student_id": row.student_id,
+        "competence": row.competence,
+        "chapitre": row.chapitre,
+        "exercise_type": row.exercise_type,
+        "difficulty": row.difficulty,
+        "is_correct": row.is_correct,
+        "score": row.score,
+        "details": row.details,
+        "created_at": _iso(row.created_at),
+    }
+
+
+def _badge_dict(row: Badge) -> dict:
+    return {
+        "code": row.code,
+        "label": row.label,
+        "description": row.description,
+        "earned_at": _iso(row.earned_at),
+    }
+
+
+def _recommendation_dict(row: Recommendation) -> dict:
+    return {
+        "id": row.id,
+        "student_id": row.student_id,
+        "competence": row.competence,
+        "chapitre": row.chapitre,
+        "message": row.message,
+        "author_user_id": row.author_user_id,
+        "created_at": _iso(row.created_at),
+    }
+
+
+def _link_dict(row: StudentLink) -> dict:
+    return {
+        "user_id": row.user_id,
+        "student_id": row.student_id,
+        "created_at": _iso(row.created_at),
+    }
 
 
 class ProgressRepository:
@@ -365,3 +436,288 @@ class DocumentRepository:
         await self._session.delete(doc)
         await self._session.flush()
         return True
+
+
+# --- Domaine pédagogique -----------------------------------------------------
+
+
+class MasteryRepository:
+    """Niveau de maîtrise par compétence (``concept_mastery``).
+
+    Implémente ``MasteryPort`` (agent/ports.py) : le cœur métier ne sait pas
+    qu'il parle à PostgreSQL.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(
+        self, student_id: str, competence: str, tenant_id: str = "default"
+    ) -> dict | None:
+        stmt = select(ConceptMastery).where(
+            ConceptMastery.tenant_id == tenant_id,
+            ConceptMastery.student_id == student_id,
+            ConceptMastery.competence == competence,
+        )
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        return _mastery_dict(row) if row else None
+
+    async def record_attempt(
+        self,
+        *,
+        student_id: str,
+        competence: str,
+        is_correct: bool | None = None,
+        score: float | None = None,
+        chapitre: str | None = None,
+        tenant_id: str = "default",
+    ) -> dict:
+        """Enregistre une tentative et met à jour la maîtrise.
+
+        La ligne est créée à la première tentative. Le calcul lui-même est dans
+        ``domain/mastery.py`` : ce dépôt ne fait que lire, appliquer et écrire.
+        """
+        observe = score_observe(is_correct=is_correct, score=score)
+        stmt = select(ConceptMastery).where(
+            ConceptMastery.tenant_id == tenant_id,
+            ConceptMastery.student_id == student_id,
+            ConceptMastery.competence == competence,
+        )
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            row = ConceptMastery(
+                tenant_id=tenant_id,
+                student_id=student_id,
+                competence=competence,
+                chapitre=chapitre,
+                mastery_score=maitrise_mise_a_jour(None, observe),
+                attempts=0,
+                successes=0,
+            )
+            self._session.add(row)
+        else:
+            row.mastery_score = maitrise_mise_a_jour(row.mastery_score, observe)
+
+        row.attempts += 1
+        row.successes += 1 if est_une_reussite(observe) else 0
+        row.last_seen = datetime.now(timezone.utc)
+        if chapitre and not row.chapitre:
+            row.chapitre = chapitre
+        await self._session.flush()
+        return _mastery_dict(row)
+
+    async def list_for_student(
+        self, student_id: str, tenant_id: str = "default"
+    ) -> list[dict]:
+        stmt = (
+            select(ConceptMastery)
+            .where(
+                ConceptMastery.tenant_id == tenant_id,
+                ConceptMastery.student_id == student_id,
+            )
+            .order_by(ConceptMastery.mastery_score.asc())
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_mastery_dict(r) for r in rows]
+
+    async def weakest(
+        self, student_id: str, tenant_id: str = "default", limit: int = 3
+    ) -> list[dict]:
+        """Compétences les moins maîtrisées — base des recommandations.
+
+        Une compétence jamais tentée est exclue : un score de 0 sans tentative
+        ne veut pas dire « non maîtrisée », il veut dire « inconnue ».
+        """
+        stmt = (
+            select(ConceptMastery)
+            .where(
+                ConceptMastery.tenant_id == tenant_id,
+                ConceptMastery.student_id == student_id,
+                ConceptMastery.attempts > 0,
+            )
+            .order_by(ConceptMastery.mastery_score.asc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_mastery_dict(r) for r in rows]
+
+
+class ExerciseResultRepository:
+    """Résultats d'exercices et de quiz (``exercise_results``)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record(self, entry: dict) -> dict:
+        row = ExerciseResult(
+            tenant_id=entry.get("tenant_id", "default"),
+            student_id=entry["student_id"],
+            competence=entry.get("competence"),
+            chapitre=entry.get("chapitre"),
+            exercise_type=entry.get("exercise_type", "exercice"),
+            difficulty=entry.get("difficulty", "intermediate"),
+            is_correct=entry.get("is_correct"),
+            score=entry.get("score"),
+            details=entry.get("details"),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return _result_dict(row)
+
+    async def list_for_student(
+        self, student_id: str, tenant_id: str = "default", limit: int = 50
+    ) -> list[dict]:
+        stmt = (
+            select(ExerciseResult)
+            .where(
+                ExerciseResult.tenant_id == tenant_id,
+                ExerciseResult.student_id == student_id,
+            )
+            .order_by(ExerciseResult.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_result_dict(r) for r in rows]
+
+
+class BadgeRepository:
+    """Badges débloqués (``badges``)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def award(
+        self,
+        *,
+        student_id: str,
+        code: str,
+        label: str,
+        description: str | None = None,
+        tenant_id: str = "default",
+    ) -> dict | None:
+        """Attribue un badge. Renvoie ``None`` s'il était déjà acquis.
+
+        L'unicité (tenant, élève, code) est aussi garantie en base : un badge ne
+        peut pas être obtenu deux fois, même si deux requêtes arrivent ensemble.
+        """
+        stmt = select(Badge).where(
+            Badge.tenant_id == tenant_id,
+            Badge.student_id == student_id,
+            Badge.code == code,
+        )
+        if (await self._session.execute(stmt)).scalar_one_or_none() is not None:
+            return None
+        row = Badge(
+            tenant_id=tenant_id,
+            student_id=student_id,
+            code=code,
+            label=label,
+            description=description,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return _badge_dict(row)
+
+    async def list_for_student(
+        self, student_id: str, tenant_id: str = "default"
+    ) -> list[dict]:
+        stmt = (
+            select(Badge)
+            .where(Badge.tenant_id == tenant_id, Badge.student_id == student_id)
+            .order_by(Badge.earned_at.desc())
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_badge_dict(r) for r in rows]
+
+
+class RecommendationRepository:
+    """Révisions recommandées à un élève (``recommendations``)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        *,
+        student_id: str,
+        competence: str,
+        chapitre: str | None = None,
+        message: str | None = None,
+        author_user_id: str | None = None,
+        tenant_id: str = "default",
+    ) -> dict:
+        row = Recommendation(
+            tenant_id=tenant_id,
+            student_id=student_id,
+            competence=competence,
+            chapitre=chapitre,
+            message=message,
+            author_user_id=author_user_id,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return _recommendation_dict(row)
+
+    async def list_for_student(
+        self, student_id: str, tenant_id: str = "default", limit: int = 20
+    ) -> list[dict]:
+        stmt = (
+            select(Recommendation)
+            .where(
+                Recommendation.tenant_id == tenant_id,
+                Recommendation.student_id == student_id,
+            )
+            .order_by(Recommendation.created_at.desc())
+            .limit(limit)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_recommendation_dict(r) for r in rows]
+
+
+class StudentLinkRepository:
+    """Liaisons parent/enseignant → élève (``student_links``).
+
+    **C'est ici que se joue la règle d'accès la plus importante du projet** :
+    un parent ou un enseignant ne voit un élève que si une ligne l'y autorise.
+    La question est toujours posée pour le compte **connecté**, jamais pour un
+    identifiant fourni par le client — c'est précisément la faille relevée dans
+    le dépôt NURU, où ``GET /parent/students/{parent_id}`` prenait l'identifiant
+    dans l'URL et laissait donc consulter n'importe quel parent.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def link(
+        self, *, user_id: str, student_id: str, tenant_id: str = "default"
+    ) -> dict:
+        row = StudentLink(tenant_id=tenant_id, user_id=user_id, student_id=student_id)
+        self._session.add(row)
+        await self._session.flush()
+        return _link_dict(row)
+
+    async def list_students_for(
+        self, user_id: str, tenant_id: str = "default"
+    ) -> list[str]:
+        """Identifiants des élèves que ce compte a le droit de consulter."""
+        stmt = (
+            select(StudentLink.student_id)
+            .where(StudentLink.tenant_id == tenant_id, StudentLink.user_id == user_id)
+            .order_by(StudentLink.created_at.asc())
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def can_access(
+        self, *, user_id: str, student_id: str, tenant_id: str = "default"
+    ) -> bool:
+        """Ce compte a-t-il le droit de consulter cet élève ?
+
+        Réponse lue en base pour ce couple précis — à appeler avant **toute**
+        lecture de données nominatives d'un élève par un tiers.
+        """
+        stmt = select(StudentLink.id).where(
+            StudentLink.tenant_id == tenant_id,
+            StudentLink.user_id == user_id,
+            StudentLink.student_id == student_id,
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none() is not None

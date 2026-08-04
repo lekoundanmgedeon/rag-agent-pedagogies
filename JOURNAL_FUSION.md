@@ -302,6 +302,146 @@ résultat attendu, pas une erreur de classement.
 
 ---
 
+## Module 3 : Modèle de données pédagogique et rôles
+
+**Objectif** : pouvoir suivre ce qu'un élève **maîtrise**, notion par notion —
+et non plus seulement compter les exercices qu'il a faits. C'est tout l'apport
+« produit » de NURU, absent du dépôt ATS.
+
+> **Mastery learning** : approche où l'on suit le niveau de maîtrise de chaque
+> notion plutôt que d'accumuler des notes. L'élève progresse notion par notion.
+
+### Ce qui a été gardé
+
+- **Le modèle métier de NURU** : maîtrise par notion, résultats d'exercices,
+  badges, recommandations, liaison parent/enseignant → élève. C'est ce que le
+  dépôt ATS n'avait pas du tout.
+- **La formule de calcul de la maîtrise de NURU** — voir plus bas ; c'est un
+  choix pédagogique réfléchi, pas un détail technique.
+- **Le catalogue de badges de NURU** (« 🌱 Premier pas », « 🎯 Sans-faute »…),
+  repris tel quel.
+- **Les conventions de base de données d'ATS** : identifiants UUID, `tenant_id`
+  sur chaque ligne, migrations Alembic, RLS.
+
+  > **RLS** (*Row Level Security*) : sécurité au niveau de la ligne. La base de
+  > données elle-même refuse de montrer les lignes d'un autre établissement,
+  > même si le code applicatif oublie de filtrer. C'est une deuxième barrière.
+  > **`tenant_id`** : l'établissement auquel appartient une donnée.
+
+### Ce qui a été retiré
+
+Trois tables de NURU ont été **supprimées** parce qu'elles faisaient doublon :
+
+- **`students`** — le projet identifie déjà un élève par un `student_id`,
+  présent partout (progression, conversations, journal, comptes). Une table de
+  plus aurait créé deux identités concurrentes pour la même personne.
+- **`interactions`** — doublonne la table `messages`, qui garde déjà l'historique
+  des échanges **avec** la trace de l'orchestration.
+- **`teachers`** — c'est le retrait le plus important. Chez NURU, un enseignant
+  avait sa propre table, avec **son propre mot de passe**, donc *deux* chemins
+  de connexion à sécuriser. Ici, un enseignant est simplement un compte avec
+  `role='teacher'` : un seul chemin, un seul endroit où vérifier les droits.
+  Les tables `parent_students` et `teacher_students` fusionnent de même en une
+  seule table `student_links`.
+
+- **La création de schéma par `create_all()`** — déjà écartée par le plan : elle
+  ne fait jamais évoluer une table existante, donc toute mise à jour en
+  production perdrait des données.
+
+### Ce qui a été ajouté ou modifié
+
+**1. Cinq nouvelles tables** (`persistence/models.py`)
+
+| Table | À quoi elle sert |
+|---|---|
+| `concept_mastery` | Le niveau de maîtrise (0 à 1) de chaque élève sur chaque compétence |
+| `exercise_results` | L'historique brut : chaque exercice ou quiz terminé |
+| `badges` | Les badges débloqués |
+| `recommendations` | Les révisions conseillées à un élève |
+| `student_links` | Qui a le droit de consulter quel élève |
+
+Un mot de vocabulaire : NURU dit « concept », le dépôt disait déjà
+« competence » partout. C'est ce dernier qui est retenu — deux mots pour la même
+chose est une source d'erreurs durable.
+
+**2. Les règles de calcul, isolées** (`domain/mastery.py`)
+
+Fichier de **calcul pur** : pas de base de données, pas de framework. On peut le
+tester sans rien démarrer.
+
+La formule portée de NURU est une **moyenne mobile** : à chaque tentative, on
+garde 70 % du niveau acquis et on intègre 30 % du nouveau résultat. Concrètement,
+les résultats récents pèsent plus que les anciens.
+
+Pourquoi c'est le bon choix : deux élèves ont 5 échecs et 5 réussites. L'un a
+d'abord échoué puis progressé, l'autre l'inverse. Une simple moyenne les
+donnerait à égalité ; la moyenne mobile distingue celui qui progresse. C'est
+testé explicitement.
+
+*Contrepartie assumée* : ce score dépend de l'**ordre** des tentatives, donc on
+ne peut pas le recalculer à partir des seuls compteurs. Il reste néanmoins
+reconstituable, parce que chaque tentative est archivée dans `exercise_results`
+— rejouer l'historique redonne exactement le même score. C'est la raison d'être
+des deux tables.
+
+**3. Six nouveaux dépôts de données** (`persistence/repositories.py`)
+
+Ils renvoient tous des dictionnaires simples, jamais des objets de base de
+données : le cœur du projet n'a pas à savoir qu'il y a du PostgreSQL derrière.
+
+Le plus important est `StudentLinkRepository`, qui répond à la question **« ce
+parent a-t-il le droit de voir cet élève ? »**. La réponse est lue en base pour
+le compte **connecté** — jamais à partir d'un identifiant envoyé par le client.
+C'est exactement la faille relevée chez NURU, où l'adresse
+`GET /parent/students/{parent_id}` prenait l'identifiant dans l'URL et laissait
+donc consulter n'importe quel parent.
+
+**4. Deux migrations** (`migrations/versions/`)
+
+- `0006_pedagogical_progress` — crée les cinq tables, avec RLS activée **et
+  forcée** (sans « forcée », le propriétaire de la table échapperait à la règle).
+- `0007_extend_roles` — les comptes acceptent désormais quatre rôles :
+  `admin`, `teacher`, `parent`, `student`.
+
+Les rôles enseignant et parent sont posés **maintenant** bien que leurs écrans
+soient reportés : ajouter une valeur aujourd'hui ne coûte rien, reprendre après
+coup des comptes déjà créés coûte cher.
+
+### Vérification faite sur l'infrastructure réelle
+
+Une base PostgreSQL 16 jetable a été démarrée pour la vérification (les
+conteneurs existants n'ont pas été touchés) :
+
+| Vérification | Résultat |
+|---|---|
+| Les 7 migrations s'enchaînent de zéro à jour | ✅ |
+| RLS activée **et forcée** sur les 5 nouvelles tables | ✅ 5 / 5 |
+| Règle d'isolation par établissement présente | ✅ 5 / 5 |
+| Contrainte de rôles bien étendue aux 4 valeurs | ✅ |
+| **Retour arrière** puis remontée | ✅ tables supprimées, contrainte revenue à 2 rôles, remontée sans erreur |
+| Suite complète contre PostgreSQL réel | ✅ **286 tests**, 2 ignorés |
+
+Le retour arrière mérite un mot : c'est le chemin que personne ne teste jamais,
+et celui qui vous sauve un soir de mise en production ratée. Il rétrograde au
+passage les comptes `teacher`/`parent` en `student` — jamais l'inverse, pour ne
+pas rendre des droits par accident.
+
+### Tests
+
+**+40 tests** (195 → **235** hors base de données, **286** avec PostgreSQL).
+
+### Impact sur le reste du projet
+
+- **Une migration est à appliquer** : `alembic upgrade head`. Sans elle, tout ce
+  qui touche à la maîtrise échouera.
+- Un compte peut maintenant avoir le rôle `teacher` ou `parent`. Le rôle seul ne
+  donne aucun droit : c'est la table `student_links` qui décide de ce qu'on voit.
+- **Règle à respecter absolument** pour la suite : avant de renvoyer les données
+  d'un élève à un tiers, appelez `StudentLinkRepository.can_access(...)`.
+  N'acceptez jamais un identifiant d'élève venant du client.
+
+---
+
 ## ⚠️ Points à valider
 
 *Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
