@@ -962,9 +962,115 @@ technique : **à trancher en équipe**.
 
 ---
 
+## Module 7 : Consolidation
+
+**Objectif** : faire en sorte que ce travail **tienne dans le temps** — que la
+divergence entre les deux dépôts ne puisse pas se reproduire, et qu'un
+développeur qui arrive dans six mois trouve une documentation à jour.
+
+### Ce qui a été gardé
+
+- **Le réflexe d'épinglage de NURU.** C'est leur meilleure pratique, et elle
+  vient d'une vraie mésaventure : une borne « au moins 1.9.0 » sur la
+  bibliothèque Qdrant avait laissé passer une version qui supprimait la
+  fonction de recherche utilisée — cassant **silencieusement** tout le RAG.
+- **Leur inventaire de dette technique** (§17 de leur documentation), le seul
+  passage de leurs 93 Ko qui garde une valeur durable. Reporté en annexe de
+  l'ADR, sous forme de tableau « ce que la fusion en fait ».
+
+### Ce qui a été retiré
+
+- **`DOCUMENTATION_TECHNIQUE.md` de NURU n'a pas été recopié.** Ses 1 800 lignes
+  décrivent une architecture qui n'existe plus (leur graphe, leur API, leur
+  frontend). Recopier en bloc aurait créé une documentation qui ment.
+- **Les bornes ouvertes `>=` sans limite haute.** Elles laissaient une version
+  majeure publiée demain s'installer toute seule sur une machine neuve.
+
+### Ce qui a été ajouté ou modifié
+
+**1. Une décision tracée** — `docs/adr/0010-fusion-nuru-ats.md`
+
+Au format des 9 ADR existants : pourquoi cette base, ce qui a été porté, ce qui
+a été abandonné, et les conséquences. C'est le document à lire dans deux ans
+quand quelqu'un demandera « pourquoi ce choix ? ».
+
+> **ADR** (*Architecture Decision Record*) : une note courte qui fige une
+> décision technique importante, son contexte et ses conséquences.
+
+**2. Deux niveaux de dépendances**
+
+| Fichier | Rôle |
+|---|---|
+| `pyproject.toml` | Ce avec quoi le code est **compatible** — plages avec borne haute |
+| `requirements.txt` | Ce qui a été **essayé** — versions exactes, installées par Docker |
+
+Un seul plancher a été relevé : la bibliothèque Qdrant, parce que c'est la seule
+avec une rupture documentée.
+
+**3. Une analyse statique qui ne se retournera pas contre nous**
+
+Le jeu de règles est **explicite** : les défauts de l'outil changent d'une
+version à l'autre, et une analyse qui se met à échouer toute seule finit par
+être désactivée.
+
+Deux règles sont ignorées avec justification :
+
+- celle qui interdit les appels de fonction en argument par défaut — c'est
+  **l'idiome** du framework web utilisé (61 occurrences) ;
+- celle qui veut moderniser les énumérations — les deux formes s'affichent
+  différemment, le gain serait nul et le risque réel.
+
+**Un vrai défaut a été trouvé au passage** : l'indexation utilisait `zip()` sans
+garde. Si le calculateur d'embeddings renvoyait moins de vecteurs que de
+morceaux, les derniers n'étaient **jamais indexés**, sans erreur — une panne
+invisible jusqu'à ce qu'un élève ne trouve rien. Corrigé.
+
+**4. L'intégration continue** — `.github/workflows/ci.yml`
+
+Quatre vérifications sur chaque proposition de modification :
+
+| Étape | Pourquoi |
+|---|---|
+| Analyse statique | Cohérence du code |
+| Tests **avec un vrai PostgreSQL** | Sans base, 96 tests sont ignorés — dont **tous** ceux du contrôle d'accès |
+| Génération du schéma OpenAPI | C'est le contrat avec le frontend |
+| Construction du frontend | Une modification d'API ne doit pas le casser en silence |
+
+Le point sur PostgreSQL est le plus important : ce sont précisément les tests
+qu'on ne veut jamais voir sauter qui disparaissent sans base de données.
+
+**5. Documentation remise à jour**
+
+`architecture.md` (nouveaux composants, règle d'accès, section « domaine
+pédagogique »), `api.md` (les 4 nouveaux endpoints, les 4 rôles), `README.md`
+(les trois postures de l'agent).
+
+### Vérification faite
+
+Le pipeline d'intégration continue a été **rejoué entièrement en local** avant
+d'être écrit dans un fichier : analyse statique propre, migrations sur une base
+neuve (13 tables), 413 tests, schéma OpenAPI généré (21 chemins), frontend
+construit. Les 8 fichiers de migration modifiés par le formatage automatique ont
+été **re-testés sur une base vierge** : ce sont des archives, on ne les touche
+pas à l'aveugle.
+
+Tous les liens internes de la documentation ont été vérifiés : aucun cassé.
+
+### Impact sur le reste du projet
+
+- **Toute proposition de modification passe désormais par ces quatre
+  vérifications.** C'est contraignant, et c'est le but.
+- Pour mettre à jour une dépendance : relever la version dans
+  `requirements.txt`, lancer la suite complète, ne committer que si elle passe.
+- **Il reste une action qui ne nous appartient pas** : archiver le dépôt
+  `nuru-binta` en lecture seule avec un renvoi vers celui-ci. Cela revient à son
+  propriétaire.
+
+---
+
 # Résumé final — la fusion du backend, module par module
 
-*Le frontend reste hors périmètre (décision de cadrage).*
+*Le frontend (P5) reste hors périmètre — décision de cadrage.*
 
 | # | Module | Ce qu'il apporte | Tests |
 |---|---|---|---|
@@ -975,12 +1081,13 @@ technique : **à trancher en équipe**.
 | 4 | [Quiz et vérification](#module-4--quiz-vérification-et-suivi-de-la-maîtrise) | L'agent interroge, vérifie, enregistre | +55 → 290 |
 | 5 | [Routes API](#module-5--les-routes-de-lapi-pédagogique) | Tout devient utilisable, et protégé | +27 → 386 * |
 | 6 | [Gemini et chaîne LLM](#module-6--gemini-et-chaîne-de-repli-configurable) | Changer de modèle sans toucher au code | +27 → 413 * |
+| 7 | [Consolidation](#module-7--consolidation) | ADR, dépendances épinglées, analyse statique, intégration continue | 413 * |
 
 \* avec PostgreSQL. Sans base de données : **317 tests**.
 
 **De 145 à 413 tests.** Aucun module n'a fait baisser ce nombre.
 
-## Les cinq choses à retenir
+## Les six choses à retenir
 
 1. **On a gardé les fondations d'ATS et greffé le produit de NURU** — comme
    prévu. Aucune brique n'a été réécrite pour le plaisir.
@@ -998,6 +1105,9 @@ technique : **à trancher en équipe**.
 5. **Ce qui n'a pas pu être fait** : le jeu d'évaluation de recherche (il faut
    de vraies questions d'élèves) et l'indexation du corpus vers Qdrant (il faut
    le serveur et le modèle d'embeddings). Voir `REPRISE_FUSION.md`.
+6. **L'intégration continue est en place** : quatre vérifications sur chaque
+   proposition de modification, dont les tests contre un vrai PostgreSQL. C'est
+   ce qui empêchera les deux dépôts de re-diverger.
 
 ## Où continuer
 
