@@ -10,8 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_tuteur.ingestion.loaders.metadata import extraire_metadonnees
-from agent_tuteur.ingestion.loaders.metadata import from_content, from_filename
+from agent_tuteur.ingestion.loaders.metadata import extraire_metadonnees, from_content, from_filename
 
 # --- Depuis le nom de fichier -------------------------------------------------
 

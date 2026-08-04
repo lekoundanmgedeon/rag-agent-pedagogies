@@ -14,47 +14,107 @@ authors = [{ name = "Agent Tuteur Sénégal" }]
 # NB: le cœur métier (étapes 1-3) n'exige que le sous-ensemble « core » et reste
 # exécutable hors-ligne (mock LLM + vectorstore in-memory). Les extras ajoutent
 # les couches persistance / API / worker (étapes 4+).
+# Chaque dépendance porte une **borne haute** au majeur suivant. Sans elle, une
+# nouvelle version majeure publiée demain serait installée silencieusement lors
+# d'un `pip install` sur une machine neuve, et casserait le service sans qu'une
+# seule ligne de code ait changé. Les versions exactes réellement validées sont
+# épinglées dans `requirements.txt`, qui est ce que les images Docker installent.
 dependencies = [
-  "pydantic>=2.6",
-  "pydantic-settings>=2.2",
-  "pyyaml>=6.0",
-  "numpy>=1.26",
-  "sympy>=1.12",
-  "httpx>=0.27",
-  "pypdf>=4.0",
-  "python-docx>=1.1",
-  "langgraph>=0.2",
+  "pydantic>=2.6,<3",
+  "pydantic-settings>=2.2,<3",
+  "pyyaml>=6.0,<7",
+  "numpy>=1.26,<3",
+  "sympy>=1.12,<2",
+  "httpx>=0.27,<1",          # encore en 0.x : chaque mineure peut rompre
+  "pypdf>=4.0,<8",
+  "python-docx>=1.1,<2",
+  "langgraph>=0.2,<2",
 ]
 
 [project.optional-dependencies]
 # Backends « réels » activables par configuration (import tardif dans le code).
-parsing = ["pymupdf>=1.24"]              # extraction PDF fidèle aux formules
-embeddings = ["FlagEmbedding>=1.2"]      # BGE-M3
-vectorstore = ["qdrant-client>=1.9"]     # Qdrant serveur
+parsing = ["pymupdf>=1.24,<2"]           # extraction PDF fidèle aux formules
+embeddings = ["FlagEmbedding>=1.2,<2"]   # BGE-M3
+# Plancher relevé à 1.18 (et non 1.9) : `QdrantClient.search()` a été supprimé
+# en amont au profit de `query_points()`, que ce dépôt utilise
+# (`vectorstore/qdrant_store.py`). Une version antérieure ferait échouer toute
+# recherche RAG. 1.18 est la version validée ici ; c'est le seul paquet dont le
+# plancher a été relevé, parce que c'est le seul avec une rupture documentée.
+vectorstore = ["qdrant-client>=1.18,<2"] # Qdrant serveur
 persistence = [                            # étape 4 : PostgreSQL + Alembic
-  "sqlalchemy>=2.0",
-  "asyncpg>=0.29",
-  "alembic>=1.13",
+  "sqlalchemy>=2.0,<3",                    # l'API `Mapped[...]` est propre à 2.x
+  "asyncpg>=0.29,<1",
+  "alembic>=1.13,<2",
 ]
 api = [                                    # étape 5 : FastAPI
-  "fastapi>=0.111",
-  "uvicorn[standard]>=0.30",
-  "slowapi>=0.1.9",
-  "python-multipart>=0.0.9",
+  "fastapi>=0.111,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "slowapi>=0.1.9,<1",
+  "python-multipart>=0.0.9,<1",
 ]
-worker = [                                 # étape 6 : ingestion asynchrone (hors périmètre de cette session)
-  "arq>=0.25",
-  "redis>=5.0",
+auth = [                                   # login + JWT + rôles
+  "pyjwt>=2.8,<3",
+  "bcrypt>=4.1,<6",
+]
+worker = [                                 # étape 6 : ingestion asynchrone
+  "arq>=0.25,<1",
+  "redis>=5.0,<7",
 ]
 dev = [
-  "pytest>=8.0",
-  "pytest-asyncio>=0.23",
-  "aiosqlite>=0.20",   # tests repositories sans serveur Postgres
-  "greenlet>=3.0",     # requis par SQLAlchemy async sous CPython
+  "pytest>=8.0,<10",
+  "pytest-asyncio>=0.23,<2",
+  "aiosqlite>=0.20,<1",   # tests repositories sans serveur Postgres
+  "greenlet>=3.0,<4",     # requis par SQLAlchemy async sous CPython
+  "ruff>=0.6,<1",         # analyse statique, exécutée aussi en intégration continue
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+# Alignée sur la convention réellement suivie par le dépôt (les lignes les plus
+# longues font ~120). Choisir 100 aurait imposé de reformater une centaine de
+# lignes sans autre bénéfice qu'un chiffre rond.
+line-length = 120
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+# Jeu de règles **explicite** : les défauts de ruff changent d'une version à
+# l'autre, et une analyse statique qui se met à échouer toute seule après une
+# mise à jour finit par être désactivée.
+select = [
+  "E",   # erreurs de style pycodestyle
+  "F",   # pyflakes : imports inutilisés, noms non définis…
+  "I",   # ordre des imports
+  "B",   # bugbear : pièges courants
+  "UP",  # tournures obsolètes
+  "SIM", # simplifications
+  "RUF", # règles propres à ruff
+]
+ignore = [
+  # `Depends(...)` en argument par défaut est **l'idiome** FastAPI : c'est ainsi
+  # que l'injection de dépendances est déclarée. Signaler les 61 occurrences
+  # reviendrait à demander de réécrire toute la couche API contre son framework.
+  "B008",
+  # `class Intent(str, Enum)` -> `StrEnum` : refusé, ce n'est pas une simple
+  # modernisation. Les deux formes se comportent différemment à l'affichage
+  # (`f"{Intent.COURS}"` donne « Intent.COURS » d'un côté, « cours » de
+  # l'autre). Le code lit partout `.value` explicitement ; basculer ferait
+  # courir un risque de régression silencieuse sur les traces et les journaux,
+  # sans aucun gain.
+  "UP042",
+  # Le code, les commentaires et les messages sont en français : les caractères
+  # « ambigus » signalés sont des apostrophes typographiques et des accents.
+  "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Les doublures de test (faux modèles de langage, faux stores) déclarent des
+# attributs de classe sans la cérémonie `ClassVar`, et nomment des variables
+# d'assertion qui ne sont pas toutes relues. On n'y applique pas la même
+# exigence qu'au code de production.
+"tests/**" = ["RUF012", "RUF059"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

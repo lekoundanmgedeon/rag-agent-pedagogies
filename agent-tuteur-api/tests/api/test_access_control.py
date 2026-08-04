@@ -13,7 +13,6 @@ import pytest
 from agent_tuteur.persistence.db import session_scope
 from agent_tuteur.persistence.repositories import StudentLinkRepository, UserRepository
 
-
 # --- Aucune route métier ne répond sans jeton --------------------------------
 
 

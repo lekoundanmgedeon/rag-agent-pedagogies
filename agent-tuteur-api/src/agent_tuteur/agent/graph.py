@@ -122,7 +122,7 @@ def _timed_node(name: str) -> Callable:
 
     def decorator(fn: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[dict]]:
         @functools.wraps(fn)
-        async def wrapper(self: "TutorAgent", state: AgentState) -> dict:
+        async def wrapper(self: TutorAgent, state: AgentState) -> dict:
             t0 = time.perf_counter()
             result = await fn(self, state)
             duration_ms = round((time.perf_counter() - t0) * 1000, 2)

@@ -14,7 +14,7 @@ def test_process_markdown_document_annotates_chunks():
         "---\nniveau: secondaire\nclasse: Terminale\nserie: S1\n"
         "discipline: Mathématiques\n---\n"
         "## Compétence : Dériver\n\ncontenu\n\n### Exercice 1\n\nénoncé indice solution\n"
-    ).encode("utf-8")
+    ).encode()
     result = process_document("cours.md", data)
     assert result.doc_type == "markdown"
     assert result.n_chunks == 2

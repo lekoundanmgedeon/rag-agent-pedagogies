@@ -76,18 +76,17 @@ class GeminiLLM(BaseLLM):
 
     async def generate_stream(self, prompt: str, *, system: str | None = None) -> AsyncIterator[str]:
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
-                    self._url("streamGenerateContent", stream=True),
-                    headers=self._headers(),
-                    json=self._payload(prompt, system),
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        fragment = _parse_ligne_sse(line)
-                        if fragment is not None:
-                            yield fragment
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client, client.stream(
+                "POST",
+                self._url("streamGenerateContent", stream=True),
+                headers=self._headers(),
+                json=self._payload(prompt, system),
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    fragment = _parse_ligne_sse(line)
+                    if fragment is not None:
+                        yield fragment
         except httpx.HTTPError as exc:
             raise LLMError(f"Gemini stream a échoué : {exc}") from exc
 

@@ -27,8 +27,8 @@ from collections.abc import AsyncIterator
 
 from agent_tuteur.agent.llm.base import BaseLLM, LLMError
 from agent_tuteur.agent.llm.gemini import GeminiLLM
-from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.llm.mistral import MistralLLM
+from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.llm.ollama import OllamaLLM
 
 

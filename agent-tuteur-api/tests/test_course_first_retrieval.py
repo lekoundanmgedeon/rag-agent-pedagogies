@@ -10,7 +10,6 @@ from agent_tuteur.config.taxonomy import TypeChunk, est_chunk_de_cours
 from agent_tuteur.domain.models import Chunk, CurriculumMetadata, ScoredChunk
 from agent_tuteur.vectorstore.retriever import HybridRetriever, ResultatsPedagogiques
 
-
 # --- Classement d'un chunk : cours ou complément ? ---------------------------
 
 
