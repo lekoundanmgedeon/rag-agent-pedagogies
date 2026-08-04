@@ -873,6 +873,7 @@ Quatre vérifications sur chaque proposition de modification :
 | Tests **avec un vrai PostgreSQL** | Sans base, 96 tests sont ignorés — dont **tous** ceux du contrôle d'accès |
 | Génération du schéma OpenAPI | C'est le contrat avec le frontend |
 | Construction du frontend | Une modification d'API ne doit pas le casser en silence |
+| **Build de l'image Docker** | Elle tourne en Python 3.11 quand tout le reste est en 3.12 |
 
 Le point sur PostgreSQL est le plus important : ce sont précisément les tests
 qu'on ne veut jamais voir sauter qui disparaissent sans base de données.
@@ -894,9 +895,34 @@ pas à l'aveugle.
 
 Tous les liens internes de la documentation ont été vérifiés : aucun cassé.
 
+### Correctif apporté après coup : les épinglages et Python 3.11
+
+L'épinglage décrit plus haut a introduit une régression, trouvée en lançant la
+stack Docker : les versions avaient été relevées depuis un environnement
+**Python 3.12**, alors que l'image Docker est en **3.11** — le plancher déclaré
+par le projet. `numpy==2.5.1` exige 3.12 : le build de l'image échouait.
+
+Le point instructif est que **rien ne le signalait** : les tests passaient,
+l'analyse statique aussi, et l'intégration continue elle-même tournait sur
+3.12. Le seul chemin qui voyait le problème était celui du déploiement.
+
+Deux corrections :
+
+- `numpy` ramené à `2.4.6`, la dernière version compatible 3.11 ; la suite de
+  tests repassée (413) après alignement du venv local ;
+- **l'intégration continue construit désormais l'image Docker**. C'est le seul
+  moyen de vérifier ce que voit réellement le déploiement.
+
+Le fichier `requirements.txt` porte maintenant la commande de vérification :
+
+```bash
+docker run --rm -v "$PWD/requirements.txt:/r.txt:ro" python:3.11-slim \
+  pip install --dry-run -q -r /r.txt
+```
+
 ### Impact sur le reste du projet
 
-- **Toute proposition de modification passe désormais par ces quatre
+- **Toute proposition de modification passe désormais par ces cinq
   vérifications.** C'est contraignant, et c'est le but.
 - Pour mettre à jour une dépendance : relever la version dans
   `requirements.txt`, lancer la suite complète, ne committer que si elle passe.
