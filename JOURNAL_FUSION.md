@@ -442,6 +442,128 @@ pas rendre des droits par accident.
 
 ---
 
+## Module 4 : Quiz, vérification et suivi de la maîtrise
+
+**Objectif** : l'agent savait expliquer et guider ; il sait maintenant
+**interroger** l'élève, **vérifier** ce qu'il vient d'écrire, et **enregistrer**
+ce que l'élève a réussi. C'est la boucle d'évaluation, totalement absente d'ATS.
+
+### Ce qui a été gardé
+
+- **La règle d'or du quiz de NURU** : *jamais de contenu factice affiché à
+  l'élève*. Si le modèle n'arrive pas à produire un quiz correct, on renvoie une
+  liste vide et l'interface le dit — plutôt qu'un QCM avec des propositions
+  « Option 1 / Option 2 », qui donne l'illusion d'un exercice.
+- **La correction d'explication incohérente**, l'idée la plus fine de NURU. Le
+  modèle produit régulièrement un quiz bien formé où la bonne réponse annoncée
+  est A tandis que l'explication justifie C. L'élève voit alors une correction
+  qui se contredit. On reconstruit donc la phrase de correction à partir de la
+  bonne réponse.
+- **Les deux contrôles déterministes du vérificateur de NURU** (voir plus bas).
+- **Toute la branche exercice et toute la branche cours d'ATS**, intactes.
+
+### Ce qui a été retiré
+
+- **`_check_coherence` et `_check_hallucinations` de NURU** — écartés, comme le
+  prévoyait le plan. Le premier notait la « cohérence » d'une réponse en
+  comptant les mots « donc », « ainsi », « en effet ». Un texte **faux** truffé
+  de connecteurs obtenait une bonne note ; un texte juste et concis, une
+  mauvaise. Une mesure qui ne mesure pas ce qu'elle annonce est pire que pas de
+  mesure : elle donne une confiance injustifiée.
+- **Le fournisseur codé en dur** — le prompt de NURU commençait par « Tu es
+  Gemini ». Le projet route vers plusieurs fournisseurs de modèles ; la consigne
+  ne peut pas en désigner un.
+- **Le niveau codé en dur** — NURU écrivait « niveau Terminale S1 » dans le
+  prompt. Le cadre curriculaire est maintenant passé en paramètre.
+- **Les questions ouvertes de repli** — NURU proposait « Définis X en tes
+  propres mots » quand il ne savait pas faire mieux. Ce sont des questions
+  qu'on ne peut pas corriger automatiquement : elles n'alimentent donc pas la
+  maîtrise, et donnent l'illusion d'une évaluation.
+
+### Ce qui a été ajouté ou modifié
+
+**1. Une troisième posture : le quiz** (`agent/intent.py`, `agent/graph.py`)
+
+L'agent avait deux postures ; il en a trois :
+
+| Posture | Ce que fait l'agent |
+|---|---|
+| **Exercice** (défaut) | Guide par indices progressifs, sans donner la réponse |
+| **Cours** | Expose un chapitre, section par section |
+| **Quiz** *(nouveau)* | Interroge l'élève et corrige |
+
+La règle de sûreté est conservée : **toute intention non reconnue retombe sur
+« exercice »**, la posture qui ne dévoile rien. Et la reconnaissance du quiz est
+volontairement étroite (« teste-moi », « fais-moi un quiz », « QCM »…) : on
+n'interroge jamais quelqu'un qui n'a rien demandé.
+
+Une demande de quiz **interrompt** un cours en cours : « teste-moi » au milieu
+d'une leçon veut dire « interroge-moi maintenant », pas « continue ».
+
+**2. Deux nouvelles étapes en fin de parcours** (`agent/graph.py`)
+
+Tous les tours passent désormais par deux étapes finales :
+
+- **`verify_response`** — les contrôles déterministes (ci-dessous), plus la
+  validation du JSON pour un quiz ;
+- **`persist_progression`** — met à jour la maîtrise, *si* le tour porte un
+  résultat mesurable.
+
+Ce « si » est important : poser une question ne prouve rien. Seul un **résultat
+corrigé** (`exercise_outcome`) fait bouger la maîtrise. Sans lui, l'étape ne
+fait rien — et c'est voulu, c'est même testé.
+
+Ces deux étapes ne vivent **que** dans le parcours complet, pas dans le
+streaming : en affichage progressif, la réponse est produite hors du graphe.
+
+**3. Deux contrôles factuels** (`agent/verify.py`)
+
+Fichier de calcul pur : aucun appel au modèle, donc aucun coût ni délai.
+
+- **Le niveau du vocabulaire.** Si la réponse parle de « dérivées partielles »
+  ou de « gradient » alors que la compétence traitée est à une seule variable,
+  le modèle est sorti du programme du secondaire. Signal fiable.
+- **La fidélité au calcul.** Quand l'outil de calcul symbolique a produit un
+  résultat exact, ce résultat **doit** apparaître tel quel dans la réponse.
+  Sinon, c'est que le modèle a refait le calcul de son côté — et il se trompe
+  régulièrement. C'est le plus utile des deux.
+
+**4. La génération de quiz** (`agent/quiz.py`)
+
+Deux essais maximum, puis on abandonne honnêtement. Chaque réponse du modèle est
+passée au crible : JSON extractible ? question présente ? au moins deux
+propositions ? la bonne réponse désigne-t-elle une proposition qui existe ? pas
+de texte de remplissage ? Un seul « non » et la réponse est rejetée — il n'y a
+pas de réparation partielle, un quiz à moitié valide est un quiz faux.
+
+La **correction**, elle, est purement déterministe : on compare deux
+identifiants, aucun modèle n'intervient. Un élève ne doit jamais voir sa réponse
+jugée différemment d'une fois à l'autre.
+
+**5. Deux nouveaux ports** (`agent/ports.py`)
+
+`MasteryPort` et `EvaluationPort`, avec leurs versions en mémoire pour les
+tests. Point important : la version en mémoire et la version PostgreSQL
+appellent **le même** fichier de calcul (`domain/mastery.py`). Un test
+hors-ligne mesure donc le vrai comportement, pas une approximation.
+
+### Tests
+
+**+55 tests** (235 → **290** hors base de données, **341** avec PostgreSQL).
+
+### Impact sur le reste du projet
+
+- `TutorAgent` accepte un port de maîtrise supplémentaire (facultatif — sans
+  lui, la maîtrise n'est simplement pas suivie).
+- `respond()` accepte `exercise_outcome`, et son résultat expose trois champs
+  nouveaux : `verification`, `quiz`, `mastery`.
+- Le streaming SSE et les deux postures existantes sont **inchangés** : aucun
+  test existant n'a eu à être modifié dans ce module.
+- Si vous ajoutez une posture, pensez à `_route_by_intent` — et gardez
+  « exercice » comme défaut.
+
+---
+
 ## ⚠️ Points à valider
 
 *Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
@@ -553,4 +675,29 @@ Le plan lui-même le dit : *« sans cette mesure, tous les arbitrages RAG
 resteront des opinions invérifiables. »* C'est le point le plus important à
 programmer, et il demande une contribution humaine (un enseignant, ou les
 questions réellement posées par des élèves).
+
+
+### V5 — Une bonne explication de quiz peut être jetée
+
+Règle portée de NURU : l'explication produite par le modèle n'est conservée que
+si elle **cite littéralement** le texte de la bonne proposition, et aucune autre.
+
+Sur cet exemple, l'explication « On applique la formule de dérivation des
+puissances » est juste et utile, mais elle ne contient pas la chaîne « $2x$ » :
+elle est donc **écartée**, et l'élève ne voit que « La bonne réponse est A :
+$2x$. »
+
+| Option | Effet | Risque |
+|---|---|---|
+| **A.** Garder la règle de NURU | Aucune explication contradictoire ne passe | On perd des explications correctes et utiles |
+| **B.** Ne rejeter que si l'explication cite une **autre** proposition | On garde les explications génériques mais justes | Une explication vague pourrait passer |
+
+**Mon avis** : **B**. Le danger qu'on cherche à écarter est une explication qui
+justifie *une autre* réponse. Une explication qui ne cite aucune proposition
+n'est pas contradictoire, juste générale — et elle apporte quand même quelque
+chose à l'élève.
+
+Le comportement actuel est celui de NURU (option A), inchangé, et un test le
+documente explicitement. **À confirmer avant de le modifier**, car cela touche
+ce que voit l'élève.
 

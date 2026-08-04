@@ -17,7 +17,7 @@ import operator
 from typing import Annotated, Any, TypedDict
 
 from agent_tuteur.agent.frustration import SessionState
-from agent_tuteur.agent.ports import AuditLogPort, StudentMemoryPort
+from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
 from agent_tuteur.domain.models import ScoredChunk
 
 
@@ -38,8 +38,15 @@ class AgentState(TypedDict, total=False):
     #: (continuité de session) puis course_planner (progression).
     course_state: dict[str, Any] | None
 
+    #: Port de maîtrise, injecté par requête comme ``memory_port``/``audit_port``.
+    mastery_port: MasteryPort | None
+    #: Résultat d'un exercice ou d'un quiz corrigé, posé par la route
+    #: d'évaluation. C'est la **seule** chose qui autorise la mise à jour de la
+    #: maîtrise : un simple tour de chat ne prouve rien.
+    exercise_outcome: dict[str, Any] | None
+
     # --- Intention (nœud detect_intent) ---
-    intent: str  # "exercice" | "cours"
+    intent: str  # "exercice" | "cours" | "quiz"
     intent_nav: str | None  # navigation cours détectée ("start"|"next"|"prev"|"goto")
 
     # --- Produits des nœuds a→e ---
@@ -63,12 +70,23 @@ class AgentState(TypedDict, total=False):
     #: quand la demande de l'élève n'a matché aucun chapitre du corpus : le prompt
     #: bascule alors en posture prudente au lieu de substituer un autre chapitre.
     course_section: dict[str, Any]
+    #: Branche quiz : sur quoi interroger, et sous quelle forme.
+    quiz_competence: str
+    quiz_type: str
     system_prompt: str
     final_prompt: str
     trace: dict[str, Any]
 
     # --- Produit du nœud f ---
     answer: str
+
+    # --- Produits des nœuds terminaux (graphe complet uniquement) ---
+    #: Résultat des contrôles déterministes ({"valide": bool, "problemes": [...]}).
+    verification: dict[str, Any]
+    #: Quiz validé et prêt à l'affichage — vide si le modèle a échoué.
+    quiz: dict[str, Any]
+    #: Nouvel état de maîtrise, si ce tour l'a fait évoluer.
+    mastery: dict[str, Any]
 
     # --- Diagnostic interne (reducer additif) ---
     node_trace: Annotated[list[dict], operator.add]

@@ -35,6 +35,7 @@ frontend web et ce qui est persisté dans ``messages.trace``.
 from __future__ import annotations
 
 import functools
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -58,9 +59,21 @@ from agent_tuteur.agent.hint_strategy import (
 )
 from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
 from agent_tuteur.agent.llm.base import BaseLLM
-from agent_tuteur.agent.ports import AuditLogPort, StudentMemoryPort
-from agent_tuteur.agent.prompt import assemble_course_prompt, assemble_prompt
+from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
+from agent_tuteur.agent.prompt import (
+    SYSTEM_PERSONA_QUIZ,
+    assemble_course_prompt,
+    assemble_prompt,
+    build_context_block,
+)
+from agent_tuteur.agent.quiz import (
+    Quiz,
+    analyser_reponse_quiz,
+    construire_prompt_quiz,
+    contient_du_factice,
+)
 from agent_tuteur.agent.state import AgentState
+from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.tools.calculator import CalculationError, compute, looks_like_calculation
@@ -70,6 +83,9 @@ _logger = get_logger("agent_tuteur.agent.graph")
 
 #: Nombre d'échanges (paires élève/tuteur) réinjectés dans la requête de recherche.
 _HISTORY_EXCHANGES_FOR_RETRIEVAL = 3
+
+#: Demande explicite d'un quiz vrai/faux plutôt que d'un QCM.
+_VRAI_FAUX = re.compile(r"vrai\s*[/ou-]+\s*faux", re.IGNORECASE)
 
 
 def _condense_retrieval_query(question: str, history: list[dict]) -> str:
@@ -163,6 +179,13 @@ class AgentResult:
     retrieved: list[ScoredChunk]
     trace_id: str = ""
     node_trace: list[dict] = field(default_factory=list)
+    #: Produits des nœuds terminaux (graphe complet uniquement).
+    verification: dict | None = None
+    #: Quiz validé, présent uniquement pour un tour d'intention « quiz ».
+    #: ``questions`` vide signifie que le modèle n'a rien produit d'exploitable.
+    quiz: dict | None = None
+    #: Nouvel état de maîtrise, si ce tour l'a fait évoluer.
+    mastery: dict | None = None
 
     @property
     def hint_level(self) -> int:
@@ -183,12 +206,14 @@ class TutorAgent:
         *,
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
+        mastery: MasteryPort | None = None,
         top_k: int = 5,
     ) -> None:
         self._retriever = retriever
         self._llm = llm
         self._memory = memory
         self._audit = audit
+        self._mastery = mastery
         self._top_k = top_k
         self._prep_graph = self._build_graph(include_compose=False)
         self._full_graph = self._build_graph(include_compose=True)
@@ -430,11 +455,157 @@ class TutorAgent:
             "node_trace": [{"node": "guardrail_course", "moderation_flagged": moderation.flagged}],
         }
 
+    # --- Branche quiz (posture d'évaluation) --------------------------------
+
+    @_timed_node("quiz_planner")
+    async def _n_quiz_planner(self, state: AgentState) -> dict:
+        """Détermine sur quoi interroger l'élève et sous quelle forme.
+
+        La compétence est déduite du cadre curriculaire et des extraits
+        remontés — jamais demandée à l'élève, qui a écrit « teste-moi » et
+        n'attend pas un questionnaire préalable.
+        """
+        ctx = state.get("curriculum_context", {})
+        retrieved = state.get("retrieved", [])
+        competence = _competence_from_context(ctx, retrieved) or "le chapitre en cours"
+        quiz_type = "vrai_faux" if _VRAI_FAUX.search(state["question"]) else "qcm"
+        return {
+            "quiz_competence": competence,
+            "quiz_type": quiz_type,
+            "node_trace": [
+                {"node": "quiz_planner", "competence": competence, "quiz_type": quiz_type}
+            ],
+        }
+
+    @_timed_node("guardrail_quiz")
+    async def _n_guardrail_quiz(self, state: AgentState) -> dict:
+        question = state["question"]
+        ctx = state.get("curriculum_context", {})
+        retrieved = state.get("retrieved", [])
+        moderation = moderate(question)
+
+        cadre = ", ".join(
+            f"{v}" for k in ("classe", "serie") if (v := ctx.get(k))
+        )
+        user_prompt = construire_prompt_quiz(
+            state["quiz_competence"],
+            state["quiz_type"],
+            contexte_curriculaire=cadre,
+            extraits=build_context_block(retrieved) if retrieved else "",
+        )
+        if moderation.flagged:
+            user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
+
+        trace = {
+            "trace_id": state.get("trace_id"),
+            # Pas de niveau d'indice en évaluation : on garde les clés du
+            # contrat (logs, frontend) avec des valeurs adaptées.
+            "hint_level": None,
+            "hint_label": "Quiz",
+            "hint_reason": "demande explicite d'évaluation",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": state["quiz_competence"],
+            "quiz": {"competence": state["quiz_competence"], "quiz_type": state["quiz_type"]},
+            "sources": _sources_payload(retrieved),
+            "scores": [sc.score for sc in retrieved],
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": SYSTEM_PERSONA_QUIZ,
+            "final_prompt": user_prompt,
+            "moderation_flagged": moderation.flagged,
+            "trace": trace,
+            "node_trace": [{"node": "guardrail_quiz", "moderation_flagged": moderation.flagged}],
+        }
+
     @_timed_node("compose_response")
     async def _n_compose(self, state: AgentState) -> dict:
         answer = await self._llm.generate(state["final_prompt"], system=state.get("system_prompt"))
         await self._write_memory(state)
         return {"answer": answer, "node_trace": [{"node": "compose_response", "chars": len(answer)}]}
+
+    # --- Nœuds terminaux (graphe complet uniquement) ------------------------
+
+    @_timed_node("verify_response")
+    async def _n_verify(self, state: AgentState) -> dict:
+        """Contrôles déterministes sur la réponse produite.
+
+        Deux choses distinctes s'y passent :
+
+        * pour **tous** les tours, les deux contrôles factuels de
+          ``agent/verify.py`` (vocabulaire hors-programme, fidélité au calcul) ;
+        * pour un tour **quiz**, la validation du JSON produit par le modèle.
+          Un quiz invalide n'est jamais montré à l'élève : mieux vaut annoncer
+          l'échec qu'afficher un QCM aux propositions factices.
+
+        Aucun appel au modèle : ce nœud ne coûte rien et ne peut pas échouer
+        pour cause de réseau.
+        """
+        answer = state.get("answer", "")
+        trace = state.get("trace", {})
+        rapport = verifier_coherence_mathematique(
+            answer,
+            competence=trace.get("competence"),
+            resultat_calcule=state.get("tool_result"),
+        )
+
+        mise_a_jour: dict = {
+            "verification": {"valide": rapport.est_valide, "problemes": rapport.problemes},
+        }
+        entree_trace = {
+            "node": "verify_response",
+            "valide": rapport.est_valide,
+            "n_problemes": len(rapport.problemes),
+        }
+
+        if state.get("intent") == Intent.QUIZ.value:
+            valide = analyser_reponse_quiz(answer)
+            utilisable = valide is not None and not contient_du_factice(valide)
+            quiz = Quiz(
+                competence=state.get("quiz_competence", ""),
+                quiz_type=state.get("quiz_type", "qcm"),
+                questions=[valide] if utilisable else [],
+            )
+            mise_a_jour["quiz"] = quiz.to_dict()
+            entree_trace["quiz_utilisable"] = utilisable
+
+        mise_a_jour["node_trace"] = [entree_trace]
+        return mise_a_jour
+
+    @_timed_node("persist_progression")
+    async def _n_persist_progression(self, state: AgentState) -> dict:
+        """Met à jour la maîtrise quand le tour porte un résultat mesurable.
+
+        Un tour de chat ordinaire ne prouve rien : ce n'est pas parce qu'un
+        élève a posé une question qu'il maîtrise ou ne maîtrise pas la notion.
+        Seul un **résultat** (``exercise_outcome``, posé par la route de
+        correction) alimente la maîtrise. Sans lui, ce nœud ne fait rien —
+        c'est voulu.
+        """
+        resultat = state.get("exercise_outcome")
+        mastery = state.get("mastery_port") or self._mastery
+        competence = state.get("trace", {}).get("competence")
+
+        if not resultat or mastery is None or not competence:
+            return {"node_trace": [{"node": "persist_progression", "enregistre": False}]}
+
+        session = state.get("session") or SessionState()
+        maj = await mastery.record_attempt(
+            student_id=session.student_id,
+            competence=competence,
+            is_correct=resultat.get("is_correct"),
+            score=resultat.get("score"),
+            chapitre=resultat.get("chapitre"),
+            tenant_id=session.tenant_id,
+        )
+        return {
+            "mastery": maj,
+            "node_trace": [
+                {"node": "persist_progression", "enregistre": True,
+                 "competence": competence, "mastery_score": maj["mastery_score"]}
+            ],
+        }
 
     # ------------------------------------------------------------ persistance
     async def _write_audit(self, state: AgentState, trace: dict) -> None:
@@ -489,27 +660,44 @@ class TutorAgent:
         # Branche cours (posture didactique).
         g.add_node("course_planner", self._n_course_planner)
         g.add_node("guardrail_course", self._n_guardrail_course)
+        # Branche quiz (posture d'évaluation) — portée de NURU.
+        g.add_node("quiz_planner", self._n_quiz_planner)
+        g.add_node("guardrail_quiz", self._n_guardrail_quiz)
 
         g.add_edge(START, "detect_intent")
         g.add_edge("detect_intent", "retrieve_context")
         g.add_conditional_edges(
             "retrieve_context",
             _route_by_intent,
-            {"exercice": "detect_frustration", "cours": "course_planner"},
+            {
+                "exercice": "detect_frustration",
+                "cours": "course_planner",
+                "quiz": "quiz_planner",
+            },
         )
         g.add_edge("detect_frustration", "diagnose_hint_level")
         g.add_edge("diagnose_hint_level", "route_tool")
         g.add_edge("route_tool", "guardrail")
         g.add_edge("course_planner", "guardrail_course")
+        g.add_edge("quiz_planner", "guardrail_quiz")
 
         if include_compose:
+            # Les deux nœuds terminaux ne vivent que dans le graphe complet :
+            # en streaming, la réponse est produite hors graphe, et ils sont
+            # appelés après épuisement du flux (cf. ``stream``).
             g.add_node("compose_response", self._n_compose)
+            g.add_node("verify_response", self._n_verify)
+            g.add_node("persist_progression", self._n_persist_progression)
             g.add_edge("guardrail", "compose_response")
             g.add_edge("guardrail_course", "compose_response")
-            g.add_edge("compose_response", END)
+            g.add_edge("guardrail_quiz", "compose_response")
+            g.add_edge("compose_response", "verify_response")
+            g.add_edge("verify_response", "persist_progression")
+            g.add_edge("persist_progression", END)
         else:
             g.add_edge("guardrail", END)
             g.add_edge("guardrail_course", END)
+            g.add_edge("guardrail_quiz", END)
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -613,10 +801,18 @@ class TutorAgent:
         *,
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
+        mastery: MasteryPort | None = None,
         conversation_history: list[dict[str, str]] | None = None,
         course_state: dict | None = None,
+        exercise_outcome: dict | None = None,
     ) -> AgentResult:
-        """Tour complet non-streamé (a→f) — pratique pour tests et démo."""
+        """Tour complet non-streamé (a→f) — pratique pour tests et démo.
+
+        ``exercise_outcome`` porte le résultat d'un exercice ou d'un quiz déjà
+        corrigé (``{"is_correct": ..., "score": ...}``). C'est la **seule**
+        entrée qui autorise la mise à jour de la maîtrise : sans elle, le tour
+        ne prouve rien sur ce que l'élève sait faire.
+        """
         clean = sanitize(question)
         session = session or SessionState()
         trace_id = str(uuid.uuid4())
@@ -626,10 +822,12 @@ class TutorAgent:
             "session": session,
             "memory_port": memory,
             "audit_port": audit,
+            "mastery_port": mastery,
             "trace_id": trace_id,
             "node_trace": [],
             "conversation_history": conversation_history or [],
             "course_state": course_state,
+            "exercise_outcome": exercise_outcome,
         }
         log_event(
             _logger, "turn:start", trace_id=trace_id, student_id=session.student_id,
@@ -642,12 +840,25 @@ class TutorAgent:
             retrieved=result.get("retrieved", []),
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
+            verification=result.get("verification"),
+            quiz=result.get("quiz"),
+            mastery=result.get("mastery"),
         )
 
 
 def _route_by_intent(state: AgentState) -> str:
-    """Aiguillage conditionnel après ``retrieve_context`` (défaut : exercice)."""
-    return "cours" if state.get("intent") == Intent.COURS.value else "exercice"
+    """Aiguillage conditionnel après ``retrieve_context``.
+
+    Le **défaut reste ``exercice``** : toute intention non reconnue retombe sur
+    la posture socratique, qui est celle qui ne dévoile rien à l'élève. C'est la
+    règle de sûreté déjà appliquée à l'ajout du mode cours.
+    """
+    intent = state.get("intent")
+    if intent == Intent.COURS.value:
+        return "cours"
+    if intent == Intent.QUIZ.value:
+        return "quiz"
+    return "exercice"
 
 
 def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
