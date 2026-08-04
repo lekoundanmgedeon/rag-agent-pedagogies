@@ -81,14 +81,60 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/fusion_ci
         run: pytest -q
 
-      - name: Vérifier que le schéma OpenAPI se génère
-        # Le schéma est le contrat avec le frontend : s'il ne se construit plus,
-        # les types TypeScript ne peuvent plus être régénérés.
+      - name: Vérifier que le schéma OpenAPI committé est à jour
+        # Le schéma versionné est le contrat avec le frontend. S'il diverge du
+        # code, les types TypeScript du frontend décrivent une API qui n'existe
+        # plus — et la compilation ne le voit pas. On régénère donc et on exige
+        # qu'il n'y ait aucune différence.
         working-directory: agent-tuteur-api
-        run: python scripts/export_openapi.py /tmp/openapi.json
+        run: |
+          python scripts/export_openapi.py openapi.json
+          git diff --exit-code openapi.json || {
+            echo "::error::Le schéma OpenAPI a changé. Lancez :"
+            echo "  cd agent-tuteur-api && python scripts/export_openapi.py openapi.json"
+            echo "  cd ../agent-tuteur-web-next && npm run gen:api"
+            exit 1
+          }
 
   frontend:
-    name: Build du frontend
+    name: Build du frontend (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: agent-tuteur-web-next/package-lock.json
+      - name: Installer
+        working-directory: agent-tuteur-web-next
+        run: npm ci
+
+      - name: Vérifier que les types générés sont à jour
+        # Deuxième maillon de la chaîne anti-divergence : le schéma OpenAPI est
+        # vérifié côté API, les types le sont ici. Ensemble, ils garantissent
+        # que le frontend compile contre l'API réelle, pas contre son souvenir.
+        working-directory: agent-tuteur-web-next
+        run: |
+          npm run gen:api
+          git diff --exit-code src/types/api.d.ts || {
+            echo "::error::Types désynchronisés. Lancez : npm run gen:api"
+            exit 1
+          }
+
+      - name: Vérifier les types
+        working-directory: agent-tuteur-web-next
+        run: npm run typecheck
+
+      - name: Construire
+        working-directory: agent-tuteur-web-next
+        run: npm run build
+
+  frontend-vue:
+    # Frontend historique, encore utilisé par le déploiement Render tant que la
+    # bascule n'est pas faite (cf. JOURNAL_FUSION.md, module 8). À retirer en
+    # même temps que `agent-tuteur-web/`.
+    name: Build du frontend Vue (historique)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

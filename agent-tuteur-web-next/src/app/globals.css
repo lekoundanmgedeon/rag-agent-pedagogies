@@ -1,0 +1,197 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+/* ============================================================
+   Design system — repris du frontend NURU (couleurs identitaires
+   sénégalaises, rendu « manuel scolaire » du markdown), adapté :
+   la classe `.nuru-markdown` devient `.cours-markdown`, et le thème
+   sombre est ajouté (il manquait chez NURU alors que le frontend Vue
+   d'ATS le proposait déjà).
+   ============================================================ */
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card-bg: #ffffff;
+  --border-color: #e2e8f0;
+  --muted: #64748b;
+
+  /* Couleurs identitaires du Sénégal */
+  --vert: #059669;
+  --vert-fonce: #047857;
+  --vert-clair: #ecfdf5;
+  --jaune: #f59e0b;
+  --jaune-clair: #fffbeb;
+  --rouge: #dc2626;
+  --rouge-clair: #fef2f2;
+}
+
+:root[data-theme="dark"] {
+  --background: #0f172a;
+  --foreground: #e2e8f0;
+  --card-bg: #1e293b;
+  --border-color: #334155;
+  --muted: #94a3b8;
+  --vert-clair: #064e3b;
+  --jaune-clair: #422006;
+  --rouge-clair: #450a0a;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   Rendu du cours — qualité « manuel scolaire »
+   ============================================================ */
+
+.cours-markdown {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: var(--foreground);
+  max-width: 100%;
+}
+
+.cours-markdown h1 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 2.5px solid var(--vert-clair);
+  letter-spacing: -0.02em;
+}
+
+.cours-markdown h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1.5px solid var(--border-color);
+}
+
+.cours-markdown h3 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  margin-top: 2rem;
+  margin-bottom: 0.6rem;
+}
+
+.cours-markdown h4 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cours-markdown p {
+  margin-bottom: 1.1rem;
+}
+
+.cours-markdown ul,
+.cours-markdown ol {
+  margin: 0.75rem 0 1.1rem 1.5rem;
+}
+
+.cours-markdown ul {
+  list-style: disc;
+}
+
+.cours-markdown ol {
+  list-style: decimal;
+}
+
+.cours-markdown li {
+  margin-bottom: 0.4rem;
+}
+
+.cours-markdown strong {
+  font-weight: 700;
+}
+
+.cours-markdown code {
+  background: var(--vert-clair);
+  color: var(--vert-fonce);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+
+.cours-markdown pre {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1.1rem;
+}
+
+.cours-markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.cours-markdown blockquote {
+  border-left: 3px solid var(--vert);
+  background: var(--vert-clair);
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+
+/* Les tableaux débordent sur mobile : ils défilent dans leur propre boîte
+   plutôt que de faire défiler toute la page. */
+.cours-markdown table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.1rem;
+}
+
+.cours-markdown th,
+.cours-markdown td {
+  border: 1px solid var(--border-color);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.cours-markdown th {
+  background: var(--vert-clair);
+  font-weight: 650;
+}
+
+/* Formules mathématiques : une formule centrée trop large défile
+   horizontalement au lieu de casser la mise en page. */
+.cours-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+/* Curseur de frappe pendant le streaming de la réponse. */
+.curseur-frappe::after {
+  content: "▌";
+  animation: clignote 1s steps(2) infinite;
+  color: var(--vert);
+}
+
+@keyframes clignote {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curseur-frappe::after {
+    animation: none;
+  }
+}
