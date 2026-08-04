@@ -96,6 +96,17 @@ def _toc(document) -> None:
         run._r.append(el)
 
 
+#: Caractères qu'un auteur peut échapper en Markdown pour les afficher tels
+#: quels (``\*`` pour un astérisque littéral, typique d'un appel de note).
+#: Sans ce traitement, la barre oblique se retrouvait visible dans le Word.
+_ECHAPPEMENT = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|>~])")
+
+
+def _desechapper(texte: str) -> str:
+    """Retire les barres obliques d'échappement Markdown."""
+    return _ECHAPPEMENT.sub(r"\1", texte)
+
+
 def _add_inline(paragraph, text: str, *, bold=False, italic=False, size=None, color=None):
     """Écrit du texte en appliquant le formatage inline Markdown."""
     for token in INLINE_RE.split(text):
@@ -121,7 +132,7 @@ def _add_inline(paragraph, text: str, *, bold=False, italic=False, size=None, co
                 run.font.color.rgb = RGBColor(0x1A, 0x5F, 0xB4)
                 run.underline = True
             else:
-                run = paragraph.add_run(token)
+                run = paragraph.add_run(_desechapper(token))
         if run is not None:
             if bold:
                 run.bold = True
@@ -361,14 +372,24 @@ def convert(md_path: Path, docx_path: Path, *, with_toc: bool = False) -> None:
     print(f"✓ {docx_path.name}")
 
 
+#: Documents convertis, dans l'ordre d'importance pour la réunion.
+#: Le chemin source est relatif à la **racine du dépôt** : tous les documents ne
+#: vivent pas dans `docs/` (le journal de fusion est à la racine, à côté du
+#: README, parce qu'il s'adresse à toute l'équipe et pas seulement aux
+#: développeurs). ``toc`` = insérer un sommaire, utile au-delà de ~10 sections.
+DOCUMENTS: tuple[tuple[str, bool], ...] = (
+    ("docs/RAPPORT_FUSION", True),
+    ("JOURNAL_FUSION", True),
+    ("docs/COMPARATIF_ARCHITECTURES", True),
+    ("docs/SYNTHESE_REUNION_TECHNIQUE", False),
+    ("docs/ARCHITECTURE_CIBLE", True),
+)
+
+
 if __name__ == "__main__":
-    docs = Path(sys.argv[1])
+    racine = Path(sys.argv[1])
     out = Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
-    for name, toc in (
-        ("RAPPORT_FUSION", True),
-        ("COMPARATIF_ARCHITECTURES", True),
-        ("SYNTHESE_REUNION_TECHNIQUE", False),
-        ("ARCHITECTURE_CIBLE", True),
-    ):
-        convert(docs / f"{name}.md", out / f"{name}.docx", with_toc=toc)
+    for chemin, toc in DOCUMENTS:
+        source = racine / f"{chemin}.md"
+        convert(source, out / f"{source.stem}.docx", with_toc=toc)
