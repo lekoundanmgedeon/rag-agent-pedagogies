@@ -1,4 +1,4 @@
-# Reprise du travail de fusion — état au 4 août 2026 (backend + consolidation terminés)
+# Reprise du travail de fusion — état au 4 août 2026 (toutes les phases traitées)
 
 Ce document sert à **reprendre le travail sans rien relire d'autre**. Il dit où
 en est la fusion, comment relancer l'environnement, et ce qu'il reste à faire.
@@ -10,11 +10,12 @@ en est la fusion, comment relancer l'environnement, et ce qu'il reste à faire.
 
 ## 1. Où en est-on
 
-**Branche** : `feat/fusion` — 12 commits, tout est sauvegardé, rien en attente.
+**Branche** : `feat/fusion` — 14 commits, tout est sauvegardé, rien en attente.
 La branche `main` n'a pas bougé.
 
-**Le backend et la consolidation sont terminés** (modules 0 à 7). Il ne reste
-que le frontend, volontairement hors périmètre de ces sessions.
+**Toutes les phases du plan sont traitées** (modules 0 à 8, soit P0 à P7).
+Il ne reste qu'une décision : basculer le déploiement vers le nouveau frontend
+(point V7).
 
 ```
 1ddb6a7  M7  documentations fusionnées, journal complété
@@ -44,7 +45,8 @@ cab7ecf  (départ, sur main)
 | M5 | Routes API (P4) | ✅ terminé |
 | M6 | Gemini + chaîne LLM configurable (P6) | ✅ terminé |
 | M7 | Consolidation : ADR, épinglages, ruff, CI (P7) | ✅ terminé |
-| — | Frontend (P5) | ⬜ **seul poste restant** |
+| M8 | Frontend Next.js — 9 écrans, types générés (P5) | ✅ terminé |
+| — | Bascule du déploiement vers le nouveau frontend | ⬜ **décision V7** |
 
 ### Nombre de tests
 
@@ -100,6 +102,16 @@ TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
 ../.venv/bin/ruff check .
 ```
 
+### Lancer le frontend
+
+```bash
+cd agent-tuteur-web-next
+npm install
+npm run gen:api                                   # types depuis le schéma OpenAPI
+API_ORIGIN=http://localhost:8000 npm run dev      # ⚠️ la variable est lue au build
+npm run typecheck && npm run build                # ce que vérifie la CI
+```
+
 ### Dépendance ajoutée
 
 PyMuPDF a été installé dans `.venv` et déclaré dans `pyproject.toml` comme
@@ -149,18 +161,22 @@ Les 103 PDF sont dans `~/nuru/nuru-binta/data/raw/` (dossiers `cours/` et
   modification (ruff, tests avec PostgreSQL, schéma OpenAPI, build frontend).
   Un défaut réel trouvé au passage : `zip()` sans garde à l'indexation laissait
   des morceaux non indexés en silence.
+- **M8** — Frontend Next.js/TypeScript, 9 écrans, avec le **contrat d'API
+  généré depuis OpenAPI** : renommer un champ côté API casse la compilation
+  (vérifié en le simulant). Vérifié de bout en bout contre une vraie API :
+  connexion, garde de route, boucle quiz, streaming SSE.
 
 ---
 
 ## 4. Ce qu'il reste à faire
 
-### 4.1 P5 — Frontend *(seul poste restant)*
+### 4.1 Basculer le déploiement *(seule action restante)*
 
-Le poste le plus long du plan (10 à 15 jours). Le contrat est prêt : le schéma
-OpenAPI se génère par `python scripts/export_openapi.py`, et les types
-TypeScript s'en déduisent (`npx openapi-typescript`). Voir §7 de
-`docs/ARCHITECTURE_CIBLE.md` pour les trois acquis à porter impérativement
-(jeton JWT, garde de route, streaming SSE).
+Le frontend Next.js est prêt et vérifié, mais le déploiement pointe encore vers
+le frontend Vue. Cinq fichiers sont à reprendre (`Dockerfile.render`,
+`render.yaml`, les deux `docker-compose`, le `Makefile`), et il y a une
+différence de nature : le Vue est **statique**, Next a besoin d'un **processus
+Node**. Détail et options au point **V7** de `JOURNAL_FUSION.md`.
 
 ### 4.2 Ce qui n'a pas été fait et qui demande une décision humaine
 
@@ -173,7 +189,6 @@ TypeScript s'en déduisent (`npx openapi-typescript`). Voir §7 de
   été vérifié de bout en bout (6 007 morceaux produits), mais rien n'a été
   indexé : cela suppose un serveur Qdrant et le modèle d'embeddings BGE-M3, tous
   deux absents de cette machine.
-- **Le frontend** (P5) — hors périmètre décidé pour ces sessions.
 - **L'archivage de `nuru-binta`** en lecture seule, avec un `README` renvoyant
   ici. Cette action appartient à son propriétaire : elle n'a pas été faite
   depuis ce dépôt.
@@ -182,7 +197,7 @@ TypeScript s'en déduisent (`npx openapi-typescript`). Voir §7 de
 
 ## 5. Les décisions en attente de validation
 
-Six points sont remontés dans la section **« ⚠️ Points à valider »** de
+Sept points sont remontés dans la section **« ⚠️ Points à valider »** de
 `JOURNAL_FUSION.md`. Le code n'a été modifié dans aucun sens : ils attendent un
 arbitrage d'équipe.
 
@@ -194,6 +209,7 @@ arbitrage d'équipe.
 | V4 | Le jeu d'évaluation de recherche n'existe pas → les gains du M2 ne sont pas mesurés | 🟠 moyenne |
 | V5 | Une bonne explication de quiz peut être jetée par une règle trop stricte | 🟢 faible |
 | V6 | Faut-il persister les quiz en base (pour analyser la qualité des questions) ? | 🟢 faible |
+| V7 | Basculer le déploiement vers le frontend Next.js (touche la production) | 🟠 moyenne |
 
 **V1 est à traiter en priorité** : il touche la décision D5 du comparatif
 (filtrage curriculaire) et conditionne l'utilité réelle du corpus. Il révèle
@@ -238,5 +254,5 @@ TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
 ```
 
 Si ces 413 tests passent et que l'analyse statique est propre, l'état est sain.
-Le seul poste restant est le frontend (§4.1) — il suppose que l'équipe ait
-tranché la question Q1 du plan (Next.js ou Vue).
+La seule action restante est la bascule du déploiement (§4.1), qui attend un
+arbitrage — point V7.
