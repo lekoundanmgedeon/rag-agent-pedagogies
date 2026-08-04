@@ -799,203 +799,6 @@ ne demande aucune modification de code »*.
 
 ---
 
-## ⚠️ Points à valider
-
-*Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
-plan initial. Elles attendent une décision d'équipe — le code n'a pas été
-modifié dans un sens ou dans l'autre.*
-
-### V1 — 57 % du corpus serait invisible à une recherche filtrée par série
-
-**Le constat, mesuré.** Sur les 103 PDF, la série reconnue se répartit ainsi :
-
-| Série détectée | Nombre de documents |
-|---|---|
-| `S1` (exploitable) | 41 |
-| `S` (ambigu) | 25 |
-| aucune | 30 |
-| `TS` (ambigu) | 4 |
-| `S2` | 2 |
-| `C` (ambigu) | 1 |
-
-Or le filtre de recherche actuel **exclut** un document dont la série ne
-correspond pas exactement — et il exclut aussi ceux dont la série est *vide*.
-Vérifié en exécutant le filtre :
-
-```
-chunk sans série  -> retenu ? False
-chunk série 'S'   -> retenu ? False
-chunk série 'S1'  -> retenu ? True
-```
-
-Autrement dit, **59 documents sur 103** disparaîtraient d'une recherche
-filtrée sur « S1 ». C'est exactement le mode de panne déjà rencontré et
-documenté dans le projet (« un filtre exact coupait l'élève de 92 % du corpus,
-silencieusement »).
-
-**D'où viennent les `S` ?** De documents qui portent « Classe : Terminale S » —
-la notation **française**, pas sénégalaise. En regardant les auteurs
-(`G. COSTANTINI`, `Jérôme ONILLON`), une partie du dossier `cours/` est
-constituée de polycopiés français, pas du programme sénégalais.
-
-**Trois options :**
-
-| Option | Effet | Risque |
-|---|---|---|
-| **A.** Une série absente ou ambiguë n'exclut plus le document | Les 59 documents redeviennent trouvables | Un élève de Seconde peut voir du contenu de Terminale |
-| **B.** Décider que « Terminale S » = `S1` | Récupère 25 documents | Faux si certains visent S2 |
-| **C.** Ne rien changer | — | Plus de la moitié du corpus reste invisible |
-
-**Mon avis** : **A**, parce qu'un document trouvable mais un peu hors-sujet est
-un moindre mal qu'un document introuvable, et parce que c'est cohérent avec la
-doctrine déjà retenue dans le projet sur le filtrage curriculaire. Mais cela
-touche la règle de filtrage (décision D5 du comparatif) : à confirmer en équipe.
-
-**Question ouverte au-delà du code** : les polycopiés français ont-ils leur
-place dans un tuteur du programme sénégalais ? Cela rejoint la question Q3
-(droits d'usage du corpus).
-
-### V2 — Faut-il porter `NougatAdapter` ?
-
-Le plan le prévoyait « en option ». Il n'a **pas** été porté, pour une raison
-précise : l'implémentation de NURU ne fonctionne pas. Elle appelle
-`NougatModel.from_pretrained(...)` puis `model.predict(chemin)`, qui ne
-correspond pas à l'interface réelle de la bibliothèque Nougat ; et comme
-`nougat` n'est installé nulle part, le code retombait **toujours** sur PyMuPDF
-sans que personne ne s'en aperçoive.
-
-**Mon avis** : ne pas porter du code mort. PyMuPDF donne déjà de bons résultats
-(vérifié sur les 103 PDF). Si la qualité des formules devient insuffisante, on
-rouvrira le sujet avec une vraie évaluation — le point d'extension est prêt
-dans `loaders/pdf.py`. **À confirmer.**
-
-### V3 — Que faire de la ligne « Compétences » des documents ?
-
-Les documents contiennent souvent une ligne du type
-`Compétences : Calculer, Déterminer, Résoudre`. NURU la rangeait dans un champ
-`competences`.
-
-Le projet possède déjà un champ `competence`, mais il désigne autre chose : une
-**compétence du programme** (ex. « Dériver une fonction »), utilisée pour
-filtrer les recherches. Y ranger une liste de verbes d'action dégraderait le
-filtrage.
-
-La liste est donc extraite et conservée, mais elle n'alimente pas le champ
-`competence`. **À confirmer** : faut-il la découper en verbes séparés et s'en
-servir pour autre chose (par exemple étiqueter le type d'exercice), ou
-simplement l'ignorer ?
-
----
-
-### V4 — Le jeu d'évaluation de recherche n'existe pas (étape sautée)
-
-**À signaler franchement** : l'étape P1.4 du plan — construire 30 à 50 questions
-d'élèves réelles avec le chapitre attendu, et mesurer le `recall@5` — **n'a pas
-été faite**, parce qu'elle demande des questions d'élèves réelles que je ne peux
-pas inventer sans fausser la mesure.
-
-> **`recall@5`** : sur 5 documents remontés, la part de fois où le bon document
-> s'y trouve. C'est la mesure de base de la qualité d'une recherche.
-
-**Conséquence directe** : l'étape P2.4 (« conserver le re-ranker seulement s'il
-améliore le taux de *cours en tête* sans dégrader le `recall@5` ») n'a pas pu
-être appliquée. Ce qui est prouvé aujourd'hui :
-
-- ✅ le **classement** cours/complément est juste (mesuré : 0 faux positif sur
-  2 564 morceaux de TD) ;
-- ❌ le fait que remonter le cours en tête **améliore réellement les réponses**
-  n'est pas mesuré — c'est une hypothèse raisonnable, pas un résultat.
-
-Le plan lui-même le dit : *« sans cette mesure, tous les arbitrages RAG
-resteront des opinions invérifiables. »* C'est le point le plus important à
-programmer, et il demande une contribution humaine (un enseignant, ou les
-questions réellement posées par des élèves).
-
-
-### V5 — Une bonne explication de quiz peut être jetée
-
-Règle portée de NURU : l'explication produite par le modèle n'est conservée que
-si elle **cite littéralement** le texte de la bonne proposition, et aucune autre.
-
-Sur cet exemple, l'explication « On applique la formule de dérivation des
-puissances » est juste et utile, mais elle ne contient pas la chaîne « $2x$ » :
-elle est donc **écartée**, et l'élève ne voit que « La bonne réponse est A :
-$2x$. »
-
-| Option | Effet | Risque |
-|---|---|---|
-| **A.** Garder la règle de NURU | Aucune explication contradictoire ne passe | On perd des explications correctes et utiles |
-| **B.** Ne rejeter que si l'explication cite une **autre** proposition | On garde les explications génériques mais justes | Une explication vague pourrait passer |
-
-**Mon avis** : **B**. Le danger qu'on cherche à écarter est une explication qui
-justifie *une autre* réponse. Une explication qui ne cite aucune proposition
-n'est pas contradictoire, juste générale — et elle apporte quand même quelque
-chose à l'élève.
-
-Le comportement actuel est celui de NURU (option A), inchangé, et un test le
-documente explicitement. **À confirmer avant de le modifier**, car cela touche
-ce que voit l'élève.
-
-
-### V6 — Faut-il persister les quiz en base ?
-
-La bonne réponse voyage aujourd'hui **scellée dans un jeton signé**, valable une
-heure. Ça marche, c'est sûr, et ça n'a demandé aucune table.
-
-L'alternative serait de **stocker chaque quiz généré** dans une table, et de ne
-renvoyer au client qu'un identifiant.
-
-| | Jeton signé (retenu) | Table de quiz |
-|---|---|---|
-| Table supplémentaire | non | oui (+ migration) |
-| Réponse protégée | oui | oui |
-| Rejouer un quiz plus tard | non | oui |
-| Savoir quelles questions ont été posées | non | oui |
-| Repérer une question mal formulée (tout le monde se trompe) | non | **oui** |
-
-**Mon avis** : garder le jeton pour l'instant — il répond au besoin immédiat
-sans alourdir le modèle. Mais si vous voulez un jour **analyser la qualité des
-questions générées** (repérer celles où tous les élèves échouent, signe d'une
-question ambiguë), il faudra la table. C'est une décision produit, pas
-technique : **à trancher en équipe**.
-
-
-### V7 — Bascule du déploiement vers le nouveau frontend
-
-Le frontend Next.js est **construit, testé et fonctionnel**. Mais le
-déploiement pointe toujours vers le frontend Vue, qui fait tourner la démo
-hébergée. Je ne l'ai pas basculé : cela touche la production, et cinq fichiers.
-
-**Ce qu'il faudrait changer** :
-
-| Fichier | Modification |
-|---|---|
-| `Dockerfile.render` | Construire `agent-tuteur-web-next` (et fournir `API_ORIGIN` **au build**) |
-| `render.yaml` | Variable `API_ORIGIN` |
-| `agent-tuteur-deploy/docker-compose.dev.yml` | Service frontend |
-| `agent-tuteur-deploy/docker-compose.prod.yml` | Service frontend + nginx |
-| `Makefile` | Cibles `web`, `web-build` |
-
-**Une différence de nature à connaître** : le frontend Vue est une application
-**statique** (nginx sert des fichiers). Next.js a besoin d'un **processus Node**
-qui tourne, à cause de la garde de route (`proxy.ts`) et du rendu serveur. Le
-conteneur unique de la démo Render doit donc faire tourner deux processus au
-lieu d'un, ou le proxy doit être confié à nginx.
-
-| Option | Effet |
-|---|---|
-| **A.** Basculer maintenant | Le nouveau frontend part en démo ; il faut retravailler l'image Render |
-| **B.** Laisser cohabiter | Les deux frontends sont construits par la CI ; on bascule quand l'image est prête |
-| **C.** Export statique de Next | Évite le processus Node, mais **supprime la garde de route** — à écarter |
-
-**Mon avis** : **B** pour l'instant. Le nouveau frontend est prêt et vérifié,
-mais rien ne presse de couper une démo qui fonctionne avant d'avoir retravaillé
-l'image et de l'avoir essayée. **À trancher**, avec le retrait de
-`agent-tuteur-web/` au même moment.
-
-
----
-
 ## Module 7 : Consolidation
 
 **Objectif** : faire en sorte que ce travail **tienne dans le temps** — que la
@@ -1236,6 +1039,202 @@ n'auraient révélés :
 - `agent-tuteur-api/openapi.json` est désormais **versionné** : c'est le contrat.
 - Le frontend Vue (`agent-tuteur-web/`) est toujours construit par la CI, parce
   qu'il fait encore tourner le déploiement.
+
+---
+
+## ⚠️ Points à valider
+
+*Ces questions sont apparues pendant la fusion et ne sont pas tranchées par le
+plan initial. Elles attendent une décision d'équipe — le code n'a pas été
+modifié dans un sens ou dans l'autre.*
+
+### V1 — 57 % du corpus serait invisible à une recherche filtrée par série
+
+**Le constat, mesuré.** Sur les 103 PDF, la série reconnue se répartit ainsi :
+
+| Série détectée | Nombre de documents |
+|---|---|
+| `S1` (exploitable) | 41 |
+| `S` (ambigu) | 25 |
+| aucune | 30 |
+| `TS` (ambigu) | 4 |
+| `S2` | 2 |
+| `C` (ambigu) | 1 |
+
+Or le filtre de recherche actuel **exclut** un document dont la série ne
+correspond pas exactement — et il exclut aussi ceux dont la série est *vide*.
+Vérifié en exécutant le filtre :
+
+```
+chunk sans série  -> retenu ? False
+chunk série 'S'   -> retenu ? False
+chunk série 'S1'  -> retenu ? True
+```
+
+Autrement dit, **59 documents sur 103** disparaîtraient d'une recherche
+filtrée sur « S1 ». C'est exactement le mode de panne déjà rencontré et
+documenté dans le projet (« un filtre exact coupait l'élève de 92 % du corpus,
+silencieusement »).
+
+**D'où viennent les `S` ?** De documents qui portent « Classe : Terminale S » —
+la notation **française**, pas sénégalaise. En regardant les auteurs
+(`G. COSTANTINI`, `Jérôme ONILLON`), une partie du dossier `cours/` est
+constituée de polycopiés français, pas du programme sénégalais.
+
+**Trois options :**
+
+| Option | Effet | Risque |
+|---|---|---|
+| **A.** Une série absente ou ambiguë n'exclut plus le document | Les 59 documents redeviennent trouvables | Un élève de Seconde peut voir du contenu de Terminale |
+| **B.** Décider que « Terminale S » = `S1` | Récupère 25 documents | Faux si certains visent S2 |
+| **C.** Ne rien changer | — | Plus de la moitié du corpus reste invisible |
+
+**Mon avis** : **A**, parce qu'un document trouvable mais un peu hors-sujet est
+un moindre mal qu'un document introuvable, et parce que c'est cohérent avec la
+doctrine déjà retenue dans le projet sur le filtrage curriculaire. Mais cela
+touche la règle de filtrage (décision D5 du comparatif) : à confirmer en équipe.
+
+**Question ouverte au-delà du code** : les polycopiés français ont-ils leur
+place dans un tuteur du programme sénégalais ? Cela rejoint la question Q3
+(droits d'usage du corpus).
+
+### V2 — Faut-il porter `NougatAdapter` ?
+
+Le plan le prévoyait « en option ». Il n'a **pas** été porté, pour une raison
+précise : l'implémentation de NURU ne fonctionne pas. Elle appelle
+`NougatModel.from_pretrained(...)` puis `model.predict(chemin)`, qui ne
+correspond pas à l'interface réelle de la bibliothèque Nougat ; et comme
+`nougat` n'est installé nulle part, le code retombait **toujours** sur PyMuPDF
+sans que personne ne s'en aperçoive.
+
+**Mon avis** : ne pas porter du code mort. PyMuPDF donne déjà de bons résultats
+(vérifié sur les 103 PDF). Si la qualité des formules devient insuffisante, on
+rouvrira le sujet avec une vraie évaluation — le point d'extension est prêt
+dans `loaders/pdf.py`. **À confirmer.**
+
+### V3 — Que faire de la ligne « Compétences » des documents ?
+
+Les documents contiennent souvent une ligne du type
+`Compétences : Calculer, Déterminer, Résoudre`. NURU la rangeait dans un champ
+`competences`.
+
+Le projet possède déjà un champ `competence`, mais il désigne autre chose : une
+**compétence du programme** (ex. « Dériver une fonction »), utilisée pour
+filtrer les recherches. Y ranger une liste de verbes d'action dégraderait le
+filtrage.
+
+La liste est donc extraite et conservée, mais elle n'alimente pas le champ
+`competence`. **À confirmer** : faut-il la découper en verbes séparés et s'en
+servir pour autre chose (par exemple étiqueter le type d'exercice), ou
+simplement l'ignorer ?
+
+---
+
+### V4 — Le jeu d'évaluation de recherche n'existe pas (étape sautée)
+
+**À signaler franchement** : l'étape P1.4 du plan — construire 30 à 50 questions
+d'élèves réelles avec le chapitre attendu, et mesurer le `recall@5` — **n'a pas
+été faite**, parce qu'elle demande des questions d'élèves réelles que je ne peux
+pas inventer sans fausser la mesure.
+
+> **`recall@5`** : sur 5 documents remontés, la part de fois où le bon document
+> s'y trouve. C'est la mesure de base de la qualité d'une recherche.
+
+**Conséquence directe** : l'étape P2.4 (« conserver le re-ranker seulement s'il
+améliore le taux de *cours en tête* sans dégrader le `recall@5` ») n'a pas pu
+être appliquée. Ce qui est prouvé aujourd'hui :
+
+- ✅ le **classement** cours/complément est juste (mesuré : 0 faux positif sur
+  2 564 morceaux de TD) ;
+- ❌ le fait que remonter le cours en tête **améliore réellement les réponses**
+  n'est pas mesuré — c'est une hypothèse raisonnable, pas un résultat.
+
+Le plan lui-même le dit : *« sans cette mesure, tous les arbitrages RAG
+resteront des opinions invérifiables. »* C'est le point le plus important à
+programmer, et il demande une contribution humaine (un enseignant, ou les
+questions réellement posées par des élèves).
+
+
+### V5 — Une bonne explication de quiz peut être jetée
+
+Règle portée de NURU : l'explication produite par le modèle n'est conservée que
+si elle **cite littéralement** le texte de la bonne proposition, et aucune autre.
+
+Sur cet exemple, l'explication « On applique la formule de dérivation des
+puissances » est juste et utile, mais elle ne contient pas la chaîne « $2x$ » :
+elle est donc **écartée**, et l'élève ne voit que « La bonne réponse est A :
+$2x$. »
+
+| Option | Effet | Risque |
+|---|---|---|
+| **A.** Garder la règle de NURU | Aucune explication contradictoire ne passe | On perd des explications correctes et utiles |
+| **B.** Ne rejeter que si l'explication cite une **autre** proposition | On garde les explications génériques mais justes | Une explication vague pourrait passer |
+
+**Mon avis** : **B**. Le danger qu'on cherche à écarter est une explication qui
+justifie *une autre* réponse. Une explication qui ne cite aucune proposition
+n'est pas contradictoire, juste générale — et elle apporte quand même quelque
+chose à l'élève.
+
+Le comportement actuel est celui de NURU (option A), inchangé, et un test le
+documente explicitement. **À confirmer avant de le modifier**, car cela touche
+ce que voit l'élève.
+
+
+### V6 — Faut-il persister les quiz en base ?
+
+La bonne réponse voyage aujourd'hui **scellée dans un jeton signé**, valable une
+heure. Ça marche, c'est sûr, et ça n'a demandé aucune table.
+
+L'alternative serait de **stocker chaque quiz généré** dans une table, et de ne
+renvoyer au client qu'un identifiant.
+
+| | Jeton signé (retenu) | Table de quiz |
+|---|---|---|
+| Table supplémentaire | non | oui (+ migration) |
+| Réponse protégée | oui | oui |
+| Rejouer un quiz plus tard | non | oui |
+| Savoir quelles questions ont été posées | non | oui |
+| Repérer une question mal formulée (tout le monde se trompe) | non | **oui** |
+
+**Mon avis** : garder le jeton pour l'instant — il répond au besoin immédiat
+sans alourdir le modèle. Mais si vous voulez un jour **analyser la qualité des
+questions générées** (repérer celles où tous les élèves échouent, signe d'une
+question ambiguë), il faudra la table. C'est une décision produit, pas
+technique : **à trancher en équipe**.
+
+
+### V7 — Bascule du déploiement vers le nouveau frontend
+
+Le frontend Next.js est **construit, testé et fonctionnel**. Mais le
+déploiement pointe toujours vers le frontend Vue, qui fait tourner la démo
+hébergée. Je ne l'ai pas basculé : cela touche la production, et cinq fichiers.
+
+**Ce qu'il faudrait changer** :
+
+| Fichier | Modification |
+|---|---|
+| `Dockerfile.render` | Construire `agent-tuteur-web-next` (et fournir `API_ORIGIN` **au build**) |
+| `render.yaml` | Variable `API_ORIGIN` |
+| `agent-tuteur-deploy/docker-compose.dev.yml` | Service frontend |
+| `agent-tuteur-deploy/docker-compose.prod.yml` | Service frontend + nginx |
+| `Makefile` | Cibles `web`, `web-build` |
+
+**Une différence de nature à connaître** : le frontend Vue est une application
+**statique** (nginx sert des fichiers). Next.js a besoin d'un **processus Node**
+qui tourne, à cause de la garde de route (`proxy.ts`) et du rendu serveur. Le
+conteneur unique de la démo Render doit donc faire tourner deux processus au
+lieu d'un, ou le proxy doit être confié à nginx.
+
+| Option | Effet |
+|---|---|
+| **A.** Basculer maintenant | Le nouveau frontend part en démo ; il faut retravailler l'image Render |
+| **B.** Laisser cohabiter | Les deux frontends sont construits par la CI ; on bascule quand l'image est prête |
+| **C.** Export statique de Next | Évite le processus Node, mais **supprime la garde de route** — à écarter |
+
+**Mon avis** : **B** pour l'instant. Le nouveau frontend est prêt et vérifié,
+mais rien ne presse de couper une démo qui fonctionne avant d'avoir retravaillé
+l'image et de l'avoir essayée. **À trancher**, avec le retrait de
+`agent-tuteur-web/` au même moment.
 
 ---
 
