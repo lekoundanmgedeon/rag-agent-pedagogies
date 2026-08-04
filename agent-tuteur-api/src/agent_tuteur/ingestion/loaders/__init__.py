@@ -3,12 +3,19 @@
 Chaque format produit du texte *brut* qui sera ensuite passé par le **même**
 normaliseur (format pivot) que le reste — c'est la garantie de cohérence de
 l'espace d'embedding entre contenu curriculaire et questions élève.
+
+Ce module est l'**interface publique** du package : le reste du code n'importe
+que :func:`extract_text`, :func:`load_file` et :func:`detect_doc_type`. Le
+détail de l'extraction PDF vit dans :mod:`~.pdf` et le nettoyage dans
+:mod:`~.cleaners`, sans que les appelants aient à le savoir.
 """
 
 from __future__ import annotations
 
 import io
 from pathlib import Path
+
+from agent_tuteur.ingestion.loaders.pdf import extract_pdf
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".markdown"}
 
@@ -27,13 +34,6 @@ def detect_doc_type(filename: str) -> str:
     raise ValueError(f"Extension non supportée : {ext!r} ({filename})")
 
 
-def _extract_pdf(data: bytes) -> str:
-    from pypdf import PdfReader
-
-    reader = PdfReader(io.BytesIO(data))
-    return "\n\n".join((page.extract_text() or "") for page in reader.pages)
-
-
 def _extract_docx(data: bytes) -> str:
     from docx import Document as DocxDocument
 
@@ -45,7 +45,7 @@ def extract_text(filename: str, data: bytes) -> tuple[str, str]:
     """Retourne ``(texte_brut, doc_type)`` pour un fichier en mémoire."""
     doc_type = detect_doc_type(filename)
     if doc_type == "pdf":
-        return _extract_pdf(data), doc_type
+        return extract_pdf(data), doc_type
     if doc_type == "docx":
         return _extract_docx(data), doc_type
     # txt / markdown : lecture directe (UTF-8, tolérante).
