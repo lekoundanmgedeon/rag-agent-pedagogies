@@ -959,3 +959,47 @@ questions générées** (repérer celles où tous les élèves échouent, signe 
 question ambiguë), il faudra la table. C'est une décision produit, pas
 technique : **à trancher en équipe**.
 
+
+---
+
+# Résumé final — la fusion du backend, module par module
+
+*Le frontend reste hors périmètre (décision de cadrage).*
+
+| # | Module | Ce qu'il apporte | Tests |
+|---|---|---|---|
+| 0 | [Mise en place](#module-0--mise-en-place-de-la-fusion) | Branche, journal, mesure de référence | 145 |
+| 1 | [Lecture des PDF](#module-1--lecture-des-pdf-et-reconnaissance-des-métadonnées) | Les formules mathématiques ne sont plus détruites | +32 → 177 |
+| 2 | [Priorité au cours](#module-2--priorité-au-cours-dans-la-recherche) | Le cours passe devant les TD ; l'agent avoue au lieu d'inventer | +18 → 195 |
+| 3 | [Modèle pédagogique](#module-3--modèle-de-données-pédagogique-et-rôles) | Maîtrise, badges, liaisons parent/élève, 4 rôles | +40 → 235 |
+| 4 | [Quiz et vérification](#module-4--quiz-vérification-et-suivi-de-la-maîtrise) | L'agent interroge, vérifie, enregistre | +55 → 290 |
+| 5 | [Routes API](#module-5--les-routes-de-lapi-pédagogique) | Tout devient utilisable, et protégé | +27 → 386 * |
+| 6 | [Gemini et chaîne LLM](#module-6--gemini-et-chaîne-de-repli-configurable) | Changer de modèle sans toucher au code | +27 → 413 * |
+
+\* avec PostgreSQL. Sans base de données : **317 tests**.
+
+**De 145 à 413 tests.** Aucun module n'a fait baisser ce nombre.
+
+## Les cinq choses à retenir
+
+1. **On a gardé les fondations d'ATS et greffé le produit de NURU** — comme
+   prévu. Aucune brique n'a été réécrite pour le plaisir.
+2. **Trois défauts de sécurité ont été corrigés**, dont un que *nous avions
+   nous-mêmes introduit* au module 3 en ajoutant les rôles : un parent pouvait
+   consulter n'importe quel élève. Les deux autres viennent de NURU (routes sans
+   authentification, bonne réponse de quiz visible dans le navigateur).
+3. **Chaque module a été vérifié contre l'infrastructure réelle**, pas seulement
+   par des tests unitaires. C'est ce qui a permis de trouver ces défauts, ainsi
+   qu'une erreur de classement qui aurait présenté 1 922 morceaux de TD comme du
+   cours.
+4. **Six points restent en attente de votre arbitrage** (section ⚠️ ci-dessus).
+   Le plus important, **V1**, est mesuré : plus de la moitié du corpus serait
+   invisible à une recherche filtrée par série.
+5. **Ce qui n'a pas pu être fait** : le jeu d'évaluation de recherche (il faut
+   de vraies questions d'élèves) et l'indexation du corpus vers Qdrant (il faut
+   le serveur et le modèle d'embeddings). Voir `REPRISE_FUSION.md`.
+
+## Où continuer
+
+`REPRISE_FUSION.md` — état à jour, commandes pour relancer l'environnement, et
+la suite du travail (consolidation, puis frontend).

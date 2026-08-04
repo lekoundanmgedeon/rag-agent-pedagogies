@@ -1,4 +1,4 @@
-# Reprise du travail de fusion — état au 4 août 2026
+# Reprise du travail de fusion — état au 4 août 2026 (backend terminé)
 
 Ce document sert à **reprendre le travail sans rien relire d'autre**. Il dit où
 en est la fusion, comment relancer l'environnement, et ce qu'il reste à faire.
@@ -10,11 +10,17 @@ en est la fusion, comment relancer l'environnement, et ce qu'il reste à faire.
 
 ## 1. Où en est-on
 
-**Branche** : `feat/fusion` — 5 commits, tout est sauvegardé, rien en attente.
+**Branche** : `feat/fusion` — 8 commits, tout est sauvegardé, rien en attente.
 La branche `main` n'a pas bougé.
 
+**Le backend de la fusion est terminé** (modules 0 à 6). Restent le frontend,
+volontairement hors périmètre, et la consolidation.
+
 ```
-b9cb9a8  M5 (en cours) règle d'accès centralisée + tests 401/403
+4664114  M6  GeminiLLM et chaîne de repli configurable
+a946e46  M5  routes quiz, évaluation et maîtrise
+4a19f94  (document de reprise)
+b9cb9a8  M5  règle d'accès centralisée + tests 401/403
 f426c02  M4  branche quiz, vérification déterministe, suivi de maîtrise
 1e3f005  M3  modèle de données pédagogique et rôles étendus
 2d9532a  M2  re-ranker cours/complément au-dessus du RRF
@@ -31,10 +37,10 @@ cab7ecf  (départ, sur main)
 | M2 | Priorité au cours dans la recherche (P2) | ✅ terminé |
 | M3 | Modèle de données pédagogique + rôles (P3.1-P3.2) | ✅ terminé |
 | M4 | Quiz, vérification, maîtrise (P3.3-P3.5) | ✅ terminé |
-| M5 | Routes API (P4) | 🟡 **en cours — voir §4** |
-| M6 | Gemini + chaîne LLM configurable (P6) | ⬜ pas commencé |
+| M5 | Routes API (P4) | ✅ terminé |
+| M6 | Gemini + chaîne LLM configurable (P6) | ✅ terminé |
 | — | Frontend (P5) | ⬜ hors périmètre décidé |
-| — | Consolidation, ADR, CI (P7) | ⬜ pas commencé |
+| — | Consolidation, ADR, CI (P7) | ⬜ **prochaine étape** |
 
 ### Nombre de tests
 
@@ -45,11 +51,11 @@ cab7ecf  (départ, sur main)
 | Après M2 | 195 | — |
 | Après M3 | 235 | 286 |
 | Après M4 | 290 | 341 |
-| **Actuel** | **290** | **359** |
+| Après M5 | 290 | 386 |
+| **Actuel (M6)** | **317** | **413** |
 
-> Le total « sans base » n'a pas bougé entre M4 et l'actuel : les 18 tests
-> ajoutés sont des tests d'API, qui exigent PostgreSQL et sont donc ignorés
-> sans lui.
+> Le total « sans base » ne bouge pas au module 5 : les tests ajoutés sont des
+> tests d'API, qui exigent PostgreSQL et sont donc ignorés sans lui.
 
 ---
 
@@ -122,54 +128,20 @@ Les 103 PDF sont dans `~/nuru/nuru-binta/data/raw/` (dossiers `cours/` et
 - **M4** — L'agent sait **interroger** l'élève (troisième posture, à côté de
   « exercice » et « cours »), **vérifier** ce qu'il produit, et **enregistrer**
   les réussites.
-- **M5 (partiel)** — La règle « qui a le droit de voir quel élève » est écrite
-  une seule fois et testée. **Au passage, une faille a été refermée** : les
-  rôles ajoutés au M3 laissaient un parent consulter n'importe quel élève.
+- **M5** — Les routes `/api/quiz`, `/api/quiz/answer`, `/api/evaluation/{id}` et
+  `/api/mastery/{id}`, toutes protégées. La règle « qui a le droit de voir quel
+  élève » est écrite une seule fois. **Une faille a été refermée au passage** :
+  les rôles ajoutés au M3 laissaient un parent consulter n'importe quel élève.
+  Et la bonne réponse d'un quiz ne descend plus dans le navigateur.
+- **M6** — Gemini ajouté comme fournisseur, et l'ordre de la chaîne de repli
+  devient un réglage `.env` (`LLM_CHAIN`). Changer de modèle ne demande plus
+  aucune modification de code.
 
 ---
 
 ## 4. Ce qu'il reste à faire
 
-### 4.1 Terminer M5 — les routes API *(prochaine étape)*
-
-Ce qui est **fait** : la règle d'accès, les dépendances de repositories, les
-tests 401/403.
-
-Ce qui **reste** :
-
-1. **`routes/quiz.py`** — `POST /api/quiz` (générer) et `POST /api/quiz/answer`
-   (corriger et enregistrer le résultat). La logique existe déjà dans
-   `agent/quiz.py` : il s'agit de l'exposer.
-2. **`routes/evaluation.py`** — `GET /api/evaluation/{student_id}` : historique
-   des exercices et quiz. Passer par `ensure_can_access_student`.
-3. **`routes/mastery.py`** — `GET /api/mastery/{student_id}` : niveau par
-   compétence, badges, compétences les plus faibles.
-4. **Brancher les ports pédagogiques sur le chat** : `MasteryPort` doit être
-   injecté par requête dans `routes/chat.py`, comme le sont déjà `memory` et
-   `audit`.
-5. **Schémas de réponse** dans `api/schemas.py` (le projet répond toujours par
-   des modèles typés, jamais des dictionnaires bruts).
-6. **Étendre `test_access_control.py`** aux nouvelles routes — la liste
-   paramétrée est déjà en place, il suffit d'y ajouter les chemins.
-7. **Régénérer le schéma OpenAPI** (il servira de source aux types du frontend).
-
-> **Décision déjà prise à respecter** : les routes `/api/teacher` et
-> `/api/parent` sont **reportées** en v1.1. Le modèle de données est posé, les
-> écrans ne le sont pas.
-
-### 4.2 M6 — Gemini et chaîne LLM configurable *(indépendant, peut être fait en premier)*
-
-1. `agent/llm/gemini.py` — sur le modèle de `mistral.py`, en `httpx` et non avec
-   le SDK Google (qui est synchrone et bloquerait le serveur).
-2. `agent/llm/router.py` — rendre l'ordre de la chaîne configurable par une
-   variable `LLM_CHAIN` (ex. `"gemini,mistral,mock"`). Le dernier maillon reste
-   toujours le simulacre : la génération ne doit jamais échouer complètement.
-3. `config/settings.py` — `gemini_api_key`, `gemini_model`, `llm_chain`.
-4. Tests de bascule, sur le modèle des 6 tests existants de `test_llm_fallback.py`.
-
-C'est le module le plus court (1 à 2 jours dans le plan) et il ne dépend de rien.
-
-### 4.3 P7 — Consolidation *(après M5 et M6)*
+### 4.1 P7 — Consolidation *(prochaine étape)*
 
 1. ADR `docs/adr/0010-fusion-nuru-ats.md` — la trace de la décision.
 2. Répartir le contenu utile de `DOCUMENTATION_TECHNIQUE.md` de NURU (93 Ko)
@@ -178,7 +150,15 @@ C'est le module le plus court (1 à 2 jours dans le plan) et il ne dépend de ri
 4. **Mettre en place l'intégration continue** (`pytest` + `ruff` + build du
    frontend). C'est la garantie que les deux dépôts ne re-divergeront pas.
 
-### 4.4 Ce qui n'a pas été fait et qui demande une décision humaine
+### 4.2 P5 — Frontend *(hors périmètre de cette session)*
+
+Le poste le plus long du plan (10 à 15 jours). Le contrat est prêt : le schéma
+OpenAPI se génère par `python scripts/export_openapi.py`, et les types
+TypeScript s'en déduisent (`npx openapi-typescript`). Voir §7 de
+`docs/ARCHITECTURE_CIBLE.md` pour les trois acquis à porter impérativement
+(jeton JWT, garde de route, streaming SSE).
+
+### 4.3 Ce qui n'a pas été fait et qui demande une décision humaine
 
 - **Le jeu d'évaluation de recherche** (P1.4) — 30 à 50 vraies questions
   d'élèves avec le chapitre attendu. Sans lui, on ne peut pas prouver que le
@@ -195,7 +175,7 @@ C'est le module le plus court (1 à 2 jours dans le plan) et il ne dépend de ri
 
 ## 5. Les décisions en attente de validation
 
-Cinq points sont remontés dans la section **« ⚠️ Points à valider »** de
+Six points sont remontés dans la section **« ⚠️ Points à valider »** de
 `JOURNAL_FUSION.md`. Le code n'a été modifié dans aucun sens : ils attendent un
 arbitrage d'équipe.
 
@@ -206,6 +186,7 @@ arbitrage d'équipe.
 | V3 | Que faire de la ligne « Compétences » des documents ? | 🟢 faible |
 | V4 | Le jeu d'évaluation de recherche n'existe pas → les gains du M2 ne sont pas mesurés | 🟠 moyenne |
 | V5 | Une bonne explication de quiz peut être jetée par une règle trop stricte | 🟢 faible |
+| V6 | Faut-il persister les quiz en base (pour analyser la qualité des questions) ? | 🟢 faible |
 
 **V1 est à traiter en priorité** : il touche la décision D5 du comparatif
 (filtrage curriculaire) et conditionne l'utilité réelle du corpus. Il révèle
@@ -239,13 +220,14 @@ l'ensemble.
 ```bash
 cd ~/nuru/rag-agent-pedagogie
 git checkout feat/fusion
-git log --oneline -6          # retrouver le fil
+git log --oneline -9          # retrouver le fil
 
 # Relancer la base de test (§2), puis vérifier que tout est sain :
 cd agent-tuteur-api
 TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
-  ../.venv/bin/python -m pytest -q      # doit afficher 359 passed
+  ../.venv/bin/python -m pytest -q      # doit afficher 413 passed
 ```
 
-Si ces 359 tests passent, l'état est sain et vous pouvez enchaîner sur le §4.1
-(terminer M5) ou le §4.2 (M6, indépendant).
+Si ces 413 tests passent, l'état est sain. La suite naturelle est le §4.1
+(consolidation : ADR, épinglage des versions, intégration continue), ou le §4.2
+(frontend) si l'équipe a tranché la question Q1 du plan.
