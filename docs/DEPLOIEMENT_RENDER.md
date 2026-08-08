@@ -1,5 +1,20 @@
 # Déploiement de démonstration sur Render (mono-conteneur)
 
+> **⚠️ Ce document décrit le déploiement du frontend Vue — ce qui est toujours
+> exact, mais provisoire.**
+>
+> Le frontend courant du projet est le **Next.js** (`agent-tuteur-web-next/`),
+> prêt et vérifié de bout en bout. La bascule du déploiement attend un arbitrage
+> d'équipe (point **V7**, cf. [`STATUS.md`](STATUS.md) §5), pour deux raisons :
+> elle touche la production, et les deux frontends **diffèrent en nature** — le
+> Vue est un build **statique** que FastAPI peut servir depuis `spa_dist_dir`,
+> tandis que Next exige un **processus Node** qui tourne. Le mono-conteneur décrit
+> ici ne transpose donc pas tel quel.
+>
+> Cinq fichiers seront à reprendre le jour de la bascule : `Dockerfile.render`,
+> `render.yaml`, les deux `docker-compose` et le `Makefile`. En attendant, tout
+> ce qui suit s'applique sans réserve.
+
 *Complète [`GUIDE_LANCEMENT.md`](GUIDE_LANCEMENT.md), qui couvre les modes de
 lancement locaux (A/B/C). Ce document décrit un quatrième mode : une **démo
 publique** hébergée, volontairement réduite — ce n'est pas un déploiement de

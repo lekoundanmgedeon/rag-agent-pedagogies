@@ -1,5 +1,23 @@
 # Architecture cible et extraits d'implémentation
 
+> **📁 Archive — esquisses, désormais implémentées.**
+>
+> Les extraits de code ci-dessous sont des **esquisses de discussion** écrites
+> avant la fusion, pas le code livré. La fusion a eu lieu (fusionnée dans `main`
+> le 2026-08-06) et l'implémentation réelle diffère des esquisses sur plusieurs
+> points. **Ne pas s'en servir comme référence de code** : lire les sources.
+>
+> | Esquisse ici | Code réel |
+> |---|---|
+> | Re-ranker cours/TD | `agent-tuteur-api/src/agent_tuteur/vectorstore/retriever.py` |
+> | Modèle pédagogique | migrations `0006`, `0007` + `persistence/models.py` |
+> | Protection des routes | `api/dependencies.py` (règle d'accès centralisée) |
+> | Ajout de Gemini au routeur | `agent/llm/router.py` (+ réglage `LLM_CHAIN`) |
+> | Portage frontend Next.js | `agent-tuteur-web-next/` |
+>
+> Les schémas mermaid de l'architecture cible restent globalement valides. Pour
+> l'architecture telle qu'elle est : [`architecture.md`](architecture.md).
+
 *Annexe technique de [`COMPARATIF_ARCHITECTURES.md`](COMPARATIF_ARCHITECTURES.md)
 et [`SYNTHESE_REUNION_TECHNIQUE.md`](SYNTHESE_REUNION_TECHNIQUE.md).*
 

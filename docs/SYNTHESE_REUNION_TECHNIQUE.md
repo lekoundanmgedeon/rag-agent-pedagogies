@@ -1,5 +1,20 @@
 # Synthèse — Réunion technique de convergence
 
+> **📁 Archive — décisions proposées, tranchées depuis.**
+>
+> Ce document présentait les 20 décisions à prendre et les 8 points à trancher
+> collectivement **avant** la fusion. La fusion **a eu lieu** (fusionnée dans
+> `main` le 2026-08-06) : les décisions ont été prises et exécutées. Conservé
+> pour la trace de ce qui avait été proposé — **plus mis à jour**.
+>
+> - Ce qui a été décidé et fait : [`RAPPORT_FUSION.md`](RAPPORT_FUSION.md) et
+>   [`../JOURNAL_FUSION.md`](../JOURNAL_FUSION.md).
+> - Ce qui **reste** à trancher : les sept points **V1 à V7** dans
+>   [`STATUS.md`](STATUS.md) §5. Ce ne sont pas les mêmes questions : ils sont
+>   apparus *pendant* l'exécution, pas avant.
+> - L'arbitrage Gemini/Mistral (question Q2) a été résolu autrement que par un
+>   choix : l'ordre de la chaîne est devenu le réglage `.env` `LLM_CHAIN`.
+
 **Objet** : fusionner `rag-agent-pedagogie` (**ATS**) et `nuru-binta` (**NURU**)
 en une base unique.
 **Date d'analyse** : 2026-07-31 · **Document détaillé** :

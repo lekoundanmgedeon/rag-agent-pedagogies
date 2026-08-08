@@ -1,5 +1,22 @@
 # Comparatif d'architectures — `rag-agent-pedagogie` vs `nuru-binta`
 
+> **📁 Archive — plan d'origine, exécuté depuis.**
+>
+> Ce document décrit les deux dépôts **avant** la fusion, et propose le plan qui
+> a servi à la mener. Ce plan **a été exécuté** : les huit phases sont traitées
+> et fusionnées dans `main` (2026-08-06). Le document est conservé pour la trace
+> du raisonnement et de l'état des lieux d'origine — **il n'est plus mis à jour**
+> et son présent est celui du 31 juillet 2026.
+>
+> Pour l'état réel : [`STATUS.md`](STATUS.md). Pour ce qui a été fait et pourquoi,
+> module par module : [`../JOURNAL_FUSION.md`](../JOURNAL_FUSION.md). Pour la
+> version courte : [`RAPPORT_FUSION.md`](RAPPORT_FUSION.md).
+>
+> ⚠️ Toutes les recommandations n'ont pas survécu à la mesure. Exemple : le plan
+> recommandait le frontend Next.js de NURU ; la mesure a montré qu'il appelait 14
+> endpoints dont **2 seulement existaient**, sans aucun streaming. Next.js a été
+> maintenu, mais en connaissance de cause et au prix d'un vrai portage.
+
 *Analyse factuelle réalisée le 2026-07-31 par lecture exhaustive du code des deux
 dépôts et exécution réelle des deux suites de tests. Toute affirmation chiffrée
 ci-dessous est vérifiable par la commande indiquée en annexe.*
