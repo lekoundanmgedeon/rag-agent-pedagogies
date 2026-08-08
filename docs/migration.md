@@ -48,7 +48,54 @@ Si une plateforme antérieure a des données de progression élève à conserver
    frustration) — seul le résultat notable (compétence, niveau d'indice
    atteint) a un sens à long terme.
 
-## 3. Comptes / tenants
+## 3. Maîtrise, résultats et badges (migration `0006`)
+
+La fusion NURU × ATS a ajouté cinq tables pédagogiques, toutes soumises à RLS
+comme le reste. Elles obéissent à une règle qui change la façon d'importer :
+**la maîtrise n'est pas une donnée à copier, c'est un calcul à rejouer.**
+
+| Table | Contenu | Import |
+|---|---|---|
+| `exercise_results` | un résultat par exercice/quiz (`is_correct`, `score` 0-1, `difficulty`, `details` JSON) | **la source de vérité — importer ceci** |
+| `concept_mastery` | niveau de maîtrise 0.0-1.0 par (élève, compétence), avec `attempts`/`successes` | **ne pas importer directement — recalculer** |
+| `badges` | badges débloqués, identifiés par un `code` stable | recalculable, ou importable si l'antériorité compte |
+| `recommendations` | révisions conseillées (auteur enseignant, ou nul si automatique) | optionnel |
+| `student_links` | quel compte parent/enseignant suit quel élève | **obligatoire si des comptes parent/enseignant sont importés** |
+
+### Pourquoi recalculer la maîtrise plutôt que la copier
+
+`domain/mastery.py` ne fait pas une moyenne : **les résultats récents pèsent plus
+que les anciens**. Un élève qui a raté ses cinq premiers essais puis réussi les
+cinq suivants doit voir sa maîtrise refléter sa progression, pas rester bloquée à
+0,5. Un score importé d'un système qui moyennait autrement serait donc faux dès
+la première lecture, et faussé de façon invisible.
+
+La marche à suivre : importer l'historique dans `exercise_results` **dans l'ordre
+chronologique**, puis rejouer le calcul par le repository plutôt que d'écrire
+dans `concept_mastery`. Deux contraintes de base rejettent de toute façon un
+import incohérent : `mastery_score` doit rester entre 0.0 et 1.0, et
+`successes <= attempts`.
+
+Si l'historique détaillé n'existe pas et que seul un score agrégé est
+disponible, ne pas le forcer dans `mastery_score` : mieux vaut repartir de zéro
+qu'afficher à un enseignant une maîtrise qui ne veut rien dire. C'est la même
+doctrine que pour `hint_level` au §2.
+
+### Badges et liaisons
+
+- Les badges sont identifiés par `code` (`premier_pas`, `premier_quiz`…), unique
+  par élève. `label` et `description` ne sont que l'habillage affiché : ne jamais
+  faire correspondre sur eux.
+- `student_links` **remplace à elle seule** les tables `parent_students`,
+  `teacher_students` et `teachers` de NURU. Chez NURU un enseignant avait sa
+  propre table avec son propre mot de passe — deux chemins d'authentification à
+  sécuriser. Ici un enseignant est un `User` avec `role='teacher'`, et cette
+  table répond seule à « ce parent a-t-il le droit de voir cet élève ? ».
+  **Importer des comptes parent/enseignant sans peupler `student_links` produit
+  des comptes qui ne voient rien** — ce qui est le comportement voulu : le refus
+  est le défaut.
+
+## 4. Comptes / tenants
 
 Attribuer un `tenant_id` stable à chaque école/institution important des
 données, cohérent avec celui porté par les comptes utilisateurs de ce tenant
@@ -57,7 +104,15 @@ données, cohérent avec celui porté par les comptes utilisateurs de ce tenant
 l'import et les comptes rendrait les données importées invisibles (RLS +
 filtrage applicatif les isoleraient silencieusement dans le mauvais tenant).
 
-## 4. Ce qui n'est délibérément pas couvert
+**Quatre rôles** existent depuis la migration `0007` : `admin`, `teacher`,
+`parent`, `student`. Un rôle inconnu n'est pas dégradé en `student` — il est
+**refusé** (contrainte `ck_users_role` en base, et le refus est le défaut côté
+application).
+
+> ⚠️ `scripts/create_user.py` n'accepte que `admin` et `student`. Un compte
+> enseignant ou parent doit être créé via `POST /api/auth/users`.
+
+## 5. Ce qui n'est délibérément pas couvert
 
 - Aucun connecteur concret n'est fourni ici (pas de schéma source connu à ce
   jour) — ce document sert de guide de méthode, pas de script clé en main.

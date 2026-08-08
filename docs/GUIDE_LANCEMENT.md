@@ -33,6 +33,10 @@ les combinaisons de configuration possibles. Complète `docs/architecture.md`
 Le code applicatif (API, worker, frontend) est **identique** dans les 3 modes —
 seule la façon de lancer l'infrastructure et les processus change.
 
+⚠️ **Deux frontends coexistent** dans le dépôt : le Next.js (courant) et le Vue
+(historique, qui fait encore tourner le déploiement). Les commandes ci-dessus
+lancent le **Vue** ; pour le Next.js, voir [§4.3](#43--quel-frontend--deux-coexistent).
+
 Pour une **démo publique hébergée** (mono-conteneur SPA + API, sans worker ni
 Qdrant), voir [`DEPLOIEMENT_RENDER.md`](DEPLOIEMENT_RENDER.md).
 
@@ -40,9 +44,10 @@ Qdrant), voir [`DEPLOIEMENT_RENDER.md`](DEPLOIEMENT_RENDER.md).
 
 ## 2. Prérequis
 
-- Python 3.11+ (le projet a été validé avec 3.12)
-- Node.js 20+ et npm (pour le frontend web Vue, modes B/C ; inutile en mode A où
-  le frontend est construit dans une image Docker)
+- Python 3.11+ (les travaux de CI tournent en 3.12, **l'image Docker en 3.11** —
+  un épinglage valable seulement en 3.12 casse le déploiement, cf. §10)
+- Node.js 20+ et npm (pour les frontends, modes B/C ; inutile en mode A où le
+  frontend est construit dans une image Docker)
 - Docker + Docker Compose (modes A et B)
 - `make` (GNU Make)
 
@@ -51,11 +56,19 @@ Qdrant), voir [`DEPLOIEMENT_RENDER.md`](DEPLOIEMENT_RENDER.md).
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r agent-tuteur-api/requirements.txt -e agent-tuteur-api
+.venv/bin/pip install -r agent-tuteur-api/requirements.txt
+.venv/bin/pip install -e 'agent-tuteur-api[parsing,dev]'
 cd agent-tuteur-web && npm install && cd ..
 ```
 
-Ou, équivalent : `make setup`.
+Ou, pour la partie couverte : `make setup` (⚠️ `make setup` n'installe **pas**
+l'extra `parsing` — voir l'avertissement ci-dessous).
+
+⚠️ **Ne pas sauter l'extra `parsing`** (PyMuPDF). Sans lui, la lecture des PDF
+retombe silencieusement sur `pypdf`, qui aplatit ou perd fractions, indices et
+exposants et se trompe souvent sur l'ordre de lecture des colonnes. Le corpus
+étant à 100 % des mathématiques du secondaire, l'ingestion « réussit » en
+abîmant le contenu — seule une ligne de journal le signale.
 
 ⚠️ **Si un environnement conda est actif** (`conda activate ...`) au moment de
 créer le venv, `pyvenv.cfg` peut enregistrer le mauvais interpréteur de base et
@@ -193,6 +206,43 @@ make worker     # terminal 2
 make run        # terminal 3
 ```
 
+### 4.3 — Quel frontend ? (deux coexistent)
+
+| Répertoire | Techno | Statut | Lancé par |
+|---|---|---|---|
+| `agent-tuteur-web-next/` | Next.js 16 / React 19 / TypeScript | **Frontend courant**, 9 écrans | `npm run dev` (voir ci-dessous) |
+| `agent-tuteur-web/` | Vue 3 (Vite) | Historique — fait encore tourner le déploiement | `make run`, `make dev`, `docker-compose.dev.yml` |
+
+Le Vue reste ce que lancent `make dev` / le compose **tant que la bascule du
+déploiement n'est pas décidée** (point V7, cf. `docs/STATUS.md` §5). Les deux
+sont construits par l'intégration continue.
+
+**Lancer le frontend Next.js** :
+
+```bash
+cd agent-tuteur-web-next
+npm install
+npm run gen:api                                   # types TypeScript depuis openapi.json
+API_ORIGIN=http://localhost:8000 npm run dev      # http://localhost:3000
+```
+
+Ce que vérifie la CI, à lancer avant de proposer une modification :
+
+```bash
+npm run gen:api && git diff --exit-code src/types/api.d.ts   # types à jour ?
+npm run typecheck
+npm run build
+```
+
+⚠️ **`API_ORIGIN` est lu au *build*, pas au démarrage.** Next fige les
+redirections dans le manifeste de construction : un `npm run build` sans cette
+variable produit une image qui pointera **toujours** vers `localhost:8000`, quoi
+qu'on mette dans l'environnement ensuite. Piège vérifié en conditions réelles.
+
+Le navigateur ne connaît jamais l'URL du backend : l'API est jointe par chemin
+relatif `/api/...`, redirigé par Next en dev et par nginx en production. C'est ce
+qui évite d'ouvrir CORS.
+
 ---
 
 ## 5. Mode C — Tout local sans Docker
@@ -230,17 +280,41 @@ un document ingéré par le worker n'apparaît pas en recherche côté API. Deux
 solutions : soit ne pas lancer de worker séparé (mode B1, ingestion dans le
 même processus que l'API), soit passer en `VECTOR_BACKEND=qdrant`.
 
-### 6.2 — `LLM_BACKEND`
+### 6.2 — `LLM_CHAIN` et `LLM_BACKEND`
+
+Deux réglages, et **`LLM_CHAIN` l'emporte** quand il est renseigné.
+
+#### `LLM_CHAIN` — ordre explicite (recommandé)
+
+```bash
+LLM_CHAIN=gemini,mistral,mock
+```
+
+Impose la chaîne, sans toucher au code. Changer de fournisseur principal devient
+un réglage de `.env` réversible plutôt qu'une modification à redéployer. Les
+valeurs acceptées sont `mistral`, `gemini`, `ollama`, `mock`.
+
+#### `LLM_BACKEND` — composition automatique (`LLM_CHAIN` vide)
 
 | Valeur | Chaîne de fallback résultante |
 |---|---|
-| `auto` (défaut) | Mistral (si clé fournie) → Ollama (si joignable) → Mock |
+| `auto` (défaut) | clé Mistral → `Mistral → Gemini → Ollama → Mock` ; sinon clé Gemini → `Gemini → Ollama → Mock` ; sinon Ollama joignable → `Ollama → Mock` ; sinon `Mock` |
 | `mistral` | Mistral → Mock (jamais bloquant même en forçant Mistral) |
+| `gemini` | Gemini → Mock |
 | `ollama` | Ollama → Mock |
 | `mock` | Mock seul (déterministe, aucun réseau — utile en test/CI) |
 
-Le mock ne donne jamais d'erreur : c'est le dernier maillon de la chaîne dans
-tous les cas. Voir `GET /health` → champ `llm` pour la chaîne effective.
+Clés et modèles associés : `MISTRAL_API_KEY` / `MISTRAL_MODEL`
+(`mistral-small-latest`), `GEMINI_API_KEY` / `GEMINI_MODEL`
+(`gemini-2.5-flash`), `OLLAMA_BASE_URL` / `OLLAMA_MODEL` (`qwen3:8b`).
+
+Le mock est **toujours** le dernier maillon : la génération ne bloque jamais, et
+un élève ne reçoit jamais un mode d'emploi de configuration à la place d'une
+réponse. Voir `GET /health` → champ `llm` pour la chaîne effective.
+
+> **En streaming** : si un fournisseur échoue *avant* d'avoir émis le moindre
+> token, on passe au suivant ; s'il échoue *après* avoir déjà streamé, l'erreur
+> est propagée — un flux partiel ne peut pas être rejoué proprement.
 
 ### 6.3 — Faut-il lancer `make worker` ?
 
@@ -305,6 +379,44 @@ curl -sN -X POST http://localhost:8000/api/chat \
 
 Sans jeton, toute route métier renvoie `401`. `/health` reste public.
 
+### Routes pédagogiques (issues de la fusion)
+
+```bash
+# Générer un quiz (quiz_type : "qcm" ou "vrai_faux")
+curl -s -X POST http://localhost:8000/api/quiz \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"competence": "Dérivation", "quiz_type": "qcm",
+       "curriculum_context": {"classe": "Terminale", "serie": "S1"}}'
+
+# Répondre : le quiz_token reçu ci-dessus + l'identifiant du choix
+curl -s -X POST http://localhost:8000/api/quiz/answer \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"quiz_token": "eyJ...", "answer": "A"}'
+
+# Maîtrise et évaluation d'un élève
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/mastery/$STUDENT_ID
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/evaluation/$STUDENT_ID
+```
+
+Trois comportements à connaître :
+
+- **La bonne réponse ne descend jamais dans le navigateur.** Elle voyage scellée
+  dans `quiz_token`, signé côté serveur (validité 60 min) : le client le
+  transporte sans pouvoir le lire ni le modifier. La correction se fait
+  serveur-side, par comparaison déterministe de deux identifiants.
+- `available: false` (avec `choices: []`) n'est **pas une erreur HTTP** : c'est
+  le résultat honnête d'un modèle qui n'a rien produit d'exploitable après deux
+  tentatives. L'interface propose de réessayer — **jamais de QCM factice** aux
+  propositions « Option 1 / Option 2 », qui donnerait l'illusion d'un exercice.
+- Sans `competence` **ni** indication exploitable dans `curriculum_context`
+  (`chapitre`, puis `competence`, puis `discipline`) → **422** : on n'interroge
+  jamais un élève au hasard.
+
+Le contrôle d'accès est centralisé : un parent ou un enseignant ne peut lire la
+maîtrise que des élèves auxquels son compte est **explicitement lié** (table
+`student_links`). Un `403` ici est le comportement attendu, pas un bug de
+configuration. Schémas exacts de chaque route : [`api.md`](api.md).
+
 ---
 
 ## 8. Logs et observabilité
@@ -336,7 +448,8 @@ docker compose -f docker-compose.dev.yml down
 ```bash
 pkill -f "uvicorn agent_tuteur"
 pkill -f "arq agent_tuteur"
-pkill -f "vite"           # serveur de dev du frontend web
+pkill -f "vite"           # serveur de dev du frontend Vue
+pkill -f "next dev"       # serveur de dev du frontend Next.js
 ```
 
 (`make dev` avec `Ctrl+C` arrête les 3 en une fois s'ils ont été lancés via
@@ -387,7 +500,42 @@ rm -rf .venv
 make setup
 ```
 
-### Ports déjà occupés (5432, 6379, 6333, 8000, 8080, 5173)
+### Les tests échouent en cascade (~26 échecs) sans raison apparente
+
+`pytest` a été lancé **depuis la racine du dépôt**. La configuration et
+l'environnement ne sont pas trouvés depuis ce répertoire de travail. Toujours
+lancer depuis `agent-tuteur-api/` :
+
+```bash
+cd agent-tuteur-api && ../.venv/bin/python -m pytest -q     # 317 passed, 98 skipped
+```
+
+Les 98 tests ignorés comprennent **tous les tests de contrôle d'accès** : ils
+exigent un vrai PostgreSQL (`TEST_DATABASE_URL`). Ne jamais conclure « tout
+passe » sans eux — c'est pourquoi la CI démarre un service Postgres.
+
+### L'image Docker de l'API ne se construit pas alors que la CI est verte
+
+Les travaux de CI tournent en **Python 3.12**, mais l'image Docker est en
+**3.11** (le plancher déclaré par `pyproject.toml`). Un épinglage valable
+seulement en 3.12 casse donc le déploiement sans qu'aucun test ne le signale —
+c'est exactement ce qui s'est produit avec `numpy==2.5.1`, qui exige 3.12. D'où
+le travail `image-api` dans `.github/workflows/ci.yml`, qui construit l'image à
+chaque proposition de modification. Vérifier tout nouvel épinglage sous 3.11.
+
+### `PyMuPDF` absent — formules mathématiques dégradées
+
+Symptôme discret : l'ingestion **réussit**, mais les fractions, indices et
+exposants des PDF sont aplatis ou perdus, et le RAG répond à côté. Seule une
+ligne de journal signale le repli sur `pypdf`. Correctif :
+
+```bash
+.venv/bin/pip install -e 'agent-tuteur-api[parsing]'
+```
+
+Puis ré-indexer les documents concernés (`POST /api/documents/{id}/reindex`).
+
+### Ports déjà occupés (5432, 6379, 6333, 8000, 8080, 5173, 3000)
 
 Fréquent si un Postgres/Redis natif tourne déjà sur la machine pour un autre
 projet. Utiliser des ports hôte différents dans les commandes `docker run`

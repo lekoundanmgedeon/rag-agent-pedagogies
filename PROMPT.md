@@ -1,3 +1,18 @@
+> **📁 Archive — spécification de construction initiale (2026-07-08).**
+>
+> Ce fichier est le cahier des charges qui a servi à créer le projet *from
+> scratch*. **Les huit étapes qu'il décrit sont toutes réalisées**, et le projet
+> a beaucoup évolué depuis (authentification JWT, frontend Vue puis Next.js,
+> fusion avec le dépôt NURU). Les instructions d'arrêt ci-dessous ne
+> s'appliquent plus.
+>
+> Conservé pour la trace de l'intention d'origine — **ne pas s'en servir comme
+> description du projet actuel**. Pour cela : [`README.md`](README.md),
+> [`docs/STATUS.md`](docs/STATUS.md) et
+> [`docs/RAPPORT_TECHNIQUE.md`](docs/RAPPORT_TECHNIQUE.md).
+
+---
+
 ARRÊT OBLIGATOIRE : réalise UNIQUEMENT les étapes 1 à 3 de l'ordre de
 construction, puis ARRÊTE-TOI et attends ma validation. Ne commence PAS les
 étapes 4 à 8 (Postgres, API, ARQ, frontend, deploy) dans cette session.

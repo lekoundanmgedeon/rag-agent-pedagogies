@@ -4,12 +4,34 @@ Procédure pour mettre la stack complète en ligne sur **un seul VPS**, avec une
 URL HTTPS à envoyer à l'équipe. Complète [`GUIDE_LANCEMENT.md`](GUIDE_LANCEMENT.md)
 (lancement local) avec le « comment » du déploiement distant.
 
-**Configuration retenue** : VPS + `docker-compose.prod.yml`, URL publique sans
-authentification, corpus = les 12 leçons de `lessons/`.
+> **⚠️ Document partiellement périmé (écrit le 2026-07-21). Deux corrections
+> importantes avant de le suivre :**
+>
+> **1. L'API n'est plus ouverte.** Depuis le 2026-07-24, toute route métier exige
+> un jeton JWT (`Authorization: Bearer …`) ; seul `/health` reste public. La
+> section 9 ci-dessous, « ce que *sans authentification* implique », **ne décrit
+> plus la réalité** — elle est conservée comme trace de l'état antérieur. Il faut
+> désormais créer un premier compte admin après le déploiement, sans quoi
+> personne ne peut se connecter :
+> ```bash
+> docker compose -f docker-compose.prod.yml --profile seed run --rm createadmin
+> ```
+> En production, définir un `JWT_SECRET` fort (≥ 32 octets) et un rôle Postgres
+> **non-superuser** (sinon RLS ne filtre rien). Voir
+> [ADR 0009](adr/0009-authentification-jwt-roles.md) et
+> [`architecture.md`](architecture.md) §7.
+>
+> **2. Le frontend déployé est le Vue** (`agent-tuteur-web/`), pas le Next.js.
+> C'est toujours exact aujourd'hui, mais provisoire : la bascule vers
+> `agent-tuteur-web-next/` attend un arbitrage (point **V7**, cf.
+> [`STATUS.md`](STATUS.md) §5). Elle changera la nature du service — le Vue est
+> **statique**, Next exige un **processus Node**.
+>
+> Le reste de la procédure (provisionnement du VPS, TLS, compose de production,
+> sauvegardes) reste valable.
 
-> ⚠️ **Lire la section [9. Ce que « sans authentification » implique](#9-ce-que--sans-authentification--implique) avant d'envoyer le lien.**
-> L'API n'a aucun contrôle d'accès : toute personne ayant l'URL peut supprimer
-> le corpus et lire toutes les conversations.
+**Configuration retenue** : VPS + `docker-compose.prod.yml`, URL publique,
+corpus = les 12 leçons de `lessons/`.
 
 ---
 
@@ -32,10 +54,14 @@ authentification, corpus = les 12 leçons de `lessons/`.
 
 ## 1. Ce qui tourne, et pourquoi un VPS
 
-Le frontend Streamlit est un **client HTTP pur** (`services/api_client.py`) : il
-ne contient aucune logique métier et ne sait rien de la base ni du vectorstore.
-Le déployer seul (Streamlit Community Cloud) ne déploie donc quasiment rien —
-il faudrait de toute façon héberger l'API, PostgreSQL et Qdrant ailleurs.
+Le frontend est un **client HTTP pur** : il ne contient aucune logique métier et
+ne sait rien de la base ni du vectorstore. Le déployer seul (sur un hébergeur de
+sites statiques) ne déploie donc quasiment rien — il faudrait de toute façon
+héberger l'API, PostgreSQL et Qdrant ailleurs. D'où le VPS unique.
+
+> *(Ce paragraphe visait à l'origine le frontend Streamlit, supprimé du dépôt le
+> 2026-07-30. L'argument vaut à l'identique pour le SPA Vue déployé aujourd'hui,
+> et pour le Next.js qui lui succédera.)*
 
 `docker-compose.prod.yml` lance les 7 services sur une seule machine :
 
@@ -103,7 +129,7 @@ ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
 ## 4. Récupérer le code
 
 Le compose construit les images depuis `../agent-tuteur-api` et
-`../agent-tuteur-frontend` : **tout le dépôt** doit être présent, pas seulement
+`../agent-tuteur-web` : **tout le dépôt** doit être présent, pas seulement
 `agent-tuteur-deploy/`.
 
 ```bash
@@ -299,7 +325,26 @@ curl -s -X POST https://tuteur.exemple.sn/api/search \
 
 ---
 
-## 9. Ce que « sans authentification » implique
+## 9. Ce que « sans authentification » impliquait — ⚠️ SECTION PÉRIMÉE
+
+> **Cette section ne décrit plus le comportement de l'application.** Elle est
+> conservée comme trace de l'état antérieur au 2026-07-24. Depuis :
+>
+> - **Toute route métier exige un jeton JWT** ; seul `/health` est public.
+> - **L'en-tête `X-Tenant-Id` n'existe plus** : le tenant et l'identité de
+>   l'élève sont **prouvés par le jeton**, pas déclarés par le client. C'était
+>   une bascule dure, sans période de compatibilité.
+> - Les rôles (`admin`, `teacher`, `parent`, `student`) protègent les routes
+>   d'administration, et un parent ou un enseignant ne voit que les élèves
+>   auxquels son compte est **explicitement lié** en base.
+>
+> Voir [ADR 0009](adr/0009-authentification-jwt-roles.md) et
+> [`architecture.md`](architecture.md) §7. Ce qui reste vrai et mérite attention
+> avant d'envoyer un lien : définir un `JWT_SECRET` fort (≥ 32 octets), créer le
+> premier compte admin, et utiliser un rôle Postgres **non-superuser** — un
+> superuser contourne toujours RLS, même avec `FORCE ROW LEVEL SECURITY`.
+
+*Texte d'origine, pour mémoire :*
 
 Il n'y a **aucun contrôle d'accès** dans l'application. `api/dependencies.py`
 lit simplement l'en-tête `X-Tenant-Id` (défaut : `default`) — c'est un

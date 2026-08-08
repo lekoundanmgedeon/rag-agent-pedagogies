@@ -5,7 +5,14 @@ que ça change pour vous**. Il est écrit pour être lisible par quelqu'un qui
 découvre le projet : chaque terme technique est expliqué la première fois qu'il
 apparaît.
 
-**Branche de travail** : `feat/fusion` · **Base de départ** : ATS (`rag-agent-pedagogie`)
+> **État** : la fusion est **terminée et fusionnée dans `main`** (commit de merge
+> `064db7e`, 2026-08-06). Ce journal reste la référence du *pourquoi* de chaque
+> décision — il n'est plus complété. Pour l'état courant du projet et ce qu'il
+> reste à décider : [`docs/STATUS.md`](docs/STATUS.md). La section
+> « ⚠️ Points à valider » ci-dessous est toujours d'actualité : les sept points
+> attendent un arbitrage d'équipe.
+
+**Branche de travail** : `feat/fusion` (fusionnée dans `main`) · **Base de départ** : ATS (`rag-agent-pedagogie`)
 
 ---
 
@@ -1313,5 +1320,8 @@ l'image et de l'avoir essayée. **À trancher**, avec le retrait de
 
 ## Où continuer
 
-`REPRISE_FUSION.md` — état à jour, commandes pour relancer l'environnement, et
-la suite du travail (consolidation, puis frontend).
+[`docs/STATUS.md`](docs/STATUS.md) — état vérifié, commandes pour relancer
+l'environnement, et ce qu'il reste à décider. C'est le point de reprise unique.
+
+*(`REPRISE_FUSION.md`, qui jouait ce rôle pendant l'exécution, est désormais une
+archive de l'avancement module par module.)*
