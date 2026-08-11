@@ -1,0 +1,242 @@
+{
+  "1": {
+    "status": "corrigé",
+    "pr": null,
+    "notes": "Cause racine : _extract_expression s'arrêtait au premier caractère non ASCII. « x³ − 3x » (U+00B3, U+2212) était réduit à « x » et dérivé en « 1 », résultat faux injecté sous le libellé « Résultat vérifié par l'outil de calcul ». Correctifs : normalisation Unicode, extraction à double contrôle (rien de signifiant perdu dehors, aucun mot français absorbé dedans), distinction calcul concret / question de méthode, et aveu explicite quand rien n'a pu être vérifié (règle n°2). Corrigé au passage : verify.py comparait la réponse à « expression → résultat », jamais présent tel quel, et signalait donc chaque calcul juste comme suspect. Effet de bord : le cas 6 passe en refus prudent au lieu de produire c**2*e**2*i*r*x. NON vérifié sur la démo déployée."
+  },
+  "2": {
+    "status": "corrigé",
+    "pr": null,
+    "notes": "RC-A corrigé : intention META ajoutée (intent.py), dérivation avant retrieve_context (nœud guardrail_meta), réponse ancrée sur store.catalogue() plutôt que sur une recherche par similarité. Chemin SSE rejoué à la main. NON vérifié sur la démo déployée : aucun service local démarré."
+  },
+  "3": {
+    "status": "corrigé",
+    "pr": null,
+    "notes": "RC-A corrigé : intention META ajoutée (intent.py), dérivation avant retrieve_context (nœud guardrail_meta), réponse ancrée sur store.catalogue() plutôt que sur une recherche par similarité. Chemin SSE rejoué à la main. NON vérifié sur la démo déployée : aucun service local démarré."
+  },
+  "4": {
+    "status": "corrigé",
+    "pr": null,
+    "notes": "RC-A corrigé : intention META ajoutée (intent.py), dérivation avant retrieve_context (nœud guardrail_meta), réponse ancrée sur store.catalogue() plutôt que sur une recherche par similarité. Chemin SSE rejoué à la main. NON vérifié sur la démo déployée : aucun service local démarré."
+  },
+  "5": {
+    "status": "en_cours",
+    "pr": null,
+    "notes": "Diagnostic famille RAG : (RC-0) la démo tourne EMBEDDING_BACKEND=light (render.yaml:44), embedder par hachage sans capacité sémantique ; (RC-A) intent.py n'avait pas d'intention méta ; (RC-B) ScoredChunk.score est un score RRF (~1/(60+rang)), pas une similarité, et QdrantVectorStore ne renseigne pas dense_score. BLOQUÉ : le seuil ne peut pas porter sur .score (RRF). Mesuré sur le corpus figé, le cas 5 hors périmètre obtient 0.0325 en RRF, AU-DESSUS d'un témoin dans le périmètre à 0.0318. Il faut le cosinus, absent du chemin Qdrant, et un seuil calibré sur un vrai embedder. En attente de la décision RC-0."
+  },
+  "6": {
+    "status": "en_cours",
+    "pr": null,
+    "notes": "Diagnostic famille RAG : (RC-0) la démo tourne EMBEDDING_BACKEND=light (render.yaml:44), embedder par hachage sans capacité sémantique ; (RC-A) intent.py n'avait pas d'intention méta ; (RC-B) ScoredChunk.score est un score RRF (~1/(60+rang)), pas une similarité, et QdrantVectorStore ne renseigne pas dense_score. BLOQUÉ : l'exercice du cas 6 (z=3+4i) obtient cos=0.271 alors qu'une question de cuisine obtient 0.241 et le bruit pur 0.098. Aucun seuil ne sépare les deux : c'est l'embedder light qui est en cause. Un seuil de pertinence AGGRAVERAIT ce cas. En attente de la décision RC-0."
+  },
+  "7": {
+    "status": "en_cours",
+    "pr": null,
+    "notes": "Disjoncteur de détresse ajouté en tête de graphe (agent/securite.py + nœuds triage_securite/reponse_securite). Réponse déterministe, LLM non sollicité, RAG court-circuité. Tests verts. RESTE EN « en_cours » : catégorie « Sécurité, bien-être & garde-fous » — validation humaine explicite requise avant merge (Definition of Done). Deux points à trancher : (1) RESSOURCES_AIDE volontairement vide, aucun numéro d'assistance inventé ; (2) événement journalisé dans l'audit et non dans la mémoire élève."
+  },
+  "8": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "9": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "10": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "11": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "12": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "13": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "14": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "15": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "16": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "17": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "18": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "19": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "20": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "21": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "22": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "23": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "24": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "25": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "26": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "27": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "28": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "29": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "30": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "31": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "32": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "33": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "34": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "35": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "36": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "37": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "38": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "39": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "40": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "41": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "42": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "43": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "44": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "45": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "46": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "47": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  },
+  "48": {
+    "status": "à_traiter",
+    "pr": null,
+    "notes": ""
+  }
+}

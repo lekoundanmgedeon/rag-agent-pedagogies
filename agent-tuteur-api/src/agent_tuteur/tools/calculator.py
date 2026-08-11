@@ -49,6 +49,71 @@ _CALC_KEYWORDS = re.compile(
 )
 _MATH_EXPR = re.compile(r"\d\s*[-+*/^=]\s*\d|[-+*/^]\s*x|\bx\s*[-+*/^=]")
 
+# --- Normalisation des notations réellement saisies par les élèves -----------
+# Un élève tape « x³ − 3x », colle « x²·ln(x) », écrit « 3 × 4 ÷ 2 ». Sans cette
+# normalisation, l'extraction s'arrêtait au premier caractère non ASCII et
+# calculait sur le fragment restant — c'est l'origine du cas QA #1, où « x³ − 3x »
+# était réduit à « x » et dérivé en « 1 », résultat faux présenté comme vérifié.
+_EXPOSANTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+_RUN_EXPOSANTS = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹]+")
+_SYMBOLES = {
+    "−": "-", "–": "-", "—": "-", "‐": "-",   # moins et tirets typographiques
+    "×": "*", "·": "*", "∗": "*", "⋅": "*",
+    "÷": "/", "⁄": "/",
+    # « : » n'est PAS normalisé en division : en français c'est d'abord de la
+    # ponctuation (« le nombre complexe : z = … »), et le confondre avec un
+    # opérateur fabriquait des expressions absurdes.
+    "√": "sqrt",
+    "\u00a0": " ", "\u202f": " ",   # espaces insécables (dont la fine française)
+    "’": "'",
+}
+
+#: Caractères qui portent du sens mathématique et ne doivent JAMAIS être perdus
+#: silencieusement par l'extraction.
+_SIGNIFIANTS = set("0123456789+-*/^=()")
+
+#: Sous-ensemble servant à *détecter* la présence d'une expression. Le tiret en
+#: est exclu à dessein : en français il relie des mots (« dérive-t-on »,
+#: « donne-moi ») bien plus souvent qu'il ne soustrait. Il reste en revanche
+#: dans :data:`_SIGNIFIANTS`, car perdre un moins pendant l'extraction fausse
+#: le calcul en silence.
+_SIGNIFIANTS_DETECTION = set("0123456789+*/^=()")
+
+#: Suites de lettres admises dans une expression : une variable d'une lettre, ou
+#: une fonction connue. Tout autre mot signale que l'extraction a happé du texte
+#: français — « exercice » se parsait en produit ``c*e*i*r*x``, et le résultat
+#: était présenté à l'élève comme vérifié symboliquement (cas QA #1 et #6).
+_MOTS_AUTORISES = {nom.lower() for nom in _ALLOWED_NAMES} | {"d", "dx", "dy", "dt"}
+_MOTS = re.compile(r"[a-zA-Z_]+")
+
+
+def normaliser_expression(texte: str) -> str:
+    """Ramène les notations Unicode usuelles à une syntaxe analysable par SymPy.
+
+    ``x³`` → ``x**3``, ``−`` → ``-``, ``×``/``·`` → ``*``, ``÷`` → ``/``,
+    ``√`` → ``sqrt``. Purement lexical : aucune interprétation mathématique.
+    """
+    texte = _RUN_EXPOSANTS.sub(lambda m: "**" + m.group(0).translate(_EXPOSANTS), texte)
+    for source, cible in _SYMBOLES.items():
+        texte = texte.replace(source, cible)
+    return texte
+
+
+# Verbe impératif de calcul : l'élève demande un résultat concret, pas une
+# explication de méthode. Distinction indispensable — « Comment dériver un
+# quotient ? » (fixture positive #54) est une question de cours, pas un calcul.
+_CALC_IMPERATIF = re.compile(
+    r"\b(?:calcule[rz]?|r[ée]sous|r[ée]soudre|resous|simplifie[rz]?|factorise[rz]?|"
+    r"d[ée]veloppe[rz]?|d[ée]rive[rz]?|int[èe]gre[rz]?)\b",
+    re.IGNORECASE,
+)
+_INTERROGATIF = re.compile(
+    r"\b(?:comment|pourquoi|qu['e]\s*est[\s-]?ce|[àa]\s+quoi\s+sert|"
+    r"quelle?\s+est\s+la\s+(?:formule|m[ée]thode|r[èe]gle|d[ée]finition)|"
+    r"quand\s+(?:peut|doit)[\s-]?on)\b",
+    re.IGNORECASE,
+)
+
 
 class CalculationError(ValueError):
     """Erreur de calcul (expression invalide ou hors périmètre)."""
@@ -141,6 +206,10 @@ def compute(query: str) -> CalculationResult:
     expr_text = _extract_expression(query)
     try:
         if re.search(r"d[ée]riv|derivative", lowered):
+            # « dérive f(x) = x²·ln(x) » : c'est le membre de droite qu'on dérive,
+            # pas l'égalité (qui, elle, partirait en résolution d'équation).
+            if definition := _DEFINITION_FONCTION.match(expr_text):
+                expr_text = definition.group("corps").strip()
             return differentiate(expr_text)
         if re.search(r"r[ée]sou|solve|[ée]quation", lowered) or "=" in expr_text:
             return solve_equation(expr_text)
@@ -151,10 +220,72 @@ def compute(query: str) -> CalculationResult:
         raise CalculationError(f"Calcul impossible pour : {query!r}") from exc
 
 
+def contient_une_expression(query: str) -> bool:
+    """Vrai si la question porte une expression mathématique concrète."""
+    return any(c in _SIGNIFIANTS_DETECTION for c in normaliser_expression(query))
+
+
+def demande_un_calcul_concret(query: str) -> bool:
+    """Vrai si l'élève attend un **résultat**, pas une explication de méthode.
+
+    C'est ce prédicat qui décide si un échec de l'outil doit être avoué à
+    l'élève (règle non-négociable n°2) ou simplement ignoré. « Comment dériver
+    un quotient de fonctions ? » ne demande aucun résultat : l'outil n'a rien à
+    vérifier, et son silence n'est pas un aveu à faire.
+    """
+    if contient_une_expression(query):
+        return True
+    return bool(_CALC_IMPERATIF.search(query)) and not _INTERROGATIF.search(query)
+
+
+#: Définition de fonction en tête d'énoncé : « f(x) = … », « y = … ». Sur une
+#: demande de dérivée, c'est le membre de droite qui doit être dérivé.
+_DEFINITION_FONCTION = re.compile(
+    r"^\s*(?:[a-zA-Z]\s*\(\s*[a-zA-Z]\s*\)|[yz])\s*=\s*(?P<corps>.+)$", re.DOTALL
+)
+
+
 def _extract_expression(query: str) -> str:
-    """Isole la sous-chaîne mathématique d'une question en langage naturel."""
-    # Retire les délimiteurs LaTeX inline et garde la partie « calculable ».
-    cleaned = query.replace("$", " ")
-    match = re.search(r"[0-9x)(][0-9xX\s+\-*/^=.,()sqrtcoinlgexp]*", cleaned)
-    candidate = (match.group(0) if match else cleaned).strip(" .,")
-    return candidate or cleaned
+    """Isole l'expression mathématique d'une question en langage naturel.
+
+    **Propriété de sûreté centrale** : l'extraction ne tronque jamais en
+    silence. La sous-chaîne retenue doit contenir *tous* les caractères
+    mathématiquement signifiants de la question ; sinon on lève plutôt que de
+    calculer sur un fragment. Sans ce contrôle, « x³ − 3x » devenait « x » et
+    « exercice » devenait le produit ``c*e*i*r*x`` — dans les deux cas un
+    résultat faux annoncé comme vérifié (cas QA #1 et #6).
+    """
+    texte = normaliser_expression(query).replace("$", " ")
+
+    positions = [i for i, c in enumerate(texte) if c in _SIGNIFIANTS]
+    if not positions:
+        raise CalculationError(f"Aucune expression mathématique dans : {query!r}")
+
+    debut, fin = positions[0], positions[-1] + 1
+    # Étend la fenêtre aux identifiants collés aux bornes : « **3 - 3 » doit
+    # redevenir « x**3 - 3x », sans quoi la variable elle-même serait perdue.
+    while debut > 0 and (texte[debut - 1].isalnum() or texte[debut - 1] == "_"):
+        debut -= 1
+    while fin < len(texte) and (texte[fin].isalnum() or texte[fin] == "_"):
+        fin += 1
+
+    candidate = texte[debut:fin].strip(" .,;:")
+    if not candidate:
+        raise CalculationError(f"Aucune expression mathématique dans : {query!r}")
+
+    # Contrôle de couverture : rien de signifiant ne doit rester dehors.
+    perdus = [c for c in texte[:debut] + texte[fin:] if c in _SIGNIFIANTS]
+    if perdus:
+        raise CalculationError(
+            f"Expression ambiguë (fragments hors analyse : {''.join(perdus)!r}) dans {query!r}"
+        )
+
+    # Contrôle inverse : rien de non mathématique ne doit être entré dedans.
+    # Sans lui, la fenêtre happe le texte français qui sépare deux nombres et
+    # SymPy le transforme docilement en produit de variables.
+    intrus = [m for m in _MOTS.findall(candidate) if len(m) > 1 and m.lower() not in _MOTS_AUTORISES]
+    if intrus:
+        raise CalculationError(
+            f"Texte non mathématique dans l'expression ({', '.join(intrus)}) : {query!r}"
+        )
+    return candidate

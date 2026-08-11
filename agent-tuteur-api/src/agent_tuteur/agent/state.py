@@ -45,6 +45,16 @@ class AgentState(TypedDict, total=False):
     #: maîtrise : un simple tour de chat ne prouve rien.
     exercise_outcome: dict[str, Any] | None
 
+    # --- Triage de sécurité (nœud triage_securite, en tête de graphe) ---
+    #: Signal de détresse détecté ({"motif", "categorie"}), ou ``None``. Quand il
+    #: est posé, le graphe est dérouté vers ``reponse_securite`` : ni RAG, ni
+    #: intention, ni cours, ni génération (règle non-négociable n°1).
+    securite: dict[str, Any] | None
+    #: Réponse écrite par le code plutôt que produite par le modèle. Quand elle
+    #: est posée, ``compose_response`` est contourné et ``stream()`` la restitue
+    #: telle quelle, sans jamais solliciter le LLM.
+    reponse_directe: str | None
+
     # --- Intention (nœud detect_intent) ---
     intent: str  # "exercice" | "cours" | "quiz"
     intent_nav: str | None  # navigation cours détectée ("start"|"next"|"prev"|"goto")
@@ -63,6 +73,13 @@ class AgentState(TypedDict, total=False):
     hint_reason: str
     tool_used: str | None
     tool_result: str | None
+    #: Le résultat seul (sans « expression → »), pour le contrôle de fidélité
+    #: de ``verify.py`` : c'est cette valeur-là que la réponse doit contenir.
+    tool_result_brut: str | None
+    #: Vrai quand l'élève demandait un calcul concret que l'outil symbolique n'a
+    #: pas pu vérifier. Le prompt interdit alors d'annoncer un résultat plutôt
+    #: que de laisser le modèle en inventer un (règle non-négociable n°2).
+    calcul_non_verifie: bool
     moderation_flagged: bool
     #: Position dans le cours calculée par course_planner ({"chapitre", "section_index",
     #: "section_key", "section_title", "reason", "chapitre_confirmed", "alternatives",

@@ -88,6 +88,17 @@ class BaseVectorStore(ABC):
     @abstractmethod
     def count_for_source(self, source_document: str) -> int: ...
 
+    @abstractmethod
+    def catalogue(self, filters: Filters | None = None) -> list[str]:
+        """Chapitres réellement indexés, triés, éventuellement filtrés.
+
+        Répond à « de quoi disposes-tu ? » sans passer par une recherche : sur
+        une question méta (programme, chapitres couverts), interroger le
+        corpus par similarité remonte du contenu au hasard — c'est le défaut
+        constaté aux cas QA #2/#3/#4. Cette liste permet aussi de tenir la
+        règle « ne jamais annoncer un chapitre qu'on n'a pas ».
+        """
+
 
 class InMemoryVectorStore(BaseVectorStore):
     """Store hybride en mémoire (dense cosinus + sparse dot + RRF)."""
@@ -158,6 +169,14 @@ class InMemoryVectorStore(BaseVectorStore):
         return sum(
             1 for rec in self._records.values() if rec.chunk.metadata.source_document == source_document
         )
+
+    def catalogue(self, filters: Filters | None = None) -> list[str]:
+        chapitres = {
+            rec.chunk.metadata.chapitre
+            for rec in self._records.values()
+            if rec.chunk.metadata.chapitre and _matches(rec.chunk.metadata, filters or {})
+        }
+        return sorted(chapitres)
 
 
 def build_vector_store(backend: str = "memory", *, rrf_k: int = 60, **kwargs) -> BaseVectorStore:

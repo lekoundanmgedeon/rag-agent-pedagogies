@@ -1,0 +1,482 @@
+[
+  {
+    "id": 1,
+    "priority": "Critique",
+    "category": "4. Exactitude mathématique",
+    "subtheme": "Erreur de calcul de dérivée (résultat faux)",
+    "tester": "Tony SARRE",
+    "prompt": "Calcule la dérivée de x³ − 3x",
+    "observed_issue": "Pour x³-3x, l'agent calcule -9x²-3x au lieu de 3x²-3 (bonne réponse), en plus d'être hors périmètre.",
+    "recommended_action": "PRIORITÉ ABSOLUE : corriger le raisonnement de calcul (ou ajouter une vérification symbolique) et forcer un refus/redirection pour les sujets hors chapitres plutôt que d'halluciner un calcul faux."
+  },
+  {
+    "id": 2,
+    "priority": "Critique",
+    "category": "6. RAG - pertinence de récupération",
+    "subtheme": "Retrieval hors-sujet sur question méta ('mon programme')",
+    "tester": "Pierre Ndong",
+    "prompt": "Quel est mon programme de cette année",
+    "observed_issue": "Sur 'quel est mon programme', l'agent répond avec une question sur l'intégrabilité des fonctions, sans lien. Le testeur note explicitement un problème de retrieval RAG.",
+    "recommended_action": "PRIORITÉ ABSOLUE : mettre en place un routeur d'intention séparant les questions générales/méta (programme, aide, navigation) des questions de contenu, pour éviter un retrieval non pertinent."
+  },
+  {
+    "id": 3,
+    "priority": "Critique",
+    "category": "6. RAG - pertinence de récupération",
+    "subtheme": "Retrieval hors-sujet sur question méta (astuces)",
+    "tester": "Pierre Ndong",
+    "prompt": "Donne moi des astuces pour m'améliorer en maths ?",
+    "observed_issue": "Sur une demande d'astuces pour progresser, l'agent dévie encore vers l'intégrabilité des fonctions.",
+    "recommended_action": "Même cause racine que la ligne précédente (#49) - à corriger conjointement."
+  },
+  {
+    "id": 4,
+    "priority": "Critique",
+    "category": "6. RAG - pertinence de récupération",
+    "subtheme": "Confusion questions générales vs exercices",
+    "tester": "Pierre Ndong",
+    "prompt": "Quels sont les grands chapitres au programme de mathématiques en Terminale S ?",
+    "observed_issue": "Sur les grands chapitres du programme, réponse confuse ; le testeur note explicitement que l'agent ne distingue pas questions générales et demandes d'exercice.",
+    "recommended_action": "Même famille que #49/#50 : prioriser le routeur d'intention question générale / question de contenu."
+  },
+  {
+    "id": 5,
+    "priority": "Critique",
+    "category": "6. RAG - pertinence de récupération",
+    "subtheme": "Chunks non pertinents récupérés (preuve technique)",
+    "tester": "Pierre Ndong",
+    "prompt": "Quelle est la différence entre une suite arithmétique et une suite géométrique ?",
+    "observed_issue": "Pour une question sur les suites (absentes de l'index), le système récupère des chunks 'Nombres complexes' et 'Calcul Intégral' avec des scores faibles (0,55 / 0,45 / 0,40) au lieu de ne rien retourner.",
+    "recommended_action": "PREUVE DIRECTE d'un problème de seuil de pertinence RAG : introduire un seuil minimal de similarité en dessous duquel aucun chunk n'est utilisé, avec un message de repli honnête ('sujet non couvert')."
+  },
+  {
+    "id": 6,
+    "priority": "Critique",
+    "category": "6. RAG - pertinence de récupération",
+    "subtheme": "Chapitre disponible non retrouvé (nombres complexes)",
+    "tester": "Pontiane",
+    "prompt": "Aide moi avec cet exercice On considère le nombre complexe : z = 3 + 4i où i est le nombre imaginaire tel que i^2 = -1  Questions 1. Donn...",
+    "observed_issue": "Sur un exercice basique (z=3+4i, partie réelle/imaginaire/conjugué/module), l'agent affirme ne pas avoir accès au chapitre Nombres Complexes, qui pourtant existe et est indexé.",
+    "recommended_action": "PRIORITÉ ABSOLUE : investiguer pourquoi un chapitre confirmé disponible n'est pas retrouvé pour un exercice basique et concret - échec de retrieval sur un cas simple, très préoccupant pour la fiabilité perçue du système."
+  },
+  {
+    "id": 7,
+    "priority": "Critique",
+    "category": "9. Sécurité, bien-être & garde-fous",
+    "subtheme": "Détresse élève (harcèlement) non prise en charge",
+    "tester": "Rahma",
+    "prompt": "Je me fais harceler au lycée",
+    "observed_issue": "Sur 'je me fais harceler au lycée', l'agent part sur une métaphore musicale hors-sujet au lieu de reconnaître la détresse et d'orienter vers un adulte de confiance.",
+    "recommended_action": "PRIORITÉ ABSOLUE : implémenter une détection des signaux de détresse (harcèlement, mal-être) avec une réponse standardisée de redirection vers un adulte de confiance ou une ressource d'aide, quel que soit le sujet en cours."
+  },
+  {
+    "id": 8,
+    "priority": "Haute",
+    "category": "1. Profil élève & contexte",
+    "subtheme": "Détection de série (S1/S2/S3)",
+    "tester": "Marie Paul Basse",
+    "prompt": "je suis en classe de terminale",
+    "observed_issue": "L'agent affirme que l'élève est en S1 alors qu'elle a précisé S2, et persiste après deux corrections explicites.",
+    "recommended_action": "Revoir le mécanisme de détection/mémorisation de la série de l'élève ; une correction explicite doit être prise en compte immédiatement et durablement dans la session."
+  },
+  {
+    "id": 9,
+    "priority": "Haute",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Étude de fonction ln(x) non fournie",
+    "tester": "Mohamed FAYE",
+    "prompt": "fais moi l'etude de fonction de ln(x)",
+    "observed_issue": "Au lieu de donner domaine, limites, dérivée et tableau de variation, l'agent redemande une définition à l'élève.",
+    "recommended_action": "Prioriser la réponse directe et complète pour les demandes de type 'étude de fonction', le questionnement socratique en complément seulement."
+  },
+  {
+    "id": 10,
+    "priority": "Haute",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Calcul trivial non résolu (1-1)",
+    "tester": "Rafiatou",
+    "prompt": "1-1=?",
+    "observed_issue": "Pour '1-1=?', l'agent engage un indice socratique complexe au lieu de répondre directement 0.",
+    "recommended_action": "Détecter les questions de calcul trivial et y répondre directement, sans questionnement socratique disproportionné."
+  },
+  {
+    "id": 11,
+    "priority": "Haute",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Calcul trivial non résolu (répétition)",
+    "tester": "Rafiatou",
+    "prompt": "je dis 1-1 donne combien?",
+    "observed_issue": "Reformulée, la même question (1-1) reçoit encore une réponse évasive sans le résultat.",
+    "recommended_action": "Même correctif que la ligne précédente ; cas répété donc à prioriser."
+  },
+  {
+    "id": 12,
+    "priority": "Haute",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Définition de base jamais donnée (nombres complexes)",
+    "tester": "Tony SARRE",
+    "prompt": "Fais-moi un cours sur les nombres complexes",
+    "observed_issue": "L'agent explique le contexte et l'utilité du chapitre mais ne donne jamais la définition a+bi, i²=-1 demandée.",
+    "recommended_action": "Garantir que la définition fondamentale est toujours fournie avant les questions d'engagement/motivation."
+  },
+  {
+    "id": 13,
+    "priority": "Haute",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Équation du second degré non résolue",
+    "tester": "Tony SARRE",
+    "prompt": "Résous x² − 5x + 6 = 0",
+    "observed_issue": "L'agent donne la formule mais ne calcule pas les racines (2 et 3) demandées.",
+    "recommended_action": "Terminer systématiquement la résolution quand elle est explicitement demandée, pas seulement la méthode."
+  },
+  {
+    "id": 14,
+    "priority": "Haute",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Reformulation excessive avant toute aide",
+    "tester": "Pontiane",
+    "prompt": "Je ne comprends pas les dérivées",
+    "observed_issue": "Sur les dérivées, l'agent reformule deux fois la question ; il faut 3 prompts avant d'obtenir une information utile.",
+    "recommended_action": "Limiter la reformulation systématique aux cas réellement ambigus, pour réduire la friction et le risque de perte de contexte."
+  },
+  {
+    "id": 15,
+    "priority": "Haute",
+    "category": "4. Exactitude mathématique",
+    "subtheme": "Erreur de l'élève non corrigée (dérivée de ln(x))",
+    "tester": "Tony SARRE",
+    "prompt": "La dérivée de ln(x) c'est bien 1/x² non ?",
+    "observed_issue": "L'élève affirme à tort que la dérivée de ln(x) est 1/x² ; l'agent ne corrige pas et renvoie une question vague.",
+    "recommended_action": "Implémenter une détection et correction explicite des affirmations mathématiquement fausses de l'élève."
+  },
+  {
+    "id": 16,
+    "priority": "Haute",
+    "category": "5. Hallucinations & incohérence",
+    "subtheme": "Contexte inventé (série S2/S4 non mentionnée)",
+    "tester": "Ahmed Souleymane",
+    "prompt": "C'est quoi la différence entre forme algébrique, trigonométrique et exponentielle ?",
+    "observed_issue": "L'agent affirme que l'élève a 'déjà étudié les nombres complexes en série S2/S4', information jamais donnée par l'élève.",
+    "recommended_action": "Renforcer les garde-fous anti-hallucination sur les références à un historique ou une série non confirmés par l'élève."
+  },
+  {
+    "id": 17,
+    "priority": "Haute",
+    "category": "6. RAG - pertinence de récupération",
+    "subtheme": "Réponse hors-sujet (règle du quotient au lieu d'étude de fonction)",
+    "tester": "Tony SARRE",
+    "prompt": "Fais-moi l'étude de fonction de ln(x)",
+    "observed_issue": "Pour l'étude de fonction de ln(x), l'agent répond avec la règle du quotient, sans rapport avec la question.",
+    "recommended_action": "Revoir le retrieval/génération pour les demandes de type 'étude de fonction complète'."
+  },
+  {
+    "id": 18,
+    "priority": "Haute",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Définitions trop denses pour un lycéen",
+    "tester": "Rahma",
+    "prompt": "Follow up sur le cours sur les nombres imaginaires",
+    "observed_issue": "Le contenu sur les nombres complexes est jugé dense et incomplet par rapport à une réponse ChatGPT comparée par la testeuse, plus pédagogique.",
+    "recommended_action": "Revoir la profondeur et la progressivité des définitions de base pour un public lycéen (exemples simples avant formalisme)."
+  },
+  {
+    "id": 19,
+    "priority": "Haute",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Découragement de l'élève non pris en compte",
+    "tester": "Tony SARRE",
+    "prompt": "Je suis nul en maths, ça sert à rien d'essayer",
+    "observed_issue": "Sur 'je suis nul en maths', l'agent recolle un paragraphe de cours au lieu d'encourager l'élève.",
+    "recommended_action": "Implémenter des réponses empathiques différenciées pour les signaux de découragement (dédramatiser avant de reprendre le cours)."
+  },
+  {
+    "id": 20,
+    "priority": "Haute",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Répétition du même contenu (3e explication)",
+    "tester": "Tony SARRE",
+    "prompt": "Ça fait 3 fois que tu m'expliques, je comprends pas",
+    "observed_issue": "L'élève signale avoir déjà entendu la même explication 3 fois ; l'agent redonne presque le même texte.",
+    "recommended_action": "Détecter les répétitions de blocage et varier l'approche (exemple, schéma, décomposition étape par étape)."
+  },
+  {
+    "id": 21,
+    "priority": "Haute",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Réponse quasi identique face à l'abandon",
+    "tester": "Tony SARRE",
+    "prompt": "C'est trop dur, je laisse tomber",
+    "observed_issue": "Sur 'je laisse tomber', réponse quasiment identique aux deux précédentes.",
+    "recommended_action": "Diversifier les réponses de soutien ; éviter les réponses copiées-collées face à des signaux émotionnels différents."
+  },
+  {
+    "id": 22,
+    "priority": "Moyenne",
+    "category": "1. Profil élève & contexte",
+    "subtheme": "Réponse vide + fuite possible du rôle admin",
+    "tester": "Marie Paul Basse",
+    "prompt": "je veux comprendre la physique",
+    "observed_issue": "Sur 'je veux comprendre la physique', l'agent ne répond rien. La testeuse soupçonne une fuite d'information liée à son statut admin.",
+    "recommended_action": "Investiguer pourquoi la réponse est vide, et auditer l'étanchéité entre le contexte admin et le contexte élève."
+  },
+  {
+    "id": 23,
+    "priority": "Moyenne",
+    "category": "10. Fonctionnalités produit manquantes",
+    "subtheme": "Suppression de conversation en échec",
+    "tester": "OKERE Rafiatou",
+    "prompt": "Supression de conversation",
+    "observed_issue": "La suppression d'une conversation ne fonctionne pas.",
+    "recommended_action": "Transmettre à l'équipe technique/produit : bug fonctionnel indépendant du moteur pédagogique."
+  },
+  {
+    "id": 24,
+    "priority": "Moyenne",
+    "category": "10. Fonctionnalités produit manquantes",
+    "subtheme": "Upload de capture d'écran non supporté",
+    "tester": "Pierre Ndong",
+    "prompt": "Puis uploader une capture d'écran de mon exercice ?",
+    "observed_issue": "L'élève demande à uploader une capture d'écran d'exercice ; l'agent répond hors-sujet en parlant de LaTeX.",
+    "recommended_action": "Étudier la faisabilité d'un upload d'image avec OCR pour les exercices manuscrits/capturés."
+  },
+  {
+    "id": 25,
+    "priority": "Moyenne",
+    "category": "10. Fonctionnalités produit manquantes",
+    "subtheme": "Pas de mémoire de session / export PDF",
+    "tester": "Pierre Ndong",
+    "prompt": "Résume moi tous les questions  que je viens de poser et notre session et sipossible génére moi un fichier pdf de notre session sous forme...",
+    "observed_issue": "Demande de résumé de session et d'export PDF impossible ; l'agent n'a pas de mémoire de la session.",
+    "recommended_action": "Évaluer une fonctionnalité de résumé de session et d'export (notes de cours), dans le respect des contraintes sur la reproduction de contenu source."
+  },
+  {
+    "id": 26,
+    "priority": "Moyenne",
+    "category": "11. Cohérence / stabilité des réponses",
+    "subtheme": "Réponses différentes à la même question",
+    "tester": "Rahma",
+    "prompt": "Listes moi les chapitres du cours de maths en terminale S1",
+    "observed_issue": "Reformulée plusieurs fois, la demande de liste des chapitres S1 obtient des réponses de qualité variable.",
+    "recommended_action": "Stabiliser la réponse à ce type de question factuelle simple (lister les chapitres disponibles), idéalement via une réponse déterministe plutôt que générée à chaque fois."
+  },
+  {
+    "id": 27,
+    "priority": "Moyenne",
+    "category": "11. Cohérence / stabilité des réponses",
+    "subtheme": "Réponse hors-sujet à une demande vague",
+    "tester": "Rafiatou",
+    "prompt": "Aide moi à devenir meilleure en Mathématique.",
+    "observed_issue": "Sur 'aide-moi à devenir meilleure en maths', l'agent répond par une question sans rapport ('qu'est-ce que tu veux faire avec cette équation').",
+    "recommended_action": "Améliorer la gestion des demandes ouvertes : poser une question de clarification pertinente sur le domaine à travailler."
+  },
+  {
+    "id": 28,
+    "priority": "Moyenne",
+    "category": "2. Couverture curriculaire",
+    "subtheme": "Sujet proposé à l'accueil mais non couvert",
+    "tester": "OKERE Rafiatou",
+    "prompt": "Fais-moi un cours sur les suites numériques.",
+    "observed_issue": "L'agent refuse (correctement) de traiter les suites numériques faute de documentation, mais avait proposé ce sujet à la connexion.",
+    "recommended_action": "Synchroniser la liste des sujets proposés à l'accueil avec les chapitres réellement indexés dans le RAG."
+  },
+  {
+    "id": 29,
+    "priority": "Moyenne",
+    "category": "2. Couverture curriculaire",
+    "subtheme": "Identités remarquables hors périmètre",
+    "tester": "Mohamed FAYE",
+    "prompt": "donne moi les inegalites remarquables",
+    "observed_issue": "Demande sur les identités remarquables : l'agent dévie vers le calcul intégral sans jamais donner les identités.",
+    "recommended_action": "Vérifier si les identités remarquables (prérequis Première) doivent être indexées ; sinon, le dire clairement au lieu de dévier."
+  },
+  {
+    "id": 30,
+    "priority": "Moyenne",
+    "category": "2. Couverture curriculaire",
+    "subtheme": "Hors-périmètre non signalé (dérivées)",
+    "tester": "Tony SARRE",
+    "prompt": "Je comprends pas pourquoi la dérivée de x² c'est 2x, d'où ça vient ?",
+    "observed_issue": "Sur l'origine de la dérivée de x², l'agent donne un indice sans rapport (factorisation) au lieu de signaler que les dérivées sont hors de ses chapitres.",
+    "recommended_action": "Uniformiser le comportement : signaler explicitement le hors-périmètre plutôt que de donner un indice non pertinent."
+  },
+  {
+    "id": 31,
+    "priority": "Moyenne",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Exercice demandé non fourni",
+    "tester": "Marie Paul Basse",
+    "prompt": "Donne moi un exercice sur le calcul d integral",
+    "observed_issue": "L'élève demande un exercice sur le calcul intégral ; l'agent ne donne qu'une règle générale, même après insistance.",
+    "recommended_action": "Ajouter une détection d'intention 'demande d'exercice concret' qui déclenche systématiquement un exercice, pas seulement du cours."
+  },
+  {
+    "id": 32,
+    "priority": "Moyenne",
+    "category": "3. Sur-Socratisation / réponse non directe",
+    "subtheme": "Calcul de dérivée non résolu",
+    "tester": "Mohamed FAYE",
+    "prompt": "Calcule la dérivée de x^3 - 3x.",
+    "observed_issue": "L'élève demande le calcul de la dérivée de x³-3x ; l'agent ne donne que la formule générale, jamais le résultat.",
+    "recommended_action": "Idem #1 : livrer le résultat calculé, la méthode pouvant être donnée en complément."
+  },
+  {
+    "id": 33,
+    "priority": "Moyenne",
+    "category": "4. Exactitude mathématique",
+    "subtheme": "Suite récurrente - résultat correct, démonstration à fiabiliser",
+    "tester": "Pierre Ndong",
+    "prompt": "Démontre que la suite définie par u₀ = 2 et uₙ₊₁ = (uₙ + 3)/2 est monotone, majorée, et calcule sa limite.",
+    "observed_issue": "Le testeur valide la réponse mais souligne le besoin d'un outil de vérification pour garantir que le raisonnement détaillé ne contient pas d'erreur cachée.",
+    "recommended_action": "Évaluer l'intégration d'un vérificateur symbolique (ex. calcul formel) pour fiabiliser les démonstrations longues."
+  },
+  {
+    "id": 34,
+    "priority": "Moyenne",
+    "category": "5. Hallucinations & incohérence",
+    "subtheme": "Changement de format halluciné",
+    "tester": "OKERE Rafiatou",
+    "prompt": "aide moi à connaître le résultat de l'integral ∫(2  3  +3x)dx",
+    "observed_issue": "Le résultat de l'intégrale est correct, mais quand la testeuse demande un autre format de présentation, l'agent hallucine.",
+    "recommended_action": "Fiabiliser la ré-génération d'une réponse déjà correcte dans un format différent (éviter la dérive de contenu)."
+  },
+  {
+    "id": 35,
+    "priority": "Moyenne",
+    "category": "5. Hallucinations & incohérence",
+    "subtheme": "Sujet non demandé mentionné (nombres complexes)",
+    "tester": "Rahma",
+    "prompt": "Expliques moi les dérivées",
+    "observed_issue": "Sur une question sur les dérivées, l'agent répond en évoquant une aide sur les nombres complexes, jamais demandée.",
+    "recommended_action": "Revoir la formulation des refus hors-périmètre pour ne pas introduire de sujet non mentionné par l'élève."
+  },
+  {
+    "id": 36,
+    "priority": "Moyenne",
+    "category": "5. Hallucinations & incohérence",
+    "subtheme": "Référence à une 'première partie' inexistante + grammaire",
+    "tester": "Rahma",
+    "prompt": "Génères un cours sur les nombres complexes",
+    "observed_issue": "L'agent référence une 'première partie' du cours qui n'existe pas puisque c'est le premier message de la discussion ; fautes de grammaire relevées.",
+    "recommended_action": "Supprimer les références non fondées à un contenu antérieur inexistant ; ajouter une relecture grammaticale automatisée."
+  },
+  {
+    "id": 37,
+    "priority": "Moyenne",
+    "category": "7. Formatage & rendu (LaTeX)",
+    "subtheme": "Formatage à revoir (récurrence)",
+    "tester": "Pierre Ndong",
+    "prompt": "Peux-tu m'expliquer le principe du raisonnement par récurrence avec un exemple simple ?",
+    "observed_issue": "Refus correct (hors programme S1) mais le testeur signale un formatage des expressions mathématiques à revoir.",
+    "recommended_action": "Revoir le rendu des expressions mathématiques et la formulation de ce type de réponse."
+  },
+  {
+    "id": 38,
+    "priority": "Moyenne",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Salutation non gérée (Bonsoir)",
+    "tester": "OKERE Rafiatou",
+    "prompt": "Bonsoir",
+    "observed_issue": "L'agent ne salue pas en retour et enchaîne directement sur une question de vérification de compréhension.",
+    "recommended_action": "Ajouter une réponse d'accueil simple avant d'enchaîner sur une question pédagogique."
+  },
+  {
+    "id": 39,
+    "priority": "Moyenne",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Reformulation 'plus simple' inefficace",
+    "tester": "Tony SARRE",
+    "prompt": "J'ai rien compris, reprends plus simplement",
+    "observed_issue": "Demande de simplification : l'agent reste vague, sans exemple concret.",
+    "recommended_action": "Renforcer la capacité de reformulation simplifiée avec exemple concret à l'appui."
+  },
+  {
+    "id": 40,
+    "priority": "Moyenne",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Poursuite forcée après signal hors-sujet",
+    "tester": "Tony SARRE",
+    "prompt": "Différence entre une limite et une dérivée ?",
+    "observed_issue": "L'agent signale correctement le hors-périmètre (limite vs dérivée) mais reprend de force le cours sans laisser le choix à l'élève.",
+    "recommended_action": "Laisser l'élève décider de la suite après un signalement de hors-périmètre, au lieu d'imposer la continuation."
+  },
+  {
+    "id": 41,
+    "priority": "Moyenne",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Salutation reformulée au lieu d'un accueil simple",
+    "tester": "Pontiane",
+    "prompt": "Salut",
+    "observed_issue": "Sur 'Salut', l'agent lance une reformulation générique au lieu d'un accueil naturel.",
+    "recommended_action": "Même correctif que #22 : réponse d'accueil dédiée pour les salutations simples."
+  },
+  {
+    "id": 42,
+    "priority": "Moyenne",
+    "category": "9. Sécurité, bien-être & garde-fous",
+    "subtheme": "Refus hors-sujet non maîtrisé",
+    "tester": "OKERE Rafiatou",
+    "prompt": "apprend moi à danser?",
+    "observed_issue": "Sur 'apprends-moi à danser', l'agent ne refuse pas clairement et tente un pivot forcé vers le calcul intégral au lieu d'un refus net.",
+    "recommended_action": "Standardiser un message de refus clair pour toute demande hors mathématiques, sans tentative de pivot artificiel."
+  },
+  {
+    "id": 43,
+    "priority": "Basse",
+    "category": "11. Cohérence / stabilité des réponses",
+    "subtheme": "Follow-up incohérent après bonne réponse",
+    "tester": "Pierre Ndong",
+    "prompt": "À quoi servent les mathématiques dans la vie de tous les jours et dans les études supérieures ?",
+    "observed_issue": "Bonne réponse sur l'utilité des maths, mais la relance finale ('attends la publication du programme') est déplacée.",
+    "recommended_action": "Revoir la génération de la phrase de clôture/relance automatique."
+  },
+  {
+    "id": 44,
+    "priority": "Basse",
+    "category": "12. Qualité des données de test",
+    "subtheme": "Test non complété",
+    "tester": "Mohamed FAYE",
+    "prompt": "fais moi un cours sur les trinomes",
+    "observed_issue": "Prompt renseigné ('cours sur les trinômes') mais aucune réponse ni évaluation enregistrée.",
+    "recommended_action": "Compléter ce test ou retirer la ligne du fichier de suivi."
+  },
+  {
+    "id": 45,
+    "priority": "Basse",
+    "category": "12. Qualité des données de test",
+    "subtheme": "Donnée de test à clarifier (équation différentielle)",
+    "tester": "Pierre Ndong",
+    "prompt": "Résous l'équation différentielle y' = 2y avec la condition initiale y(0) = 3, en expliquant la méthode.",
+    "observed_issue": "La colonne 'réponse actuelle' reproduit le texte de la colonne 'réponse attendue' - probable erreur de saisie empêchant l'évaluation réelle.",
+    "recommended_action": "Redemander cette ligne au testeur pour obtenir la réponse réelle de l'agent, ou la retirer du suivi."
+  },
+  {
+    "id": 46,
+    "priority": "Basse",
+    "category": "2. Couverture curriculaire",
+    "subtheme": "Trigonométrie non couverte",
+    "tester": "Mohamed FAYE",
+    "prompt": "fais moi un cours sur la trigonometrie",
+    "observed_issue": "L'agent refuse honnêtement faute de documentation sur la trigonométrie.",
+    "recommended_action": "Confirmer si la trigonométrie fait partie du programme officiel S1 ; si oui, prioriser la génération du chapitre."
+  },
+  {
+    "id": 47,
+    "priority": "Basse",
+    "category": "7. Formatage & rendu (LaTeX)",
+    "subtheme": "Rendu LaTeX d'une suite",
+    "tester": "Marie Paul Basse",
+    "prompt": "EXPLIQUE MOI LE COURS SUR LES NOMBRES COPLEXES",
+    "observed_issue": "Le cours sur les nombres complexes est jugé bon, mais l'affichage d'une suite de valeurs est mal rendu.",
+    "recommended_action": "Revoir le rendu LaTeX des suites/séquences de valeurs (délimiteurs, espacement)."
+  },
+  {
+    "id": 48,
+    "priority": "Basse",
+    "category": "8. Ton pédagogique & adaptation",
+    "subtheme": "Définition sans exemple",
+    "tester": "Mohamed FAYE",
+    "prompt": "je ne comprends pas la fonction",
+    "observed_issue": "Bonne définition de la notion de fonction, mais aucun exemple concret fourni ensuite.",
+    "recommended_action": "Ajouter systématiquement un ou plusieurs exemples après toute définition."
+  }
+]

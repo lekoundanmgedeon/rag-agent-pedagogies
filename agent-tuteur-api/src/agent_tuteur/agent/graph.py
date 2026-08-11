@@ -63,6 +63,7 @@ from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPor
 from agent_tuteur.agent.prompt import (
     SYSTEM_PERSONA_QUIZ,
     assemble_course_prompt,
+    assemble_meta_prompt,
     assemble_prompt,
     build_context_block,
 )
@@ -72,11 +73,17 @@ from agent_tuteur.agent.quiz import (
     construire_prompt_quiz,
     contient_du_factice,
 )
+from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
 from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
-from agent_tuteur.tools.calculator import CalculationError, compute, looks_like_calculation
+from agent_tuteur.tools.calculator import (
+    CalculationError,
+    compute,
+    demande_un_calcul_concret,
+    looks_like_calculation,
+)
 from agent_tuteur.vectorstore.retriever import HybridRetriever
 
 _logger = get_logger("agent_tuteur.agent.graph")
@@ -160,6 +167,9 @@ class Prepared:
     node_trace: list[dict] = field(default_factory=list)
     #: Rempli par stream() une fois la génération terminée (durée, tokens, fournisseur LLM).
     generation: dict | None = None
+    #: Réponse déjà écrite par le graphe (mise en sécurité). Quand elle est
+    #: présente, ``stream()`` la restitue sans appeler le modèle.
+    reponse_directe: str | None = None
 
     @property
     def hint_level(self) -> int:
@@ -237,6 +247,69 @@ class TutorAgent:
         """Fournisseur LLM ayant effectivement servi le dernier appel."""
         return getattr(self._llm, "last_used", None) or self._llm.name
 
+    # ------------------------------------------------- branche sécurité (n°1)
+    @_timed_node("triage_securite")
+    async def _n_triage_securite(self, state: AgentState) -> dict:
+        """Premier nœud du graphe : l'élève va-t-il bien ?
+
+        Placé **avant** ``detect_intent`` pour que rien — ni la détection
+        d'intention, ni le RAG, ni la continuité d'un cours — ne puisse prendre
+        le pas sur un signal de détresse (règle non-négociable n°1).
+        """
+        signal = detecter_detresse(state["question"])
+        if not signal.detectee:
+            return {"securite": None, "node_trace": [{"node": "triage_securite", "detresse": False}]}
+        return {
+            "securite": {"motif": "detresse", "categorie": signal.nature.value},
+            "node_trace": [
+                {"node": "triage_securite", "detresse": True, "categorie": signal.nature.value}
+            ],
+        }
+
+    @_timed_node("reponse_securite")
+    async def _n_reponse_securite(self, state: AgentState) -> dict:
+        """Réponse de mise en sécurité — écrite par le code, pas par le modèle.
+
+        La trace produite porte les mêmes clés qu'un tour ordinaire : la route
+        SSE (``api/routes/chat.py``) les lit sans garde, et un tour de détresse
+        ne doit pas être le seul à faire tomber l'API.
+
+        L'événement est journalisé dans l'audit (un établissement doit pouvoir
+        savoir qu'un signalement a eu lieu) mais **pas** dans la mémoire élève,
+        qui suit les compétences et les niveaux d'indice : une confidence n'y a
+        rien à faire.
+        """
+        signal = state.get("securite") or {}
+        nature = signal.get("categorie", "")
+        reponse = reponse_detresse(detecter_detresse(state["question"]))
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "securite": signal,
+            "hint_level": 0,
+            "hint_label": HINT_LABELS[0],
+            "hint_reason": "tour de mise en sécurité",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": None,
+            "course": None,
+            "sources": [],
+            "scores": [],
+        }
+        await self._write_audit(state, trace)
+        log_event(
+            _logger, "securite:detresse_detectee",
+            trace_id=state.get("trace_id"), categorie=nature,
+        )
+        return {
+            "answer": reponse,
+            "reponse_directe": reponse,
+            "system_prompt": "",
+            "final_prompt": "",
+            "trace": trace,
+            "retrieved": [],
+            "node_trace": [{"node": "reponse_securite", "categorie": nature}],
+        }
+
     # ------------------------------------------------------------------ nœuds
     @_timed_node("detect_intent")
     async def _n_detect_intent(self, state: AgentState) -> dict:
@@ -305,20 +378,40 @@ class TutorAgent:
 
     @_timed_node("route_tool")
     async def _n_route_tool(self, state: AgentState) -> dict:
+        """Calcul symbolique, ou aveu explicite qu'il n'a pas pu être fait.
+
+        L'ancien comportement repliait *silencieusement* sur le LLM en cas
+        d'échec : l'élève recevait alors un calcul produit par le modèle, sans
+        que rien ne l'ait vérifié. La règle non-négociable n°2 l'interdit —
+        quand l'outil ne peut pas garantir le résultat d'une demande de calcul
+        concrète, on le signale (``calcul_non_verifie``) et le prompt interdit
+        d'annoncer un résultat.
+
+        Le silence reste la bonne réponse pour une question *conceptuelle*
+        (« comment dériver un quotient ? ») : il n'y a aucun résultat à vérifier.
+        """
         question = state["question"]
         tool_used: str | None = None
         tool_result: str | None = None
+        tool_result_brut: str | None = None
+        calcul_non_verifie = False
         if looks_like_calculation(question):
             try:
                 res = compute(question)
                 tool_used = "sympy_calculator"
                 tool_result = f"{res.expression} → {res.result}"
+                tool_result_brut = res.result
             except CalculationError:
-                tool_used = None  # échec silencieux : on laisse le LLM gérer.
+                calcul_non_verifie = demande_un_calcul_concret(question)
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
-            "node_trace": [{"node": "route_tool", "tool_used": tool_used}],
+            "tool_result_brut": tool_result_brut,
+            "calcul_non_verifie": calcul_non_verifie,
+            "node_trace": [
+                {"node": "route_tool", "tool_used": tool_used,
+                 "calcul_non_verifie": calcul_non_verifie}
+            ],
         }
 
     @_timed_node("guardrail")
@@ -338,6 +431,7 @@ class TutorAgent:
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
+            calcul_non_verifie=bool(state.get("calcul_non_verifie")),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -350,6 +444,8 @@ class TutorAgent:
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
             "tool_used": state.get("tool_used"),
+            "tool_result": state.get("tool_result"),
+            "calcul_non_verifie": bool(state.get("calcul_non_verifie")),
             "competence": competence,
             "course": None,
             "sources": _sources_payload(retrieved),
@@ -362,6 +458,44 @@ class TutorAgent:
             "moderation_flagged": moderation.flagged,
             "trace": trace,
             "node_trace": [{"node": "guardrail", "moderation_flagged": moderation.flagged}],
+        }
+
+    # ------------------------------------------------------------- branche méta
+    @_timed_node("guardrail_meta")
+    async def _n_guardrail_meta(self, state: AgentState) -> dict:
+        """Tour méta : on répond sur la couverture du service, sans chercher.
+
+        Le nœud est branché **avant** ``retrieve_context`` : sur « quel est mon
+        programme ? », une recherche par similarité remonte le chunk le moins
+        éloigné du corpus, qui n'a aucun rapport (cas QA #2/#3/#4). L'ancrage
+        factuel vient du catalogue du store, pas d'un classement.
+        """
+        ctx = state.get("curriculum_context", {})
+        catalogue = self._retriever.catalogue(ctx)
+        system, user_prompt = assemble_meta_prompt(
+            state["question"], catalogue, ctx, state.get("conversation_history", [])
+        )
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "securite": None,
+            "hint_level": None,
+            "hint_label": "Orientation",
+            "hint_reason": "question sur le service",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": None,
+            "course": None,
+            "sources": [],
+            "scores": [],
+            "catalogue": catalogue,
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": system,
+            "final_prompt": user_prompt,
+            "retrieved": [],
+            "trace": trace,
+            "node_trace": [{"node": "guardrail_meta", "n_chapitres": len(catalogue)}],
         }
 
     # ------------------------------------------------------------ branche cours
@@ -556,7 +690,10 @@ class TutorAgent:
         rapport = verifier_coherence_mathematique(
             answer,
             competence=trace.get("competence"),
-            resultat_calcule=state.get("tool_result"),
+            # Le résultat SEUL, pas la chaîne « expression → résultat » : cette
+            # dernière n'apparaît jamais telle quelle dans une réponse rédigée,
+            # si bien que le contrôle signalait un problème à chaque calcul juste.
+            resultat_calcule=state.get("tool_result_brut"),
         )
 
         mise_a_jour: dict = {
@@ -659,6 +796,9 @@ class TutorAgent:
         ``compose_response`` (graphe complet) ou ``END`` (graphe de préparation).
         """
         g = StateGraph(AgentState)
+        # Disjoncteur de sécurité : en tête, avec sa propre sortie vers END.
+        g.add_node("triage_securite", self._n_triage_securite)
+        g.add_node("reponse_securite", self._n_reponse_securite)
         g.add_node("detect_intent", self._n_detect_intent)
         g.add_node("retrieve_context", self._n_retrieve)
         # Branche exercice (posture socratique) — inchangée.
@@ -672,9 +812,23 @@ class TutorAgent:
         # Branche quiz (posture d'évaluation) — portée de NURU.
         g.add_node("quiz_planner", self._n_quiz_planner)
         g.add_node("guardrail_quiz", self._n_guardrail_quiz)
+        # Branche méta (question sur le service) — sans recherche de contenu.
+        g.add_node("guardrail_meta", self._n_guardrail_meta)
 
-        g.add_edge(START, "detect_intent")
-        g.add_edge("detect_intent", "retrieve_context")
+        g.add_edge(START, "triage_securite")
+        g.add_conditional_edges(
+            "triage_securite",
+            _route_par_securite,
+            {"detresse": "reponse_securite", "normal": "detect_intent"},
+        )
+        g.add_edge("reponse_securite", END)
+        # Une question méta est détournée AVANT la recherche : c'est le
+        # retrieval lui-même qui produisait la réponse hors-sujet (cas #2/#3/#4).
+        g.add_conditional_edges(
+            "detect_intent",
+            _route_meta_ou_contenu,
+            {"meta": "guardrail_meta", "contenu": "retrieve_context"},
+        )
         g.add_conditional_edges(
             "retrieve_context",
             _route_by_intent,
@@ -700,6 +854,7 @@ class TutorAgent:
             g.add_edge("guardrail", "compose_response")
             g.add_edge("guardrail_course", "compose_response")
             g.add_edge("guardrail_quiz", "compose_response")
+            g.add_edge("guardrail_meta", "compose_response")
             g.add_edge("compose_response", "verify_response")
             g.add_edge("verify_response", "persist_progression")
             g.add_edge("persist_progression", END)
@@ -707,6 +862,7 @@ class TutorAgent:
             g.add_edge("guardrail", END)
             g.add_edge("guardrail_course", END)
             g.add_edge("guardrail_quiz", END)
+            g.add_edge("guardrail_meta", END)
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -763,6 +919,7 @@ class TutorAgent:
             memory=memory or self._memory,
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
+            reponse_directe=result.get("reponse_directe"),
         )
 
     async def stream(self, prepared: Prepared) -> AsyncIterator[str]:
@@ -774,25 +931,41 @@ class TutorAgent:
         """
         t0 = time.perf_counter()
         token_count = 0
-        async for token in self._llm.generate_stream(
-            prepared.final_prompt, system=prepared.system_prompt
-        ):
-            token_count += 1
-            yield token
+        # Tour de mise en sécurité : la réponse est déjà écrite, et le modèle ne
+        # doit pas être sollicité — c'est ce qui garantit qu'elle ne varie pas
+        # d'un appel à l'autre et qu'aucune ressource d'aide n'est inventée.
+        if prepared.reponse_directe is not None:
+            fournisseur = "securite"
+            for token in re.findall(r"\S+\s*", prepared.reponse_directe):
+                token_count += 1
+                yield token
+        else:
+            async for token in self._llm.generate_stream(
+                prepared.final_prompt, system=prepared.system_prompt
+            ):
+                token_count += 1
+                yield token
+            fournisseur = self.last_llm_used
         duration_ms = round((time.perf_counter() - t0) * 1000, 2)
         prepared.generation = {
             "node": "compose_response",
             "duration_ms": duration_ms,
             "token_count": token_count,
-            "llm_provider": self.last_llm_used,
+            "llm_provider": fournisseur,
         }
         log_event(
             _logger, "node:compose_response_stream", trace_id=prepared.trace_id,
-            duration_ms=duration_ms, token_count=token_count, llm_provider=self.last_llm_used,
+            duration_ms=duration_ms, token_count=token_count, llm_provider=fournisseur,
         )
 
     async def commit_memory(self, prepared: Prepared) -> None:
         """Persiste le résultat notable (à appeler après un stream réussi)."""
+        # Un tour de mise en sécurité n'apprend rien sur les compétences de
+        # l'élève : il est tracé dans l'audit, pas dans la mémoire pédagogique.
+        # (Le graphe complet fait de même : il contourne ``compose_response``,
+        # seul endroit où la mémoire est écrite sur le chemin non streamé.)
+        if prepared.trace.get("securite"):
+            return
         await self._write_memory(
             {
                 "question": prepared.question,
@@ -853,6 +1026,25 @@ class TutorAgent:
             quiz=result.get("quiz"),
             mastery=result.get("mastery"),
         )
+
+
+def _route_par_securite(state: AgentState) -> str:
+    """Aiguillage en tête de graphe. Le défaut sûr est ici ``normal``.
+
+    Symétrique de ``_route_by_intent`` : en cas de doute on ne déclenche pas le
+    message d'aide, qui perdrait son sens s'il tombait à chaque blocage scolaire.
+    La sélectivité est portée par ``securite.detecter_detresse``, pas ici.
+    """
+    return "detresse" if state.get("securite") else "normal"
+
+
+def _route_meta_ou_contenu(state: AgentState) -> str:
+    """Aiguillage juste après ``detect_intent``, avant toute recherche.
+
+    Défaut sûr : ``contenu``. Une intention non reconnue continue vers le
+    pipeline habituel — la sélectivité est portée par ``intent.is_meta_request``.
+    """
+    return "meta" if state.get("intent") == Intent.META.value else "contenu"
 
 
 def _route_by_intent(state: AgentState) -> str:

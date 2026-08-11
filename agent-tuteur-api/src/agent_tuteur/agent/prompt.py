@@ -60,6 +60,24 @@ SYSTEM_PERSONA_QUIZ = (
     "demandé, sans aucun texte avant ni après, sans balise markdown."
 )
 
+#: Posture d'orientation : l'élève interroge le service, pas une notion.
+#: Les règles communes ne s'appliquent pas telles quelles — il n'y a pas de
+#: documentation de cours à citer ici — mais la contrainte LaTeX est reprise
+#: pour que le rendu reste homogène si une formule apparaît malgré tout.
+SYSTEM_PERSONA_META = (
+    "Tu es l'assistant d'orientation d'un tuteur pédagogique pour le programme "
+    "scolaire sénégalais. L'élève te pose une question sur le service lui-même "
+    "(ce que tu couvres, comment travailler avec toi, comment progresser) et non "
+    "sur une notion de cours. Tu réponds brièvement, concrètement et "
+    "chaleureusement. "
+    "Tu ne prétends JAMAIS connaître le programme personnel de l'élève, son "
+    "établissement, sa classe ou ce qu'il a déjà étudié : tu ne sais que ce qu'il "
+    "vient de te dire. Tu n'annonces QUE les chapitres listés ci-dessous comme "
+    "disponibles, et tu n'en inventes aucun autre ; si la liste est vide, tu le "
+    "dis franchement. Tu t'exprimes en français clair ; si une formule est "
+    "nécessaire, utilise EXCLUSIVEMENT $...$ (inline) et $$...$$ (bloc)."
+)
+
 _MAX_EXCERPT = 600
 #: Nombre de messages (élève + tuteur confondus) réinjectés dans le prompt.
 _MAX_HISTORY_MESSAGES = 6
@@ -103,6 +121,21 @@ def build_history_block(history: list[dict[str, str]] | None) -> str | None:
     return "\n".join(lines)
 
 
+#: Consigne ajoutée quand l'élève demande un calcul que l'outil symbolique n'a
+#: pas pu vérifier. Sans elle, l'échec de l'outil est invisible pour le modèle,
+#: qui refait le calcul de son côté et se trompe — c'est le cas QA #1, où un
+#: résultat faux a été annoncé avec l'assurance d'un résultat vérifié.
+#: La règle non-négociable n°2 impose de refuser ou de rediriger.
+AVERTISSEMENT_CALCUL_NON_VERIFIE = (
+    "ATTENTION : l'élève demande un calcul, mais celui-ci n'a PAS pu être vérifié "
+    "par l'outil de calcul symbolique. Tu ne dois donc annoncer AUCUN résultat "
+    "chiffré ni aucune expression finale — tu te tromperais peut-être sans "
+    "pouvoir le savoir. Explique la méthode pas à pas, demande à l'élève de "
+    "réécrire son expression plus simplement s'il y a une ambiguïté de notation, "
+    "et invite-le à poser le calcul lui-même."
+)
+
+
 def assemble_prompt(
     question: str,
     hint: HintDecision,
@@ -110,12 +143,17 @@ def assemble_prompt(
     tool_result: str | None = None,
     curriculum_context: dict | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    *,
+    calcul_non_verifie: bool = False,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
     Le ``user_prompt`` agrège : contexte curriculaire, historique récent,
     extraits RAG, résultat de l'outil de calcul éventuel, la consigne
     d'indice, puis la question élève.
+
+    ``calcul_non_verifie`` vient de ``route_tool`` : à vrai, l'interdiction
+    :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE` est ajoutée au prompt.
     """
     ctx = curriculum_context or {}
     scope = ", ".join(
@@ -134,12 +172,61 @@ def assemble_prompt(
     )
     if tool_result:
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
+    if calcul_non_verifie:
+        parts.append(AVERTISSEMENT_CALCUL_NON_VERIFIE)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )
     parts.append(f"Question de l'élève : {question}")
 
     return SYSTEM_PERSONA, "\n\n".join(parts)
+
+
+def assemble_meta_prompt(
+    question: str,
+    catalogue: list[str],
+    curriculum_context: dict | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> tuple[str, str]:
+    """Retourne ``(system_prompt, user_prompt)`` pour un tour **méta**.
+
+    Aucun extrait RAG : la question porte sur la couverture du service, pas sur
+    son contenu. L'ancrage factuel est le ``catalogue`` — la liste des chapitres
+    réellement indexés, lue dans le store et non déduite d'une recherche.
+
+    Le cadre curriculaire est réinjecté **en tant que déclaration de l'élève**,
+    jamais comme un fait connu de l'agent : la règle « ne pas halluciner de
+    contexte élève » interdit de prétendre savoir en quelle série il est si
+    personne ne l'a dit.
+    """
+    ctx = curriculum_context or {}
+    parts: list[str] = []
+
+    if catalogue:
+        parts.append(
+            "Chapitres réellement disponibles dans ta documentation "
+            f"({len(catalogue)}) :\n" + "\n".join(f"- {c}" for c in catalogue)
+        )
+    else:
+        parts.append(
+            "Ta documentation ne contient actuellement AUCUN chapitre indexé. "
+            "Dis-le franchement à l'élève au lieu d'en citer un."
+        )
+
+    declare = ", ".join(
+        f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
+    )
+    if declare:
+        parts.append(
+            f"Cadre déclaré par l'élève (ne rien supposer au-delà) : {declare}."
+        )
+
+    history_block = build_history_block(conversation_history)
+    if history_block:
+        parts.append(f"Historique récent de la conversation :\n{history_block}")
+
+    parts.append(f"Question de l'élève : {question}")
+    return SYSTEM_PERSONA_META, "\n\n".join(parts)
 
 
 def _uncovered_topic_block(position: CoursePosition) -> str:
