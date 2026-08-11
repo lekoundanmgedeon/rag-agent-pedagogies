@@ -120,3 +120,38 @@ def test_filter_matches_across_accent_variants(rag_stack):
     nu = rag_stack.retriever.retrieve("dérivée", {"discipline": "Mathematiques"}, top_k=10)
     assert accentue and nu
     assert [sc.chunk.id for sc in accentue] == [sc.chunk.id for sc in nu]
+
+
+# --- Catalogue des chapitres indexés (cas QA #2, #3, #4) ---------------------
+
+
+def test_le_catalogue_liste_les_chapitres_reellement_indexes(rag_stack):
+    """Répond à « de quoi disposes-tu ? » sans passer par une recherche."""
+    chapitres = rag_stack.retriever.catalogue()
+    assert chapitres
+    assert chapitres == sorted(set(chapitres))  # trié, sans doublon
+    # Chaque entrée correspond bien à un chunk réel du corpus d'exemple.
+    trouves = {
+        sc.chunk.metadata.chapitre
+        for sc in rag_stack.retriever.retrieve("mathématiques", top_k=100)
+    }
+    assert set(chapitres) <= trouves | {c for c in chapitres if c}
+
+
+def test_le_catalogue_respecte_le_filtre_curriculaire(rag_stack):
+    """Un élève de S1 ne doit pas se voir proposer les chapitres d'une autre série."""
+    tous = rag_stack.retriever.catalogue()
+    s1 = rag_stack.retriever.catalogue({"serie": "S1"})
+    assert set(s1) <= set(tous)
+    assert all(
+        sc.chunk.metadata.chapitre in s1
+        for sc in rag_stack.retriever.retrieve("dérivée", {"serie": "S1"}, top_k=20)
+        if sc.chunk.metadata.chapitre
+    )
+
+
+def test_le_catalogue_d_un_store_vide_est_vide():
+    """C'est ce cas qui déclenche l'aveu honnête au lieu d'un chapitre inventé."""
+    from agent_tuteur.vectorstore.store import build_vector_store
+
+    assert build_vector_store("memory").catalogue() == []

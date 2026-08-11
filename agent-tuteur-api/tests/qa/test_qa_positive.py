@@ -55,3 +55,18 @@ def test_la_couverture_declaree_partitionne_les_13_cas():
 async def test_aucun_faux_positif_de_detresse(cas, agent_qa, session_eleve):
     resultat = await agent_qa.respond(cas.prompt, {"serie": "S2"}, session_eleve)
     assertions.assert_aucun_court_circuit_securite(resultat)
+
+
+# --- Non-régression du routeur méta (cas QA #2/#3/#4) -------------------------
+# Le routeur méta s'exécute juste après detect_intent et supprime le retrieval.
+# Aucun de ces 13 comportements validés n'est une question sur le service : les
+# absorber priverait l'agent du corpus sur des cas où il répondait correctement,
+# notamment 50/51/52 dont le mérite est précisément de savoir dire « je ne l'ai
+# pas » APRÈS avoir cherché.
+@pytest.mark.parametrize("cas", CAS, ids=[c.identifiant_test for c in CAS])
+async def test_aucun_faux_positif_du_routeur_meta(cas, agent_qa, session_eleve):
+    resultat = await agent_qa.respond(cas.prompt, {"serie": "S2"}, session_eleve)
+    entree = next((e for e in resultat.node_trace if e["node"] == "detect_intent"), None)
+    assert entree is not None
+    assert entree["intent"] != "meta", f"question de contenu absorbée par le routeur méta : {cas.prompt!r}"
+    assert resultat.retrieved, "le corpus n'a pas été interrogé sur une question de contenu"

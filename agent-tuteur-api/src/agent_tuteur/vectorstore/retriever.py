@@ -110,6 +110,15 @@ class HybridRetriever:
             query_emb, top_k=top_k or self._top_k, filters=filters
         )
 
+    def catalogue(self, context: dict | None = None) -> list[str]:
+        """Chapitres réellement disponibles pour ce cadre curriculaire.
+
+        Sert les tours **méta** (« quels chapitres as-tu ? »), qui ne doivent
+        déclencher aucune recherche par similarité : la question porte sur la
+        couverture du corpus, pas sur son contenu.
+        """
+        return self._store.catalogue(build_filters(context or {}))
+
     def retrieve_course_first(
         self,
         query: str,

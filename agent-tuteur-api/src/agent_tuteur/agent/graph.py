@@ -63,6 +63,7 @@ from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPor
 from agent_tuteur.agent.prompt import (
     SYSTEM_PERSONA_QUIZ,
     assemble_course_prompt,
+    assemble_meta_prompt,
     assemble_prompt,
     build_context_block,
 )
@@ -431,6 +432,44 @@ class TutorAgent:
             "node_trace": [{"node": "guardrail", "moderation_flagged": moderation.flagged}],
         }
 
+    # ------------------------------------------------------------- branche méta
+    @_timed_node("guardrail_meta")
+    async def _n_guardrail_meta(self, state: AgentState) -> dict:
+        """Tour méta : on répond sur la couverture du service, sans chercher.
+
+        Le nœud est branché **avant** ``retrieve_context`` : sur « quel est mon
+        programme ? », une recherche par similarité remonte le chunk le moins
+        éloigné du corpus, qui n'a aucun rapport (cas QA #2/#3/#4). L'ancrage
+        factuel vient du catalogue du store, pas d'un classement.
+        """
+        ctx = state.get("curriculum_context", {})
+        catalogue = self._retriever.catalogue(ctx)
+        system, user_prompt = assemble_meta_prompt(
+            state["question"], catalogue, ctx, state.get("conversation_history", [])
+        )
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "securite": None,
+            "hint_level": None,
+            "hint_label": "Orientation",
+            "hint_reason": "question sur le service",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": None,
+            "course": None,
+            "sources": [],
+            "scores": [],
+            "catalogue": catalogue,
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": system,
+            "final_prompt": user_prompt,
+            "retrieved": [],
+            "trace": trace,
+            "node_trace": [{"node": "guardrail_meta", "n_chapitres": len(catalogue)}],
+        }
+
     # ------------------------------------------------------------ branche cours
     @_timed_node("course_planner")
     async def _n_course_planner(self, state: AgentState) -> dict:
@@ -742,6 +781,8 @@ class TutorAgent:
         # Branche quiz (posture d'évaluation) — portée de NURU.
         g.add_node("quiz_planner", self._n_quiz_planner)
         g.add_node("guardrail_quiz", self._n_guardrail_quiz)
+        # Branche méta (question sur le service) — sans recherche de contenu.
+        g.add_node("guardrail_meta", self._n_guardrail_meta)
 
         g.add_edge(START, "triage_securite")
         g.add_conditional_edges(
@@ -750,7 +791,13 @@ class TutorAgent:
             {"detresse": "reponse_securite", "normal": "detect_intent"},
         )
         g.add_edge("reponse_securite", END)
-        g.add_edge("detect_intent", "retrieve_context")
+        # Une question méta est détournée AVANT la recherche : c'est le
+        # retrieval lui-même qui produisait la réponse hors-sujet (cas #2/#3/#4).
+        g.add_conditional_edges(
+            "detect_intent",
+            _route_meta_ou_contenu,
+            {"meta": "guardrail_meta", "contenu": "retrieve_context"},
+        )
         g.add_conditional_edges(
             "retrieve_context",
             _route_by_intent,
@@ -776,6 +823,7 @@ class TutorAgent:
             g.add_edge("guardrail", "compose_response")
             g.add_edge("guardrail_course", "compose_response")
             g.add_edge("guardrail_quiz", "compose_response")
+            g.add_edge("guardrail_meta", "compose_response")
             g.add_edge("compose_response", "verify_response")
             g.add_edge("verify_response", "persist_progression")
             g.add_edge("persist_progression", END)
@@ -783,6 +831,7 @@ class TutorAgent:
             g.add_edge("guardrail", END)
             g.add_edge("guardrail_course", END)
             g.add_edge("guardrail_quiz", END)
+            g.add_edge("guardrail_meta", END)
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -956,6 +1005,15 @@ def _route_par_securite(state: AgentState) -> str:
     La sélectivité est portée par ``securite.detecter_detresse``, pas ici.
     """
     return "detresse" if state.get("securite") else "normal"
+
+
+def _route_meta_ou_contenu(state: AgentState) -> str:
+    """Aiguillage juste après ``detect_intent``, avant toute recherche.
+
+    Défaut sûr : ``contenu``. Une intention non reconnue continue vers le
+    pipeline habituel — la sélectivité est portée par ``intent.is_meta_request``.
+    """
+    return "meta" if state.get("intent") == Intent.META.value else "contenu"
 
 
 def _route_by_intent(state: AgentState) -> str:

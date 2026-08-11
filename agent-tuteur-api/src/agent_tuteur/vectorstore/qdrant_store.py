@@ -120,6 +120,38 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
             conditions.append(qm.FieldCondition(key=key, match=qm.MatchAny(any=list(allowed))))
         return qm.Filter(must=conditions) if conditions else None
 
+    #: Garde-fou de pagination du catalogue : au-delà, on considère que la
+    #: collection est trop grosse pour être énumérée dans un prompt de toute façon.
+    MAX_PAGES_CATALOGUE = 50
+    TAILLE_PAGE_CATALOGUE = 256
+
+    def catalogue(self, filters: Filters | None = None) -> list[str]:
+        """Chapitres distincts, obtenus par ``scroll`` sur les seuls payloads.
+
+        ⚠️ Chemin **non couvert par les tests** : il demande un serveur Qdrant,
+        absent de l'environnement de test (les tests correspondants sautent).
+        Le déploiement de démo tourne sur ``VECTOR_BACKEND=memory``, dont
+        l'implémentation, elle, est testée.
+        """
+        qfilter = self._build_filter(filters or {})
+        chapitres: set[str] = set()
+        offset = None
+        for _ in range(self.MAX_PAGES_CATALOGUE):
+            points, offset = self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=qfilter,
+                limit=self.TAILLE_PAGE_CATALOGUE,
+                offset=offset,
+                with_payload=["chapitre"],
+                with_vectors=False,
+            )
+            for point in points:
+                if chapitre := (point.payload or {}).get("chapitre"):
+                    chapitres.add(chapitre)
+            if offset is None:
+                break
+        return sorted(chapitres)
+
     def search(
         self, query: Embedding, top_k: int = 5, filters: Filters | None = None
     ) -> list[ScoredChunk]:

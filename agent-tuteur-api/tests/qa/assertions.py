@@ -128,3 +128,32 @@ def assert_sans_contenu_mathematique(texte: str) -> None:
     )
     trouves = [mot for mot in interdits if mot in plat]
     assert not trouves, f"contenu mathématique dans une réponse de sécurité : {trouves}"
+
+
+def assert_pas_de_retrieval(resultat) -> None:
+    """Aucune recherche de contenu n'a été lancée pour ce tour.
+
+    C'est la moitié « éviter un retrieval non pertinent » des cas 2/3/4 : sur une
+    question méta, il ne suffit pas que la réponse soit correcte, il faut que le
+    corpus n'ait pas été interrogé du tout.
+    """
+    noeuds = _noeuds(resultat)
+    assert NOEUD_RETRIEVAL not in noeuds, f"le RAG a tourné sur une question méta : {noeuds}"
+    assert not resultat.retrieved, "des extraits de cours ont été récupérés"
+    assert resultat.trace["sources"] == []
+    assert resultat.trace["scores"] == []
+
+
+def assert_catalogue_honnete(prepared, chapitres_indexes: set[str]) -> None:
+    """Le prompt annonce exactement les chapitres réellement indexés.
+
+    Garde-fou contre les règles n°3 et n°4 : ni chapitre inventé, ni chapitre
+    réel passé sous silence. On vérifie le **prompt** et non la réponse : c'est
+    du texte produit par le code, donc assérable, là où la prose du modèle ne
+    l'est pas.
+    """
+    for chapitre in chapitres_indexes:
+        assert chapitre in prepared.final_prompt, f"chapitre indexé absent du prompt : {chapitre}"
+    inventes = ("Suites Numériques", "Probabilités", "Arithmétique", "Équations Différentielles")
+    for absent in inventes:
+        assert absent not in prepared.final_prompt, f"chapitre non indexé annoncé : {absent}"

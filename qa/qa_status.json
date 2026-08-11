@@ -5,29 +5,29 @@
     "notes": ""
   },
   "2": {
-    "status": "à_traiter",
+    "status": "corrigé",
     "pr": null,
-    "notes": ""
+    "notes": "RC-A corrigé : intention META ajoutée (intent.py), dérivation avant retrieve_context (nœud guardrail_meta), réponse ancrée sur store.catalogue() plutôt que sur une recherche par similarité. Chemin SSE rejoué à la main. NON vérifié sur la démo déployée : aucun service local démarré."
   },
   "3": {
-    "status": "à_traiter",
+    "status": "corrigé",
     "pr": null,
-    "notes": ""
+    "notes": "RC-A corrigé : intention META ajoutée (intent.py), dérivation avant retrieve_context (nœud guardrail_meta), réponse ancrée sur store.catalogue() plutôt que sur une recherche par similarité. Chemin SSE rejoué à la main. NON vérifié sur la démo déployée : aucun service local démarré."
   },
   "4": {
-    "status": "à_traiter",
+    "status": "corrigé",
     "pr": null,
-    "notes": ""
+    "notes": "RC-A corrigé : intention META ajoutée (intent.py), dérivation avant retrieve_context (nœud guardrail_meta), réponse ancrée sur store.catalogue() plutôt que sur une recherche par similarité. Chemin SSE rejoué à la main. NON vérifié sur la démo déployée : aucun service local démarré."
   },
   "5": {
-    "status": "à_traiter",
+    "status": "en_cours",
     "pr": null,
-    "notes": ""
+    "notes": "Diagnostic famille RAG : (RC-0) la démo tourne EMBEDDING_BACKEND=light (render.yaml:44), embedder par hachage sans capacité sémantique ; (RC-A) intent.py n'avait pas d'intention méta ; (RC-B) ScoredChunk.score est un score RRF (~1/(60+rang)), pas une similarité, et QdrantVectorStore ne renseigne pas dense_score. BLOQUÉ : le seuil ne peut pas porter sur .score (RRF). Mesuré sur le corpus figé, le cas 5 hors périmètre obtient 0.0325 en RRF, AU-DESSUS d'un témoin dans le périmètre à 0.0318. Il faut le cosinus, absent du chemin Qdrant, et un seuil calibré sur un vrai embedder. En attente de la décision RC-0."
   },
   "6": {
-    "status": "à_traiter",
+    "status": "en_cours",
     "pr": null,
-    "notes": ""
+    "notes": "Diagnostic famille RAG : (RC-0) la démo tourne EMBEDDING_BACKEND=light (render.yaml:44), embedder par hachage sans capacité sémantique ; (RC-A) intent.py n'avait pas d'intention méta ; (RC-B) ScoredChunk.score est un score RRF (~1/(60+rang)), pas une similarité, et QdrantVectorStore ne renseigne pas dense_score. BLOQUÉ : l'exercice du cas 6 (z=3+4i) obtient cos=0.271 alors qu'une question de cuisine obtient 0.241 et le bruit pur 0.098. Aucun seuil ne sépare les deux : c'est l'embedder light qui est en cause. Un seuil de pertinence AGGRAVERAIT ce cas. En attente de la décision RC-0."
   },
   "7": {
     "status": "en_cours",

@@ -1,3 +1,5 @@
+import pytest
+
 from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
 
 
@@ -70,3 +72,61 @@ def test_difficulty_expression_does_not_break_out():
     for q in ("je ne trouve pas", "je n'ai pas compris la démonstration"):
         d = classify_intent(q, in_course=True)
         assert d.intent == Intent.COURS, q
+
+
+# --- Intention méta (cas QA #2, #3, #4) --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quel est mon programme de cette année",
+        "Quels sont les grands chapitres au programme de mathématiques en Terminale S ?",
+        "quelles leçons sont disponibles ?",
+        "sur quels chapitres peux-tu m'aider ?",
+        "qu'est-ce que tu sais faire ?",
+        "comment tu fonctionnes ?",
+    ],
+)
+def test_meta_sans_ambiguite_reconnu_partout(question):
+    assert classify_intent(question).intent == Intent.META, question
+    # Même en plein cours : la question ne porte pas sur la notion enseignée.
+    assert classify_intent(question, in_course=True).intent == Intent.META, question
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Donne moi des astuces pour m'améliorer en maths ?",
+        "des conseils pour progresser en maths",
+        "comment réviser efficacement pour le bac ?",
+    ],
+)
+def test_meta_de_methode_reconnu_hors_cours(question):
+    assert classify_intent(question).intent == Intent.META, question
+
+
+def test_les_astuces_restent_une_section_pendant_un_cours():
+    """Frontière délicate : « astuces » nomme une section du plan de cours.
+
+    Sans cette distinction, le routeur méta volerait la navigation intra-cours
+    déjà couverte par test_section_mention_inside_course_is_goto.
+    """
+    d = classify_intent("donne-moi les astuces", in_course=True)
+    assert d.intent == Intent.COURS
+    assert d.navigation == Navigation.GOTO
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # Questions de contenu : le mot « chapitre » ne suffit pas à faire méta.
+        "présente le chapitre sur les nombres complexes",
+        "Quelle est la différence entre une suite arithmétique et une suite géométrique ?",
+        "Comment dériver un quotient de fonctions ?",
+        "Comment puis-je tricher à mon examen de maths ?",
+        "Fais-moi un cours sur les suites numériques",
+    ],
+)
+def test_les_questions_de_contenu_ne_deviennent_pas_meta(question):
+    assert classify_intent(question).intent != Intent.META, question
