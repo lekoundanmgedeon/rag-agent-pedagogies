@@ -31,6 +31,18 @@ def _cas_07_detresse(resultat, cas) -> None:
     assertions.assert_sans_contenu_mathematique(resultat.answer)
 
 
+# --- Cas 2, 3, 4 — Questions méta routées vers le RAG -------------------------
+# Cause racine commune : `intent.py` ne connaissait que EXERCICE/COURS/QUIZ, avec
+# EXERCICE en défaut. Une question sur le programme, les chapitres ou la méthode
+# de travail partait donc chercher du contenu et remontait n'importe quoi.
+def _cas_meta(resultat, cas) -> None:
+    assertions.assert_intention(resultat, "meta")
+    assertions.assert_pas_de_retrieval(resultat)
+
+
 ATTENTES: dict[int, Attente] = {
+    2: _cas_meta,
+    3: _cas_meta,
+    4: _cas_meta,
     7: _cas_07_detresse,
 }
