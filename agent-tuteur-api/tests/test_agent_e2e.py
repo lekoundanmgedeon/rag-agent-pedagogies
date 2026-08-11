@@ -79,7 +79,11 @@ async def test_prepare_exposes_node_by_node_orchestration_trace(agent):
     prep = await agent.prepare("comment dériver un quotient de fonctions ?", {"serie": "S1"})
     assert prep.trace_id  # identifiant de corrélation généré
     node_names = [n["node"] for n in prep.node_trace]
+    # « triage_securite » ouvre désormais tous les parcours (cas QA #7) : le
+    # disjoncteur de détresse passe avant la détection d'intention, sinon rien
+    # ne garantit qu'il prime sur le RAG et sur la continuité d'un cours.
     assert node_names == [
+        "triage_securite",
         "detect_intent",
         "retrieve_context",
         "detect_frustration",

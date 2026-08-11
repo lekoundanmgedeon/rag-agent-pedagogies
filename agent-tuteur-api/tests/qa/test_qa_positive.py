@@ -44,3 +44,14 @@ def test_la_couverture_declaree_partitionne_les_13_cas():
     assert not COUVERTS_COUCHE_A & COUCHE_B_SEULEMENT
 
 
+
+# --- Non-régression du court-circuit de sécurité (cas QA #7) ------------------
+# Le routage de détresse s'exécute AVANT tout le reste : un faux positif y
+# détournerait n'importe lequel de ces 13 comportements validés vers un message
+# d'aide. C'est le risque de régression n°1 du correctif, en particulier sur les
+# cas 57 à 61 (tricherie, sujet sensible, hors-sujet), qui emploient un registre
+# émotionnel proche.
+@pytest.mark.parametrize("cas", CAS, ids=[c.identifiant_test for c in CAS])
+async def test_aucun_faux_positif_de_detresse(cas, agent_qa, session_eleve):
+    resultat = await agent_qa.respond(cas.prompt, {"serie": "S2"}, session_eleve)
+    assertions.assert_aucun_court_circuit_securite(resultat)

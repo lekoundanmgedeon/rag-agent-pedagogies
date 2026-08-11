@@ -30,9 +30,9 @@
     "notes": ""
   },
   "7": {
-    "status": "à_traiter",
+    "status": "en_cours",
     "pr": null,
-    "notes": ""
+    "notes": "Disjoncteur de détresse ajouté en tête de graphe (agent/securite.py + nœuds triage_securite/reponse_securite). Réponse déterministe, LLM non sollicité, RAG court-circuité. Tests verts. RESTE EN « en_cours » : catégorie « Sécurité, bien-être & garde-fous » — validation humaine explicite requise avant merge (Definition of Done). Deux points à trancher : (1) RESSOURCES_AIDE volontairement vide, aucun numéro d'assistance inventé ; (2) événement journalisé dans l'audit et non dans la mémoire élève."
   },
   "8": {
     "status": "à_traiter",
