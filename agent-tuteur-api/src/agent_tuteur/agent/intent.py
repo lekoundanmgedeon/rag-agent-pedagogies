@@ -29,6 +29,10 @@ class Intent(str, Enum):
     COURS = "cours"
     #: L'élève demande à être interrogé (« teste-moi », « fais-moi un quiz »).
     QUIZ = "quiz"
+    #: Question **sur** le service et non sur une notion : programme, chapitres
+    #: couverts, méthode de travail, capacités de l'agent. Aucune recherche de
+    #: contenu ne doit être lancée (cas QA #2, #3, #4).
+    META = "meta"
 
 
 class Navigation(str, Enum):
@@ -132,6 +136,54 @@ _QUIZ_REQUEST = re.compile(
 )
 
 
+# --- Questions méta ----------------------------------------------------------
+# Deux niveaux, et la distinction est nécessaire : « donne-moi les astuces »
+# désigne la section « Astuces » quand on est DANS un cours (cf. _SECTION_MENTION
+# et test_intent.test_section_mention_inside_course_is_goto), mais une demande de
+# méthode de travail hors cours. Les motifs sans ambiguïté priment partout ; les
+# ambigus ne sont consultés qu'en dehors d'un cours.
+
+#: Reconnu en toute circonstance : porte sur la couverture du service, jamais
+#: sur une notion. « au programme », « quels chapitres », « que sais-tu faire ».
+_META_TOUJOURS = re.compile(
+    r"(?:"
+    r"\b(?:mon|le|du|au|ton)\s+programme\b"
+    r"|\bprogramme\s+(?:de\s+(?:cette\s+ann[ée]e|l'ann[ée]e|maths?|math[ée]matiques)|scolaire|officiel)"
+    r"|\b(?:quels?|quelles?)\s+(?:sont\s+)?(?:les\s+)?(?:grands\s+)?"
+    r"(?:chapitres?|le[çc]ons?|th[èe]mes?|notions?|sujets?)\b"
+    r"|\b(?:chapitres?|le[çc]ons?)\s+(?:disponibles?|couverts?|index[ée]s?|au\s+programme)\b"
+    r"|\bsur\s+quo?[ie]\s+(?:peux[\s-]?tu|pouvez[\s-]?vous|tu\s+peux)\b"
+    r"|\bsur\s+quels?\s+(?:chapitres?|le[çc]ons?|sujets?)\b"
+    r"|\bqu['e]\s*est[\s-]?ce\s+que\s+tu\s+(?:sais|peux|as)\b"
+    r"|\bque\s+sais[\s-]?tu\s+faire\b"
+    r"|\b(?:comment|qui)\s+(?:tu\s+)?fonctionnes?\b"
+    r"|\btu\s+sers\s+[àa]\s+quoi\b"
+    r")",
+    re.IGNORECASE,
+)
+
+#: Reconnu **hors cours** seulement : demande de méthode de travail. En cours,
+#: ces mêmes mots désignent une section du plan et restent une navigation.
+_META_HORS_COURS = re.compile(
+    r"(?:"
+    r"\b(?:astuces?|conseils?|m[ée]thodes?|techniques?)\b[^?.!]{0,40}?"
+    r"\b(?:pour|afin\s+de)\b[^?.!]{0,40}?"
+    r"\b(?:am[ée]liorer|progresser|r[ée]viser|travailler|r[ée]ussir|mieux)\b"
+    r"|\b(?:comment|quelle?s?)\b[^?.!]{0,30}?"
+    r"\b(?:r[ée]viser|progresser|m['e]am[ée]liorer|mieux\s+travailler|bien\s+travailler)\b"
+    r"|\bdes\s+(?:astuces?|conseils?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_meta_request(question: str, *, in_course: bool = False) -> bool:
+    """Vrai si la question porte sur le service plutôt que sur une notion."""
+    if _META_TOUJOURS.search(question):
+        return True
+    return not in_course and bool(_META_HORS_COURS.search(question))
+
+
 def is_quiz_request(question: str) -> bool:
     """Vrai si l'élève demande explicitement à être interrogé."""
     return bool(_QUIZ_REQUEST.search(question))
@@ -187,6 +239,11 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
     if is_quiz_request(question):
         return IntentDecision(Intent.QUIZ, "demande explicite d'évaluation", None)
 
+    # Une question méta sans ambiguïté prime sur tout : demander « quels
+    # chapitres as-tu ? » n'est pas demander un cours sur les chapitres.
+    if _META_TOUJOURS.search(question):
+        return IntentDecision(Intent.META, "question sur le service (programme, couverture)", None)
+
     nav = _detect_navigation(question, in_course=in_course)
 
     if nav == Navigation.START:
@@ -204,5 +261,10 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
         if _SECTION_MENTION.search(question):
             return IntentDecision(Intent.COURS, "poursuite du cours (goto)", Navigation.GOTO)
         return IntentDecision(Intent.COURS, "poursuite du cours", None)
+
+    # Hors cours seulement : « des astuces pour progresser » est une demande de
+    # méthode, alors qu'en cours les mêmes mots visent la section « Astuces ».
+    if _META_HORS_COURS.search(question):
+        return IntentDecision(Intent.META, "question sur la méthode de travail", None)
 
     return IntentDecision(Intent.EXERCICE, "défaut (résolution d'exercice)", None)
