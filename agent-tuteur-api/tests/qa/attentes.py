@@ -40,7 +40,22 @@ def _cas_meta(resultat, cas) -> None:
     assertions.assert_pas_de_retrieval(resultat)
 
 
+# --- Cas 1 — Dérivée fausse annoncée comme vérifiée ---------------------------
+def _cas_01_derivee(resultat, cas) -> None:
+    """« Calcule la dérivée de x³ − 3x » (Tony SARRE).
+
+    Règle non-négociable n°2 : soit le calcul est symboliquement vérifié, soit
+    aucun résultat n'est annoncé. Jamais un fragment calculé avec assurance.
+    """
+    import sympy
+
+    assert resultat.trace["tool_used"] == "sympy_calculator"
+    calcule = resultat.trace["tool_result"].split("→")[-1].strip()
+    assert sympy.simplify(sympy.sympify(calcule) - sympy.sympify("3*x**2 - 3")) == 0
+
+
 ATTENTES: dict[int, Attente] = {
+    1: _cas_01_derivee,
     2: _cas_meta,
     3: _cas_meta,
     4: _cas_meta,

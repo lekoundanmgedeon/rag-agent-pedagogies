@@ -73,6 +73,13 @@ class AgentState(TypedDict, total=False):
     hint_reason: str
     tool_used: str | None
     tool_result: str | None
+    #: Le résultat seul (sans « expression → »), pour le contrôle de fidélité
+    #: de ``verify.py`` : c'est cette valeur-là que la réponse doit contenir.
+    tool_result_brut: str | None
+    #: Vrai quand l'élève demandait un calcul concret que l'outil symbolique n'a
+    #: pas pu vérifier. Le prompt interdit alors d'annoncer un résultat plutôt
+    #: que de laisser le modèle en inventer un (règle non-négociable n°2).
+    calcul_non_verifie: bool
     moderation_flagged: bool
     #: Position dans le cours calculée par course_planner ({"chapitre", "section_index",
     #: "section_key", "section_title", "reason", "chapitre_confirmed", "alternatives",

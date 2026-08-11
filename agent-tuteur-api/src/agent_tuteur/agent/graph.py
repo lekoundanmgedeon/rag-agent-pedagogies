@@ -78,7 +78,12 @@ from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
-from agent_tuteur.tools.calculator import CalculationError, compute, looks_like_calculation
+from agent_tuteur.tools.calculator import (
+    CalculationError,
+    compute,
+    demande_un_calcul_concret,
+    looks_like_calculation,
+)
 from agent_tuteur.vectorstore.retriever import HybridRetriever
 
 _logger = get_logger("agent_tuteur.agent.graph")
@@ -373,20 +378,40 @@ class TutorAgent:
 
     @_timed_node("route_tool")
     async def _n_route_tool(self, state: AgentState) -> dict:
+        """Calcul symbolique, ou aveu explicite qu'il n'a pas pu être fait.
+
+        L'ancien comportement repliait *silencieusement* sur le LLM en cas
+        d'échec : l'élève recevait alors un calcul produit par le modèle, sans
+        que rien ne l'ait vérifié. La règle non-négociable n°2 l'interdit —
+        quand l'outil ne peut pas garantir le résultat d'une demande de calcul
+        concrète, on le signale (``calcul_non_verifie``) et le prompt interdit
+        d'annoncer un résultat.
+
+        Le silence reste la bonne réponse pour une question *conceptuelle*
+        (« comment dériver un quotient ? ») : il n'y a aucun résultat à vérifier.
+        """
         question = state["question"]
         tool_used: str | None = None
         tool_result: str | None = None
+        tool_result_brut: str | None = None
+        calcul_non_verifie = False
         if looks_like_calculation(question):
             try:
                 res = compute(question)
                 tool_used = "sympy_calculator"
                 tool_result = f"{res.expression} → {res.result}"
+                tool_result_brut = res.result
             except CalculationError:
-                tool_used = None  # échec silencieux : on laisse le LLM gérer.
+                calcul_non_verifie = demande_un_calcul_concret(question)
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
-            "node_trace": [{"node": "route_tool", "tool_used": tool_used}],
+            "tool_result_brut": tool_result_brut,
+            "calcul_non_verifie": calcul_non_verifie,
+            "node_trace": [
+                {"node": "route_tool", "tool_used": tool_used,
+                 "calcul_non_verifie": calcul_non_verifie}
+            ],
         }
 
     @_timed_node("guardrail")
@@ -406,6 +431,7 @@ class TutorAgent:
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
+            calcul_non_verifie=bool(state.get("calcul_non_verifie")),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -418,6 +444,8 @@ class TutorAgent:
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
             "tool_used": state.get("tool_used"),
+            "tool_result": state.get("tool_result"),
+            "calcul_non_verifie": bool(state.get("calcul_non_verifie")),
             "competence": competence,
             "course": None,
             "sources": _sources_payload(retrieved),
@@ -662,7 +690,10 @@ class TutorAgent:
         rapport = verifier_coherence_mathematique(
             answer,
             competence=trace.get("competence"),
-            resultat_calcule=state.get("tool_result"),
+            # Le résultat SEUL, pas la chaîne « expression → résultat » : cette
+            # dernière n'apparaît jamais telle quelle dans une réponse rédigée,
+            # si bien que le contrôle signalait un problème à chaque calcul juste.
+            resultat_calcule=state.get("tool_result_brut"),
         )
 
         mise_a_jour: dict = {
