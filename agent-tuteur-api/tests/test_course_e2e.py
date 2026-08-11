@@ -22,6 +22,7 @@ async def test_course_request_routes_to_didactic_branch(agent):
     node_names = [n["node"] for n in prep.node_trace]
     # La branche cours remplace frustration/hint/tool par le planificateur de cours.
     assert node_names == [
+        "triage_securite",  # disjoncteur de détresse en tête de graphe (cas QA #7)
         "detect_intent",
         "retrieve_context",
         "course_planner",

@@ -72,6 +72,7 @@ from agent_tuteur.agent.quiz import (
     construire_prompt_quiz,
     contient_du_factice,
 )
+from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
 from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
@@ -160,6 +161,9 @@ class Prepared:
     node_trace: list[dict] = field(default_factory=list)
     #: Rempli par stream() une fois la génération terminée (durée, tokens, fournisseur LLM).
     generation: dict | None = None
+    #: Réponse déjà écrite par le graphe (mise en sécurité). Quand elle est
+    #: présente, ``stream()`` la restitue sans appeler le modèle.
+    reponse_directe: str | None = None
 
     @property
     def hint_level(self) -> int:
@@ -236,6 +240,69 @@ class TutorAgent:
     def last_llm_used(self) -> str | None:
         """Fournisseur LLM ayant effectivement servi le dernier appel."""
         return getattr(self._llm, "last_used", None) or self._llm.name
+
+    # ------------------------------------------------- branche sécurité (n°1)
+    @_timed_node("triage_securite")
+    async def _n_triage_securite(self, state: AgentState) -> dict:
+        """Premier nœud du graphe : l'élève va-t-il bien ?
+
+        Placé **avant** ``detect_intent`` pour que rien — ni la détection
+        d'intention, ni le RAG, ni la continuité d'un cours — ne puisse prendre
+        le pas sur un signal de détresse (règle non-négociable n°1).
+        """
+        signal = detecter_detresse(state["question"])
+        if not signal.detectee:
+            return {"securite": None, "node_trace": [{"node": "triage_securite", "detresse": False}]}
+        return {
+            "securite": {"motif": "detresse", "categorie": signal.nature.value},
+            "node_trace": [
+                {"node": "triage_securite", "detresse": True, "categorie": signal.nature.value}
+            ],
+        }
+
+    @_timed_node("reponse_securite")
+    async def _n_reponse_securite(self, state: AgentState) -> dict:
+        """Réponse de mise en sécurité — écrite par le code, pas par le modèle.
+
+        La trace produite porte les mêmes clés qu'un tour ordinaire : la route
+        SSE (``api/routes/chat.py``) les lit sans garde, et un tour de détresse
+        ne doit pas être le seul à faire tomber l'API.
+
+        L'événement est journalisé dans l'audit (un établissement doit pouvoir
+        savoir qu'un signalement a eu lieu) mais **pas** dans la mémoire élève,
+        qui suit les compétences et les niveaux d'indice : une confidence n'y a
+        rien à faire.
+        """
+        signal = state.get("securite") or {}
+        nature = signal.get("categorie", "")
+        reponse = reponse_detresse(detecter_detresse(state["question"]))
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "securite": signal,
+            "hint_level": 0,
+            "hint_label": HINT_LABELS[0],
+            "hint_reason": "tour de mise en sécurité",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": None,
+            "course": None,
+            "sources": [],
+            "scores": [],
+        }
+        await self._write_audit(state, trace)
+        log_event(
+            _logger, "securite:detresse_detectee",
+            trace_id=state.get("trace_id"), categorie=nature,
+        )
+        return {
+            "answer": reponse,
+            "reponse_directe": reponse,
+            "system_prompt": "",
+            "final_prompt": "",
+            "trace": trace,
+            "retrieved": [],
+            "node_trace": [{"node": "reponse_securite", "categorie": nature}],
+        }
 
     # ------------------------------------------------------------------ nœuds
     @_timed_node("detect_intent")
@@ -659,6 +726,9 @@ class TutorAgent:
         ``compose_response`` (graphe complet) ou ``END`` (graphe de préparation).
         """
         g = StateGraph(AgentState)
+        # Disjoncteur de sécurité : en tête, avec sa propre sortie vers END.
+        g.add_node("triage_securite", self._n_triage_securite)
+        g.add_node("reponse_securite", self._n_reponse_securite)
         g.add_node("detect_intent", self._n_detect_intent)
         g.add_node("retrieve_context", self._n_retrieve)
         # Branche exercice (posture socratique) — inchangée.
@@ -673,7 +743,13 @@ class TutorAgent:
         g.add_node("quiz_planner", self._n_quiz_planner)
         g.add_node("guardrail_quiz", self._n_guardrail_quiz)
 
-        g.add_edge(START, "detect_intent")
+        g.add_edge(START, "triage_securite")
+        g.add_conditional_edges(
+            "triage_securite",
+            _route_par_securite,
+            {"detresse": "reponse_securite", "normal": "detect_intent"},
+        )
+        g.add_edge("reponse_securite", END)
         g.add_edge("detect_intent", "retrieve_context")
         g.add_conditional_edges(
             "retrieve_context",
@@ -763,6 +839,7 @@ class TutorAgent:
             memory=memory or self._memory,
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
+            reponse_directe=result.get("reponse_directe"),
         )
 
     async def stream(self, prepared: Prepared) -> AsyncIterator[str]:
@@ -774,25 +851,41 @@ class TutorAgent:
         """
         t0 = time.perf_counter()
         token_count = 0
-        async for token in self._llm.generate_stream(
-            prepared.final_prompt, system=prepared.system_prompt
-        ):
-            token_count += 1
-            yield token
+        # Tour de mise en sécurité : la réponse est déjà écrite, et le modèle ne
+        # doit pas être sollicité — c'est ce qui garantit qu'elle ne varie pas
+        # d'un appel à l'autre et qu'aucune ressource d'aide n'est inventée.
+        if prepared.reponse_directe is not None:
+            fournisseur = "securite"
+            for token in re.findall(r"\S+\s*", prepared.reponse_directe):
+                token_count += 1
+                yield token
+        else:
+            async for token in self._llm.generate_stream(
+                prepared.final_prompt, system=prepared.system_prompt
+            ):
+                token_count += 1
+                yield token
+            fournisseur = self.last_llm_used
         duration_ms = round((time.perf_counter() - t0) * 1000, 2)
         prepared.generation = {
             "node": "compose_response",
             "duration_ms": duration_ms,
             "token_count": token_count,
-            "llm_provider": self.last_llm_used,
+            "llm_provider": fournisseur,
         }
         log_event(
             _logger, "node:compose_response_stream", trace_id=prepared.trace_id,
-            duration_ms=duration_ms, token_count=token_count, llm_provider=self.last_llm_used,
+            duration_ms=duration_ms, token_count=token_count, llm_provider=fournisseur,
         )
 
     async def commit_memory(self, prepared: Prepared) -> None:
         """Persiste le résultat notable (à appeler après un stream réussi)."""
+        # Un tour de mise en sécurité n'apprend rien sur les compétences de
+        # l'élève : il est tracé dans l'audit, pas dans la mémoire pédagogique.
+        # (Le graphe complet fait de même : il contourne ``compose_response``,
+        # seul endroit où la mémoire est écrite sur le chemin non streamé.)
+        if prepared.trace.get("securite"):
+            return
         await self._write_memory(
             {
                 "question": prepared.question,
@@ -853,6 +946,16 @@ class TutorAgent:
             quiz=result.get("quiz"),
             mastery=result.get("mastery"),
         )
+
+
+def _route_par_securite(state: AgentState) -> str:
+    """Aiguillage en tête de graphe. Le défaut sûr est ici ``normal``.
+
+    Symétrique de ``_route_by_intent`` : en cas de doute on ne déclenche pas le
+    message d'aide, qui perdrait son sens s'il tombait à chaque blocage scolaire.
+    La sélectivité est portée par ``securite.detecter_detresse``, pas ici.
+    """
+    return "detresse" if state.get("securite") else "normal"
 
 
 def _route_by_intent(state: AgentState) -> str:
