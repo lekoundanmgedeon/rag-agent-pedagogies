@@ -121,6 +121,21 @@ def build_history_block(history: list[dict[str, str]] | None) -> str | None:
     return "\n".join(lines)
 
 
+#: Consigne ajoutée quand l'élève demande un calcul que l'outil symbolique n'a
+#: pas pu vérifier. Sans elle, l'échec de l'outil est invisible pour le modèle,
+#: qui refait le calcul de son côté et se trompe — c'est le cas QA #1, où un
+#: résultat faux a été annoncé avec l'assurance d'un résultat vérifié.
+#: La règle non-négociable n°2 impose de refuser ou de rediriger.
+AVERTISSEMENT_CALCUL_NON_VERIFIE = (
+    "ATTENTION : l'élève demande un calcul, mais celui-ci n'a PAS pu être vérifié "
+    "par l'outil de calcul symbolique. Tu ne dois donc annoncer AUCUN résultat "
+    "chiffré ni aucune expression finale — tu te tromperais peut-être sans "
+    "pouvoir le savoir. Explique la méthode pas à pas, demande à l'élève de "
+    "réécrire son expression plus simplement s'il y a une ambiguïté de notation, "
+    "et invite-le à poser le calcul lui-même."
+)
+
+
 def assemble_prompt(
     question: str,
     hint: HintDecision,
@@ -128,12 +143,17 @@ def assemble_prompt(
     tool_result: str | None = None,
     curriculum_context: dict | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    *,
+    calcul_non_verifie: bool = False,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
     Le ``user_prompt`` agrège : contexte curriculaire, historique récent,
     extraits RAG, résultat de l'outil de calcul éventuel, la consigne
     d'indice, puis la question élève.
+
+    ``calcul_non_verifie`` vient de ``route_tool`` : à vrai, l'interdiction
+    :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE` est ajoutée au prompt.
     """
     ctx = curriculum_context or {}
     scope = ", ".join(
@@ -152,6 +172,8 @@ def assemble_prompt(
     )
     if tool_result:
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
+    if calcul_non_verifie:
+        parts.append(AVERTISSEMENT_CALCUL_NON_VERIFIE)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )

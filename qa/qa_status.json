@@ -1,8 +1,8 @@
 {
   "1": {
-    "status": "à_traiter",
+    "status": "corrigé",
     "pr": null,
-    "notes": ""
+    "notes": "Cause racine : _extract_expression s'arrêtait au premier caractère non ASCII. « x³ − 3x » (U+00B3, U+2212) était réduit à « x » et dérivé en « 1 », résultat faux injecté sous le libellé « Résultat vérifié par l'outil de calcul ». Correctifs : normalisation Unicode, extraction à double contrôle (rien de signifiant perdu dehors, aucun mot français absorbé dedans), distinction calcul concret / question de méthode, et aveu explicite quand rien n'a pu être vérifié (règle n°2). Corrigé au passage : verify.py comparait la réponse à « expression → résultat », jamais présent tel quel, et signalait donc chaque calcul juste comme suspect. Effet de bord : le cas 6 passe en refus prudent au lieu de produire c**2*e**2*i*r*x. NON vérifié sur la démo déployée."
   },
   "2": {
     "status": "corrigé",
