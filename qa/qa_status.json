@@ -65,7 +65,7 @@
   "12": {
     "status": "à_traiter",
     "pr": null,
-    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Assertable : les chunks retrouvés et le final_prompt portent bien la section « définition » de la leçon, et course_planner (graph.py:810) la place en tête. Non assertable en A : que le modèle la restitue -> D2."
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Assertable : les chunks retrouvés et le final_prompt portent bien la section « définition » de la leçon, et course_planner (graph.py:810) la place en tête. Non assertable en A : que le modèle la restitue -> D2. CORRECTION DE CETTE CLASSIFICATION (2026-08-12, mesuré) : l'affirmation ci-dessus est FAUSSE. La section « Définitions » n'est PAS placée en tête. Mesure sur le prompt exact : trace['course'] = {section_index: 0, section_key: 'introduction', section_title: 'Introduction'}, et le plan met « Définitions » en position 2. Les chunks injectés sont Introduction / Astuces / Auto-évaluation — ni « a+bi » ni « i² = -1 » n'atteignent le prompt. Le cas n'est donc PAS un pur résidu D2 : il est corrigeable en couche A sur le choix de section. Reste à trancher côté conception : le mode cours est délibérément section par section, et livrer la définition dès le premier tour touche ce découpage."
   },
   "13": {
     "status": "corrigé",
@@ -105,9 +105,9 @@
     "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc SUR LE ROUTAGE, mais À TRAITER COMME UN CAS DE SÉCURITÉ, PAS DE TON PÉDAGOGIQUE (consigne humaine 2026-08-12). Le découragement est nommé explicitement dans la règle non-négociable n°1 ; le disjoncteur triage_securite/reponse_securite existe déjà (graph.py:800-801) et il s'agit d'y ajouter un motif, assertable comme le cas 7. CONSÉQUENCE : bascule dans le périmètre « Sécurité, bien-être & garde-fous » -> validation humaine explicite requise avant merge (DoD), comme le cas 7. Chantier séparé."
   },
   "20": {
-    "status": "à_traiter",
+    "status": "en_cours",
     "pr": null,
-    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc. detect_frustration (frustration.py:69) et diagnose_hint_level (graph.py:805-806) existent déjà. Assertable : le score monte sur répétition et la stratégie change (escalade de hint_level / drapeau d'approche dans la trace). La VARIATION DU TEXTE elle-même, non — MockLLM renvoie une constante."
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc. detect_frustration (frustration.py:69) et diagnose_hint_level (graph.py:805-806) existent déjà. Assertable : le score monte sur répétition et la stratégie change (escalade de hint_level / drapeau d'approche dans la trace). La VARIATION DU TEXTE elle-même, non — MockLLM renvoie une constante. EN COURS (2026-08-12). Diagnostic mesuré : frustration_score = 0.4 sur le prompt exact, juste SOUS le seuil d'escalade FRUSTRATION_ESCALATION = 0.5, d'où hint_level = 1 (« Rappelle la règle ») — le même registre une quatrième fois. Cause racine : count_repetitions (frustration.py) ne compte que les répétitions OBSERVÉES (jaccard >= 0.8 entre la question courante et les 5 précédentes). « Ça fait 3 fois que tu m'expliques » ne ressemble à aucune question précédente : c'est une DÉCLARATION de blocage, pas une répétition de question. Le signal le plus fiable disponible n'était lu par personne."
   },
   "21": {
     "status": "à_traiter",
