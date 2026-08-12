@@ -95,6 +95,18 @@ def _cas_resultat_attendu(resultat, cas) -> None:
     assert resultat.trace["hint_reason"] == "résultat vérifié et explicitement demandé"
 
 
+# --- Cas 20 — Même explication redonnée une quatrième fois --------------------
+def _cas_20_blocage_declare(resultat, cas) -> None:
+    """« Ça fait 3 fois que tu m'expliques, je comprends pas » (Tony SARRE).
+
+    La répétition n'était comptée que si le système l'observait ; ici l'élève la
+    déclare. Le signal doit être lu, et la stratégie doit changer.
+    """
+    assert resultat.trace["blocage_declare"] is True
+    assert resultat.trace["frustration_score"] >= 0.5
+    assert resultat.trace["hint_level"] > 1
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
@@ -106,6 +118,7 @@ ATTENTES: dict[int, Attente] = {
     11: _cas_resultat_attendu,
     13: _cas_resultat_attendu,
     15: _cas_15_affirmation_fausse,
+    20: _cas_20_blocage_declare,
 }
 
 #: Contexte curriculaire du rejeu, quand le cas exige autre chose que le défaut.

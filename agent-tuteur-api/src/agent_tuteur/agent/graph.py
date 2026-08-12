@@ -406,7 +406,11 @@ class TutorAgent:
             "frustration_score": signal.score,
             "repetitions": signal.repetitions,
             "markers": signal.markers,
-            "node_trace": [{"node": "detect_frustration", "score": signal.score}],
+            "blocage_declare": signal.blocage_declare,
+            "node_trace": [
+                {"node": "detect_frustration", "score": signal.score,
+                 "blocage_declare": signal.blocage_declare}
+            ],
         }
 
     @_timed_node("diagnose_hint_level")
@@ -524,11 +528,13 @@ class TutorAgent:
                 affirmation["operation"], affirmation["sujet"],
                 affirmation["affirme"], affirmation["attendu"],
             )
+        varier_approche = bool(state.get("blocage_declare"))
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
             calcul_non_verifie=bool(state.get("calcul_non_verifie")),
             correction_affirmation=correction,
+            varier_approche=varier_approche,
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -540,6 +546,7 @@ class TutorAgent:
             "hint_label": HINT_LABELS[level],
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
+            "blocage_declare": varier_approche,
             "tool_used": state.get("tool_used"),
             "tool_result": state.get("tool_result"),
             "calcul_non_verifie": bool(state.get("calcul_non_verifie")),

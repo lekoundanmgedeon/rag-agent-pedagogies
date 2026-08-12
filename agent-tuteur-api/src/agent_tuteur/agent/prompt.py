@@ -136,6 +136,22 @@ AVERTISSEMENT_CALCUL_NON_VERIFIE = (
 )
 
 
+#: Injectée quand l'élève signale que l'explication a déjà été donnée (cas QA
+#: #20). Monter d'un cran dans la graduation socratique ne suffit pas : le
+#: reproche du testeur ne portait pas sur le *niveau* de l'explication mais sur
+#: sa **forme**, restée identique aux trois précédentes. La consigne nomme donc
+#: des registres alternatifs plutôt que de demander vaguement « autre chose ».
+CONSIGNE_VARIATION_APPROCHE = (
+    "ATTENTION : l'élève signale que cette explication lui a déjà été donnée et "
+    "qu'elle ne passe pas. Ne la reformule PAS dans les mêmes termes — répéter "
+    "le même angle une fois de plus est précisément ce qu'il te reproche. Change "
+    "de registre : pars d'un exemple numérique concret, ou décompose en étapes "
+    "élémentaires vérifiables une par une, ou propose une analogie, ou décris la "
+    "situation géométriquement. Commence par reconnaître que ton explication "
+    "précédente n'a pas fonctionné, puis demande-lui quel point précis bloque."
+)
+
+
 def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, attendu: str) -> str:
     """Consigne de correction d'une affirmation fausse de l'élève (cas QA #15).
 
@@ -164,6 +180,7 @@ def assemble_prompt(
     *,
     calcul_non_verifie: bool = False,
     correction_affirmation: str | None = None,
+    varier_approche: bool = False,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
@@ -173,6 +190,11 @@ def assemble_prompt(
 
     ``calcul_non_verifie`` vient de ``route_tool`` : à vrai, l'interdiction
     :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE` est ajoutée au prompt.
+
+    ``varier_approche`` vient de ``detect_frustration`` : à vrai, la consigne
+    :data:`CONSIGNE_VARIATION_APPROCHE` est ajoutée **avant** la consigne
+    d'indice, qu'elle contraint sans la remplacer — le niveau reste la
+    graduation socratique, la variation porte sur la forme.
     """
     ctx = curriculum_context or {}
     scope = ", ".join(
@@ -197,6 +219,8 @@ def assemble_prompt(
     # une erreur de l'élève prime sur la graduation socratique (cas QA #15).
     if correction_affirmation:
         parts.append(correction_affirmation)
+    if varier_approche:
+        parts.append(CONSIGNE_VARIATION_APPROCHE)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )
