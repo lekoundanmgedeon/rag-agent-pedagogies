@@ -42,72 +42,72 @@
   "8": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc. Assertion sur l'état de session. Vérifié : SessionState (frustration.py:38-45) ne porte que student_id/tenant_id/recent_questions — AUCUN champ serie ; la série transite par curriculum_context à chaque appel. Il n'y a donc pas de mécanisme de mémorisation à réparer, il faut le créer. Règle non-négociable n°5. Zéro prose dans l'attente."
   },
   "9": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Assertable : le routage (branche « étude de fonction » n'engageant ni indice socratique ni règle du quotient, et prompt exigeant domaine/limites/dérivée/tableau). Non assertable en A : que la prose contienne réellement les 4 blocs -> dépend de D2. Vérifié : looks_like_calculation('fais moi l'etude de fonction de ln(x)') = False, donc rien ne route aujourd'hui. NE PAS MUTUALISER LA FIXTURE AVEC LE CAS 17 malgré le prompt identique : deux testeurs, deux attentes distinctes."
   },
   "10": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc. Même forme que le cas 1 : assertion sur tool_used + tool_result_brut."
   },
   "11": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. ATTENTION — N'A PAS LA MÊME CAUSE QUE LE CAS 10, contrairement à ce qu'affirme recommended_action (« même correctif que la ligne précédente »). Mesuré : compute('je dis 1-1 donne combien?') renvoie DÉJÀ 0 correctement. L'outil marche ; le défaut est en aval, dans la restitution. Assertable côté final_prompt (le résultat vérifié y figure), pas côté réponse."
   },
   "12": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Assertable : les chunks retrouvés et le final_prompt portent bien la section « définition » de la leçon, et course_planner (graph.py:810) la place en tête. Non assertable en A : que le modèle la restitue -> D2."
   },
   "13": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Mesuré : compute('Résous x² − 5x + 6 = 0') renvoie DÉJÀ [2, 3]. L'outil marche ; comme pour le cas 11 le défaut est la non-restitution du résultat vérifié. Assertable : tool_used + tool_result_brut + présence dans le prompt final."
   },
   "14": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE B — nécessite D2. Vérifié : il n'existe AUCUN nœud de reformulation dans le graphe (liste complète relue, graph.py:800-853). La reformulation est un comportement de prose sous prompt socratique, sans empreinte pipeline. « Deux reformulations avant une info utile » est un jugement sur le texte."
   },
   "15": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc. Mesuré : compute(\"La dérivée de ln(x) c'est bien 1/x² non ?\") ÉCHOUE (« Texte non mathématique dans l'expression (est, bien) ») — l'affirmation fausse de l'élève n'est même pas extraite. C'est la machinerie du cas 1 retournée vers l'ENTRÉE de l'élève au lieu de la sortie de l'agent. Entièrement assertable, mais tout est à écrire."
   },
   "16": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE B — nécessite D2. Vérifié : la mémoire élève est en ÉCRITURE SEULE (memory.record, graph.py:778), rien n'injecte d'historique dans le prompt, et la série vient légitimement du profil (graph.py:630). Le code n'invente donc rien : le « tu as déjà étudié » est produit par le modèle. La seule assertion A possible (« l'interdiction figure dans le prompt ») ne teste pas la propriété voulue."
   },
   "17": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B, MAIS BLOQUÉ RC-0. Même famille que les cas 5/6 (chunks non pertinents) : la décision de retrieval serait assertable, mais le seuil dépend de D3. Second blocage indépendant : le corpus figé (Nombres Complexes + Calcul Intégral) ne contient ni ln(x) ni étude de fonction — il n'y a rien à interroger, et l'étendre toucherait la copie figée que le parti pris de a93d35f proscrit. Décision préalable sur le corpus QA nécessaire, distincte de D3. NE PAS MUTUALISER LA FIXTURE AVEC LE CAS 9."
   },
   "18": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE B — nécessite D2. Le plus faible du lot : « jugé dense par rapport à ChatGPT » n'est pas un critère spécifiable. À reformuler en attente vérifiable avant même de pouvoir le traiter."
   },
   "19": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc SUR LE ROUTAGE, mais À TRAITER COMME UN CAS DE SÉCURITÉ, PAS DE TON PÉDAGOGIQUE (consigne humaine 2026-08-12). Le découragement est nommé explicitement dans la règle non-négociable n°1 ; le disjoncteur triage_securite/reponse_securite existe déjà (graph.py:800-801) et il s'agit d'y ajouter un motif, assertable comme le cas 7. CONSÉQUENCE : bascule dans le périmètre « Sécurité, bien-être & garde-fous » -> validation humaine explicite requise avant merge (DoD), comme le cas 7. Chantier séparé."
   },
   "20": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A — franc. detect_frustration (frustration.py:69) et diagnose_hint_level (graph.py:805-806) existent déjà. Assertable : le score monte sur répétition et la stratégie change (escalade de hint_level / drapeau d'approche dans la trace). La VARIATION DU TEXTE elle-même, non — MockLLM renvoie une constante."
   },
   "21": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE B — nécessite D2. L'attente est « les réponses diffèrent entre elles » : MockLLM renvoyant une constante, la couche A ne peut structurellement jamais voir de différence. Le routage (abandon distinct de découragement) serait assertable, mais l'action recommandée porte sur la variété de la prose, pas sur le routage."
   },
   "22": {
     "status": "à_traiter",
