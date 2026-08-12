@@ -162,6 +162,17 @@ def _parse(expression: str):
         raise CalculationError(f"Impossible d'analyser l'expression : {expression!r}") from exc
 
 
+def analyser_expression(expression: str):
+    """Analyse une expression déjà isolée, avec les garanties du sandbox.
+
+    Point d'entrée public de :func:`_parse`, pour les modules qui font de la
+    vérification symbolique sans passer par :func:`compute` (ex. le contrôle
+    des affirmations de l'élève). Centraliser l'analyse ici garantit qu'aucun
+    appelant ne contourne ``_guard`` ni le dictionnaire de noms restreint.
+    """
+    return _parse(normaliser_expression(expression))
+
+
 def evaluate(expression: str) -> CalculationResult:
     """Évalue/simplifie une expression (arithmétique ou algébrique composite)."""
     expr = _parse(expression)

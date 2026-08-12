@@ -136,6 +136,24 @@ AVERTISSEMENT_CALCUL_NON_VERIFIE = (
 )
 
 
+def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, attendu: str) -> str:
+    """Consigne de correction d'une affirmation fausse de l'élève (cas QA #15).
+
+    Le texte porte le résultat **déjà vérifié symboliquement** : le modèle n'a
+    donc rien à recalculer, seulement à corriger explicitement. Laisser la
+    correction à sa charge, c'est risquer qu'il valide l'erreur — ce qui est
+    exactement ce que le testeur a observé.
+    """
+    return (
+        f"ATTENTION : l'élève affirme que la {operation} de {sujet} est {affirme}. "
+        f"C'est FAUX — la vérification symbolique donne {attendu}. Tu dois corriger "
+        "cette erreur explicitement et sans détour, avant toute autre chose : dis "
+        "clairement que ce n'est pas le bon résultat, donne le résultat correct, puis "
+        "explique brièvement d'où vient la confusion. Ne réponds surtout pas par une "
+        "question ouverte qui laisserait l'élève croire qu'il avait raison."
+    )
+
+
 def assemble_prompt(
     question: str,
     hint: HintDecision,
@@ -145,6 +163,7 @@ def assemble_prompt(
     conversation_history: list[dict[str, str]] | None = None,
     *,
     calcul_non_verifie: bool = False,
+    correction_affirmation: str | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
@@ -174,6 +193,10 @@ def assemble_prompt(
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
     if calcul_non_verifie:
         parts.append(AVERTISSEMENT_CALCUL_NON_VERIFIE)
+    # Placée après le résultat d'outil et avant la consigne d'indice : corriger
+    # une erreur de l'élève prime sur la graduation socratique (cas QA #15).
+    if correction_affirmation:
+        parts.append(correction_affirmation)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )

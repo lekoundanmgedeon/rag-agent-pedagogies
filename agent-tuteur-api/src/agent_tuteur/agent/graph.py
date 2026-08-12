@@ -67,6 +67,7 @@ from agent_tuteur.agent.prompt import (
     assemble_meta_prompt,
     assemble_prompt,
     build_context_block,
+    consigne_correction_affirmation,
 )
 from agent_tuteur.agent.quiz import (
     Quiz,
@@ -79,6 +80,7 @@ from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
+from agent_tuteur.tools.affirmation import verifier_affirmation
 from agent_tuteur.tools.calculator import (
     CalculationError,
     compute,
@@ -449,14 +451,44 @@ class TutorAgent:
             except CalculationError:
                 calcul_non_verifie = demande_un_calcul_concret(question)
 
+        # Trajet inverse de la vérification ci-dessus : ce n'est plus ce que
+        # l'agent s'apprête à dire qu'on contrôle, mais ce que l'élève vient
+        # d'affirmer (cas QA #15). Indépendant de ``looks_like_calculation`` :
+        # « la dérivée de ln(x) c'est bien 1/x² non ? » est une demande de
+        # confirmation, pas une demande de calcul.
+        verdict = verifier_affirmation(question)
+        affirmation = None
+        if verdict is not None:
+            # Le contenu mathématique du tour A été vérifié symboliquement, même
+            # si ``compute`` a renoncé : la phrase n'est pas une demande de
+            # calcul, c'est une demande de confirmation. Laisser
+            # ``calcul_non_verifie`` à vrai mettrait dans le prompt deux
+            # consignes contradictoires — « n'annonce aucun résultat » et
+            # « donne le résultat correct » — et la première ferait taire la
+            # correction que le cas #15 exige précisément.
+            calcul_non_verifie = False
+            affirmation = {
+                "operation": verdict.operation,
+                "sujet": verdict.sujet,
+                "affirme": verdict.affirme,
+                "attendu": verdict.attendu,
+                "correcte": verdict.correcte,
+            }
+            if verdict.a_corriger:
+                log_event(
+                    _logger, "affirmation:erreur_eleve", trace_id=state.get("trace_id"),
+                    operation=verdict.operation, affirme=verdict.affirme, attendu=verdict.attendu,
+                )
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
             "tool_result_brut": tool_result_brut,
             "calcul_non_verifie": calcul_non_verifie,
+            "affirmation_eleve": affirmation,
             "node_trace": [
                 {"node": "route_tool", "tool_used": tool_used,
-                 "calcul_non_verifie": calcul_non_verifie}
+                 "calcul_non_verifie": calcul_non_verifie,
+                 "affirmation_correcte": None if affirmation is None else affirmation["correcte"]}
             ],
         }
 
@@ -474,10 +506,18 @@ class TutorAgent:
             instruction=HINT_INSTRUCTIONS[level],
             reason=state.get("hint_reason", ""),
         )
+        affirmation = state.get("affirmation_eleve")
+        correction = None
+        if affirmation is not None and not affirmation["correcte"]:
+            correction = consigne_correction_affirmation(
+                affirmation["operation"], affirmation["sujet"],
+                affirmation["affirme"], affirmation["attendu"],
+            )
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
             calcul_non_verifie=bool(state.get("calcul_non_verifie")),
+            correction_affirmation=correction,
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -492,6 +532,7 @@ class TutorAgent:
             "tool_used": state.get("tool_used"),
             "tool_result": state.get("tool_result"),
             "calcul_non_verifie": bool(state.get("calcul_non_verifie")),
+            "affirmation_eleve": affirmation,
             "competence": competence,
             "course": None,
             "sources": _sources_payload(retrieved),

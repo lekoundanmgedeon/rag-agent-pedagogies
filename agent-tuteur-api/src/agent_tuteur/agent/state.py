@@ -80,6 +80,13 @@ class AgentState(TypedDict, total=False):
     #: pas pu vérifier. Le prompt interdit alors d'annoncer un résultat plutôt
     #: que de laisser le modèle en inventer un (règle non-négociable n°2).
     calcul_non_verifie: bool
+    #: Verdict symbolique sur une affirmation mathématique de l'élève
+    #: ({"operation", "sujet", "affirme", "attendu", "correcte"}), ou ``None``
+    #: si rien de vérifiable n'a été détecté. Quand l'affirmation est fausse, le
+    #: prompt impose une correction explicite (cas QA #15) : ne rien dire
+    #: laisserait l'erreur s'installer, et la réfuter sans vérification
+    #: violerait la règle n°2.
+    affirmation_eleve: dict[str, Any] | None
     moderation_flagged: bool
     #: Position dans le cours calculée par course_planner ({"chapitre", "section_index",
     #: "section_key", "section_title", "reason", "chapitre_confirmed", "alternatives",
