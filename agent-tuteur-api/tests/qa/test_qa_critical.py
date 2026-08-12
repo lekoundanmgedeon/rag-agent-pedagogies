@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from .attentes import ATTENTES
+from .attentes import ATTENTES, CONTEXTE_DEFAUT, CONTEXTES
 from .cas import cas_critiques
 
 CAS = cas_critiques()
@@ -20,7 +20,8 @@ async def test_cas_critique(cas, agent_qa, session_eleve):
     attente = ATTENTES.get(cas.id)
     if attente is None:
         pytest.xfail(f"cas QA #{cas.id} ({cas.subtheme}) — encore « à_traiter »")
-    resultat = await agent_qa.respond(cas.prompt, {"serie": "S2"}, session_eleve)
+    contexte = CONTEXTES.get(cas.id, CONTEXTE_DEFAUT)
+    resultat = await agent_qa.respond(cas.prompt, contexte, session_eleve)
     attente(resultat, cas)
 
 
