@@ -41,6 +41,12 @@ class SessionState:
     student_id: str = "anonymous"
     tenant_id: str = "default"
     recent_questions: list[str] = field(default_factory=list)
+    #: Série **déclarée par l'élève** au cours de la session, forme canonique.
+    #: ``None`` tant qu'il n'a rien dit : l'absence est une information, et la
+    #: combler par une valeur par défaut est exactement le bug du cas QA #8.
+    #: Écrite par le nœud ``profil_eleve``, elle prime sur la série du profil
+    #: pour tout le reste de la session (règle non-négociable n°5).
+    serie: str | None = None
 
     def add(self, question: str) -> None:
         self.recent_questions.append(question)

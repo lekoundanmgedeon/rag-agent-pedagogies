@@ -23,6 +23,7 @@ async def test_course_request_routes_to_didactic_branch(agent):
     # La branche cours remplace frustration/hint/tool par le planificateur de cours.
     assert node_names == [
         "triage_securite",  # disjoncteur de détresse en tête de graphe (cas QA #7)
+        "profil_eleve",     # série résolue avant la recherche (cas QA #8)
         "detect_intent",
         "retrieve_context",
         "course_planner",

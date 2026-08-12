@@ -180,6 +180,40 @@ def assert_llm_reel(agent, resultat) -> None:
     assert fournisseur is not None, "aucun fournisseur LLM enregistré pour ce tour"
 
 
+def assert_serie_effective(resultat, attendue: str | None) -> None:
+    """Série retenue par le nœud ``profil_eleve`` pour ce tour (cas QA #8).
+
+    ``None`` signifie « aucune série connue », ce qui est un état légitime et
+    distinct de « série par défaut » : la règle n°3 interdit d'en inventer une.
+    """
+    entree = next((e for e in resultat.node_trace if e["node"] == "profil_eleve"), None)
+    assert entree is not None, "le nœud profil_eleve n'a pas été traversé"
+    assert entree["serie_effective"] == attendue, (
+        f"série attendue {attendue!r}, obtenue {entree['serie_effective']!r}"
+    )
+
+
+def assert_aucune_serie_annoncee(prepared) -> None:
+    """Le prompt n'attribue aucune série à l'élève (cas QA #8, règle n°3).
+
+    On vérifie le prompt et non la réponse : c'est du texte produit par le
+    code, donc assérable. Le cadre curriculaire n'est écrit que si une série
+    est connue — l'absence de la mention est la preuve qu'aucune n'a été
+    fabriquée pour combler le vide.
+    """
+    plat = _aplatir(prepared.final_prompt)
+    assert "serie=" not in plat, (
+        f"une série est annoncée alors qu'aucune n'a été déclarée : {prepared.final_prompt!r}"
+    )
+
+
+def assert_serie_dans_le_cadre(prepared, attendue: str) -> None:
+    """Le prompt annonce bien la série retenue, sous sa forme canonique."""
+    assert f"serie={attendue}" in prepared.final_prompt, (
+        f"série {attendue!r} absente du cadre curriculaire : {prepared.final_prompt!r}"
+    )
+
+
 def assert_catalogue_honnete(prepared, chapitres_indexes: set[str]) -> None:
     """Le prompt annonce exactement les chapitres réellement indexés.
 
