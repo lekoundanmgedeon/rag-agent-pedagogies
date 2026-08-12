@@ -56,6 +56,7 @@ from agent_tuteur.agent.hint_strategy import (
     HINT_LABELS,
     HintDecision,
     diagnose_hint_level,
+    escalade_pour_resultat_verifie,
 )
 from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
 from agent_tuteur.agent.llm.base import BaseLLM
@@ -506,6 +507,16 @@ class TutorAgent:
             instruction=HINT_INSTRUCTIONS[level],
             reason=state.get("hint_reason", ""),
         )
+        # Le niveau a été décidé deux nœuds plus tôt, avant que l'outil ait
+        # tourné. C'est ici — et seulement ici — qu'on sait *à la fois* quelle
+        # consigne va partir et si un résultat vérifié l'accompagne : le seul
+        # endroit où la contradiction des cas #11 et #13 est visible.
+        decision = escalade_pour_resultat_verifie(
+            decision,
+            resultat_verifie=state.get("tool_result") is not None,
+            demande_concrete=demande_un_calcul_concret(question),
+        )
+        level = decision.level
         affirmation = state.get("affirmation_eleve")
         correction = None
         if affirmation is not None and not affirmation["correcte"]:
