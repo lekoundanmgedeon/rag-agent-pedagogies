@@ -60,6 +60,7 @@ from agent_tuteur.agent.hint_strategy import (
 from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
+from agent_tuteur.agent.profil import detecter_serie, serie_effective
 from agent_tuteur.agent.prompt import (
     SYSTEM_PERSONA_QUIZ,
     assemble_course_prompt,
@@ -311,6 +312,46 @@ class TutorAgent:
         }
 
     # ------------------------------------------------------------------ nœuds
+    @_timed_node("profil_eleve")
+    async def _n_profil_eleve(self, state: AgentState) -> dict:
+        """Résout la série applicable au tour — cas QA #8.
+
+        Placé **avant** ``detect_intent``, donc en amont du retrieval et de
+        tous les assembleurs de prompt : la série sert de filtre de recherche
+        autant que de cadre annoncé à l'élève, et les deux doivent voir la même
+        valeur. Le corriger plus bas laisserait la recherche tourner sur
+        l'ancienne série.
+
+        Une déclaration explicite écrase immédiatement l'état antérieur et la
+        série du profil, pour tout le reste de la session (règle n°5). En
+        l'absence de déclaration comme d'un profil, rien n'est écrit : le tour
+        se déroule sans série plutôt qu'avec une série devinée (règle n°3).
+        """
+        session = state.get("session") or SessionState()
+        contexte = dict(state.get("curriculum_context", {}))
+
+        declaree = detecter_serie(state["question"])
+        if declaree is not None:
+            session.serie = declaree
+
+        effective = serie_effective(session.serie, contexte)
+        if effective is not None:
+            contexte["serie"] = effective
+        else:
+            # Aucune source fiable : on retire la clé plutôt que de la laisser
+            # vide, pour que les assembleurs de prompt n'annoncent aucun cadre.
+            contexte.pop("serie", None)
+
+        return {
+            "curriculum_context": contexte,
+            "node_trace": [{
+                "node": "profil_eleve",
+                "serie_declaree": declaree,
+                "serie_effective": effective,
+                "corrigee_par_eleve": session.serie is not None,
+            }],
+        }
+
     @_timed_node("detect_intent")
     async def _n_detect_intent(self, state: AgentState) -> dict:
         in_course = bool(state.get("course_state"))
@@ -403,6 +444,7 @@ class TutorAgent:
                 tool_result_brut = res.result
             except CalculationError:
                 calcul_non_verifie = demande_un_calcul_concret(question)
+
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
@@ -799,6 +841,7 @@ class TutorAgent:
         # Disjoncteur de sécurité : en tête, avec sa propre sortie vers END.
         g.add_node("triage_securite", self._n_triage_securite)
         g.add_node("reponse_securite", self._n_reponse_securite)
+        g.add_node("profil_eleve", self._n_profil_eleve)
         g.add_node("detect_intent", self._n_detect_intent)
         g.add_node("retrieve_context", self._n_retrieve)
         # Branche exercice (posture socratique) — inchangée.
@@ -816,11 +859,15 @@ class TutorAgent:
         g.add_node("guardrail_meta", self._n_guardrail_meta)
 
         g.add_edge(START, "triage_securite")
+        # Le profil est résolu avant tout le reste (sauf la mise en sécurité,
+        # qui prime sur tout) : la série gouverne les filtres de recherche
+        # autant que le cadre annoncé dans le prompt (cas #8).
         g.add_conditional_edges(
             "triage_securite",
             _route_par_securite,
-            {"detresse": "reponse_securite", "normal": "detect_intent"},
+            {"detresse": "reponse_securite", "normal": "profil_eleve"},
         )
+        g.add_edge("profil_eleve", "detect_intent")
         g.add_edge("reponse_securite", END)
         # Une question méta est détournée AVANT la recherche : c'est le
         # retrieval lui-même qui produisait la réponse hors-sujet (cas #2/#3/#4).

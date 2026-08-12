@@ -97,6 +97,7 @@ async def test_le_quiz_emprunte_sa_propre_branche(agent):
     noeuds = [n["node"] for n in prep.node_trace]
     assert noeuds == [
         "triage_securite",  # disjoncteur de détresse en tête de graphe (cas QA #7)
+        "profil_eleve",     # série résolue avant la recherche (cas QA #8)
         "detect_intent",
         "retrieve_context",
         "quiz_planner",

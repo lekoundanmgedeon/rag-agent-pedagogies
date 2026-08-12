@@ -84,6 +84,10 @@ async def test_prepare_exposes_node_by_node_orchestration_trace(agent):
     # ne garantit qu'il prime sur le RAG et sur la continuité d'un cours.
     assert node_names == [
         "triage_securite",
+        # « profil_eleve » résout la série avant la recherche (cas QA #8) : elle
+        # sert de filtre de retrieval autant que de cadre annoncé dans le
+        # prompt, et les deux doivent voir la même valeur.
+        "profil_eleve",
         "detect_intent",
         "retrieve_context",
         "detect_frustration",
