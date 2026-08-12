@@ -16,6 +16,10 @@ avant toute session de correction sur ce périmètre.
 - `qa/qa_status.json` — suivi de statut, un objet par `id` de cas (voir section
   "Suivi"). Déjà initialisé à `"à_traiter"` pour les 48 cas — à mettre à jour au fil
   de l'eau, jamais à régénérer depuis zéro.
+- `qa/DECISIONS.md` — registre des décisions humaines (D1 à D4). **Avant toute session
+  touchant RC-0, la Couche B, ou un cas de catégorie "Sécurité, bien-être & garde-fous",
+  lire ce fichier en premier.** Une décision déjà actée ici fait foi : ne jamais la
+  rouvrir ni la redemander.
 
 Chaque cas contient : `id`, `priority`, `category`, `subtheme`, `tester`, `prompt`,
 `observed_issue`, `recommended_action`. Le champ `prompt` est le prompt **exact** envoyé
