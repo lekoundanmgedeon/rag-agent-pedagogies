@@ -86,6 +86,9 @@ _SIGNIFIANTS_DETECTION = set("0123456789+*/^=()")
 _MOTS_AUTORISES = {nom.lower() for nom in _ALLOWED_NAMES} | {"d", "dx", "dy", "dt"}
 _MOTS = re.compile(r"[a-zA-Z_]+")
 
+#: Signe « = » terminal, sans membre droit : marque d'interrogation scolaire.
+_EGAL_TERMINAL = re.compile(r"\s*=\s*$")
+
 
 def normaliser_expression(texte: str) -> str:
     """Ramène les notations Unicode usuelles à une syntaxe analysable par SymPy.
@@ -225,6 +228,36 @@ def contient_une_expression(query: str) -> bool:
     return any(c in _SIGNIFIANTS_DETECTION for c in normaliser_expression(query))
 
 
+def est_un_calcul_trivial(query: str) -> bool:
+    """Vrai si la question est une expression **purement numérique**, posée nue.
+
+    « 1-1=? », « 2+3 » : il n'y a rien à faire découvrir, et répondre par un
+    indice socratique est disproportionné (cas QA #10) — le niveau 0 va jusqu'à
+    prescrire « ne résous rien », ce que l'élève a vécu comme une dérobade.
+
+    La restriction au **numérique** est délibérée et c'est elle qui protège la
+    posture pédagogique : « x² - 5x + 6 = 0 » posé nu reste un exercice, où
+    l'accompagnement garde tout son sens et où répondre d'emblée reviendrait à
+    faire le devoir à la place de l'élève (fixtures positives #53 et #60).
+    De même, toute prose autour de l'expression disqualifie le raccourci : la
+    question porte alors sur autre chose que le seul résultat.
+    """
+    texte = normaliser_expression(query)
+    try:
+        expression = _extract_expression(query)
+    except CalculationError:
+        return False
+    # Hors de l'expression, il ne doit rester que de la ponctuation : un mot
+    # signale une demande qui dépasse le résultat brut.
+    if _MOTS.search(texte.replace(expression, " ", 1)):
+        return False
+    try:
+        expr = _parse(expression)
+    except CalculationError:
+        return False
+    return not expr.free_symbols
+
+
 def demande_un_calcul_concret(query: str) -> bool:
     """Vrai si l'élève attend un **résultat**, pas une explication de méthode.
 
@@ -270,6 +303,13 @@ def _extract_expression(query: str) -> str:
         fin += 1
 
     candidate = texte[debut:fin].strip(" .,;:")
+    # « 1-1= » / « 2+3 = ? » : en notation scolaire, un « = » terminal sans
+    # membre droit est une INTERROGATION (« ça fait combien ? »), pas une
+    # équation. Le laisser envoyait la requête vers solve_equation, qui coupait
+    # sur « = » et tentait d'analyser une chaîne vide — c'est le cas QA #10.
+    # « x² - 5x + 6 = 0 », qui a un membre droit, reste une équation et n'est
+    # pas concerné : le retrait est documenté et borné, pas une troncature.
+    candidate = _EGAL_TERMINAL.sub("", candidate).strip()
     if not candidate:
         raise CalculationError(f"Aucune expression mathématique dans : {query!r}")
 

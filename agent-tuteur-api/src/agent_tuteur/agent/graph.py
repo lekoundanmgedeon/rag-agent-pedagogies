@@ -83,6 +83,7 @@ from agent_tuteur.tools.calculator import (
     CalculationError,
     compute,
     demande_un_calcul_concret,
+    est_un_calcul_trivial,
     looks_like_calculation,
 )
 from agent_tuteur.vectorstore.retriever import HybridRetriever
@@ -408,7 +409,10 @@ class TutorAgent:
     @_timed_node("diagnose_hint_level")
     async def _n_hint(self, state: AgentState) -> dict:
         decision = diagnose_hint_level(
-            state["question"], state.get("frustration_score", 0.0), state.get("repetitions", 0)
+            state["question"],
+            state.get("frustration_score", 0.0),
+            state.get("repetitions", 0),
+            calcul_trivial=est_un_calcul_trivial(state["question"]),
         )
         return {
             "hint_level": decision.level,
