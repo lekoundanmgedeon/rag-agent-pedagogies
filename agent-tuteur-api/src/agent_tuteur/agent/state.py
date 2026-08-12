@@ -68,6 +68,10 @@ class AgentState(TypedDict, total=False):
     frustration_score: float
     repetitions: int
     markers: int
+    #: L'élève a signalé lui-même que l'explication a déjà été donnée. Distinct
+    #: de ``repetitions``, qui est observé par comparaison des questions
+    #: récentes : ici c'est l'élève qui l'énonce (cas QA #20).
+    blocage_declare: bool
     hint_level: int
     hint_label: str
     hint_reason: str
