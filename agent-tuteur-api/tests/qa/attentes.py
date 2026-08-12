@@ -83,6 +83,18 @@ def _cas_15_affirmation_fausse(resultat, cas) -> None:
     assert resultat.trace["calcul_non_verifie"] is False
 
 
+# --- Cas 11 et 13 — Résultat vérifié, mais consigne interdisant de le donner --
+# Cause racine commune, mesurée (cf. ``test_qa_11_13_resultat_attendu``) : le
+# prompt portait « Résultat vérifié par l'outil : … » ET « SANS l'appliquer au
+# cas de l'élève ». D'où une attente unique pour les deux cas.
+def _cas_resultat_attendu(resultat, cas) -> None:
+    assert resultat.trace["tool_used"] == "sympy_calculator"
+    assert resultat.trace["hint_level"] == 4, (
+        f"consigne socratique malgré un résultat vérifié : {resultat.trace['hint_reason']!r}"
+    )
+    assert resultat.trace["hint_reason"] == "résultat vérifié et explicitement demandé"
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
@@ -91,6 +103,8 @@ ATTENTES: dict[int, Attente] = {
     7: _cas_07_detresse,
     8: _cas_08_serie,
     10: _cas_10_calcul_trivial,
+    11: _cas_resultat_attendu,
+    13: _cas_resultat_attendu,
     15: _cas_15_affirmation_fausse,
 }
 
