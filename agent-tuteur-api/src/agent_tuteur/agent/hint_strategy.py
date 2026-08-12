@@ -79,8 +79,24 @@ def diagnose_hint_level(
     question: str,
     frustration_score: float = 0.0,
     repetitions: int = 0,
+    *,
+    calcul_trivial: bool = False,
 ) -> HintDecision:
-    """Décide du niveau d'indice selon la politique de transition."""
+    """Décide du niveau d'indice selon la politique de transition.
+
+    ``calcul_trivial`` court-circuite la graduation : sur « 1-1=? » il n'y a
+    rien à faire découvrir, et la règle « question courte → niveau 0 » se
+    retourne contre l'élève. Une expression numérique nue est courte *et*
+    parfaitement précise — c'est le cas QA #10, où la brièveté avait été lue
+    comme du flou.
+    """
+    if calcul_trivial:
+        return HintDecision(
+            level=4,
+            label=HINT_LABELS[4],
+            instruction=HINT_INSTRUCTIONS[4],
+            reason="calcul numérique trivial",
+        )
     if wants_direct_correction(question):
         return HintDecision(
             level=4,
