@@ -54,10 +54,48 @@ def _cas_01_derivee(resultat, cas) -> None:
     assert sympy.simplify(sympy.sympify(calcule) - sympy.sympify("3*x**2 - 3")) == 0
 
 
+# --- Cas 8 — Série fabriquée faute de déclaration -----------------------------
+def _cas_08_serie(resultat, cas) -> None:
+    """« je suis en classe de terminale » (Mohamed FAYE).
+
+    Rejoué **sans profil de compte** (cf. ``CONTEXTES``) : c'est la situation du
+    cas. Règle non-négociable n°3 — une absence de série reste une absence.
+    """
+    assertions.assert_serie_effective(resultat, None)
+
+
+# --- Cas 10 — Calcul trivial noyé sous la posture socratique ------------------
+def _cas_10_calcul_trivial(resultat, cas) -> None:
+    """« 1-1=? » (Rafiatou). Résultat vérifié *et* posture proportionnée."""
+    assert resultat.trace["tool_used"] == "sympy_calculator"
+    assert resultat.trace["tool_result"].split("→")[-1].strip() == "0"
+    assert resultat.trace["hint_level"] == 4
+    assert resultat.trace["hint_reason"] == "calcul numérique trivial"
+
+
+# --- Cas 15 — Affirmation fausse de l'élève laissée passer --------------------
+def _cas_15_affirmation_fausse(resultat, cas) -> None:
+    """« La dérivée de ln(x) c'est bien 1/x² non ? » (Tony SARRE)."""
+    affirmation = resultat.trace["affirmation_eleve"]
+    assert affirmation is not None, "aucun verdict sur l'affirmation de l'élève"
+    assert affirmation["correcte"] is False
+    assert affirmation["attendu"] == "1/x"
+    assert resultat.trace["calcul_non_verifie"] is False
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
     3: _cas_meta,
     4: _cas_meta,
     7: _cas_07_detresse,
+    8: _cas_08_serie,
+    10: _cas_10_calcul_trivial,
+    15: _cas_15_affirmation_fausse,
 }
+
+#: Contexte curriculaire du rejeu, quand le cas exige autre chose que le défaut.
+#: Le cas 8 se joue **sans profil de compte** : c'est sa situation d'origine, et
+#: un profil rendrait l'assertion vide de sens.
+CONTEXTE_DEFAUT = {"serie": "S2"}
+CONTEXTES: dict[int, dict] = {8: {}}

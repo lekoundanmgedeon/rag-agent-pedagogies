@@ -79,5 +79,19 @@ def tous_les_cas() -> list[CasQA]:
     return _charger("qa_cases_all.json")
 
 
+def cas_par_priorite(priorite: str) -> list[CasQA]:
+    """Sous-ensemble du backlog pour un sprint (cf. CLAUDE.md, « Ordre de traitement »).
+
+    Le filtre porte sur le JSON et non sur une liste d'``id`` recopiée dans les
+    tests : un cas ajouté ou repriorisé dans le backlog entre donc dans le rejeu
+    du sprint correspondant sans qu'on ait à y penser.
+    """
+    return [cas for cas in tous_les_cas() if cas.priority == priorite]
+
+
+def cas_hauts() -> list[CasQA]:
+    return cas_par_priorite("Haute")
+
+
 def par_id(cas: list[CasQA]) -> dict[int, CasQA]:
     return {c.id: c for c in cas}
