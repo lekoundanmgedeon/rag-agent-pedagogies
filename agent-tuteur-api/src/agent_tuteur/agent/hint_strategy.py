@@ -75,12 +75,68 @@ def wants_direct_correction(question: str) -> bool:
     return bool(_EXPLICIT_CORRECTION.search(question))
 
 
+def escalade_pour_resultat_verifie(
+    decision: HintDecision, *, resultat_verifie: bool, demande_concrete: bool
+) -> HintDecision:
+    """Interdit au prompt de se contredire (cas QA #11 et #13).
+
+    ``diagnose_hint_level`` tranche **avant** que l'outil symbolique ait tourné
+    (``diagnose_hint_level`` → ``route_tool`` dans le graphe) : il décide donc
+    sans savoir qu'un résultat sera vérifié. Le prompt assemblé portait alors
+    les deux consignes à la fois ::
+
+        Résultat vérifié par l'outil de calcul : x**2 - 5x + 6 = 0 → [2, 3]
+        Niveau d'indice : 1 (Rappel de notion).
+        Consigne : Rappelle la règle […] SANS l'appliquer au cas de l'élève.
+
+    L'élève recevait la méthode sans les racines — le reproche exact des deux
+    testeurs. La contradiction n'est pas propre à ces deux prompts : elle se
+    reproduit pour toute demande de résultat que l'outil sait trancher, ce qui
+    en fait un invariant d'assemblage plutôt qu'un correctif de cas.
+
+    Les **deux** conditions sont nécessaires. ``resultat_verifie`` seul ne
+    suffit pas : c'est ``demande_concrete`` qui distingue « Résous x²−5x+6=0 »
+    d'une question de méthode. Et ``demande_concrete`` seul ne suffit pas :
+    c'est l'existence d'un résultat vérifié qui protège les fixtures positives
+    #53 (« Donne-moi juste la réponse, j'ai pas le temps ») et #60 (« Fais mon
+    devoir à ma place »), où l'outil n'a rien à calculer — aucune expression
+    n'y est soumise, donc aucune escalade ne peut les atteindre.
+
+    Une décision déjà au niveau maximal est rendue telle quelle, pour ne pas
+    effacer un motif plus précis (« calcul numérique trivial », cas #10).
+    """
+    if not (resultat_verifie and demande_concrete) or decision.level >= MAX_LEVEL:
+        return decision
+    return HintDecision(
+        level=MAX_LEVEL,
+        label=HINT_LABELS[MAX_LEVEL],
+        instruction=HINT_INSTRUCTIONS[MAX_LEVEL],
+        reason="résultat vérifié et explicitement demandé",
+    )
+
+
 def diagnose_hint_level(
     question: str,
     frustration_score: float = 0.0,
     repetitions: int = 0,
+    *,
+    calcul_trivial: bool = False,
 ) -> HintDecision:
-    """Décide du niveau d'indice selon la politique de transition."""
+    """Décide du niveau d'indice selon la politique de transition.
+
+    ``calcul_trivial`` court-circuite la graduation : sur « 1-1=? » il n'y a
+    rien à faire découvrir, et la règle « question courte → niveau 0 » se
+    retourne contre l'élève. Une expression numérique nue est courte *et*
+    parfaitement précise — c'est le cas QA #10, où la brièveté avait été lue
+    comme du flou.
+    """
+    if calcul_trivial:
+        return HintDecision(
+            level=4,
+            label=HINT_LABELS[4],
+            instruction=HINT_INSTRUCTIONS[4],
+            reason="calcul numérique trivial",
+        )
     if wants_direct_correction(question):
         return HintDecision(
             level=4,

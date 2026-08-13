@@ -136,6 +136,131 @@ AVERTISSEMENT_CALCUL_NON_VERIFIE = (
 )
 
 
+#: Injectée quand l'élève signale que l'explication a déjà été donnée (cas QA
+#: #20). Monter d'un cran dans la graduation socratique ne suffit pas : le
+#: reproche du testeur ne portait pas sur le *niveau* de l'explication mais sur
+#: sa **forme**, restée identique aux trois précédentes. La consigne nomme donc
+#: des registres alternatifs plutôt que de demander vaguement « autre chose ».
+CONSIGNE_VARIATION_APPROCHE = (
+    "ATTENTION : l'élève signale que cette explication lui a déjà été donnée et "
+    "qu'elle ne passe pas. Ne la reformule PAS dans les mêmes termes — répéter "
+    "le même angle une fois de plus est précisément ce qu'il te reproche. Change "
+    "de registre : pars d'un exemple numérique concret, ou décompose en étapes "
+    "élémentaires vérifiables une par une, ou propose une analogie, ou décris la "
+    "situation géométriquement. Commence par reconnaître que ton explication "
+    "précédente n'a pas fonctionné, puis demande-lui quel point précis bloque."
+)
+
+
+def consigne_etude_de_fonction(etude: dict) -> str:
+    """Consigne d'étude de fonction, adossée aux résultats SymPy (cas QA #9).
+
+    Deux exigences tenues ensemble, et c'est leur conjonction qui fait la
+    consigne. D'une part le livrable doit être **complet et direct** : l'élève
+    demandait une étude et recevait une relance socratique. D'autre part les
+    valeurs sont **déjà vérifiées** et ne doivent pas être recalculées par le
+    modèle — les recalculer, c'est rouvrir la porte au résultat faux annoncé
+    avec assurance que la règle n°2 interdit.
+
+    Les champs absents (SymPy n'a pas conclu) ne sont simplement pas listés :
+    le modèle n'a alors rien à en dire, ce qui vaut mieux qu'une approximation.
+    """
+    lignes = [
+        "L'élève demande une ÉTUDE DE FONCTION. Voici les éléments établis par "
+        f"l'outil de calcul symbolique pour f(x) = {etude['expression']} — ils sont "
+        "vérifiés : reprends-les tels quels, ne les recalcule pas."
+    ]
+    lignes.append(f"- Domaine de définition : {etude['domaine']}")
+    lignes.append(f"- Dérivée : f'(x) = {etude['derivee']}")
+    if etude.get("limites"):
+        limites = " ; ".join(f"lim en {borne} = {valeur}" for borne, valeur in etude["limites"])
+        lignes.append(f"- Limites aux bornes : {limites}")
+    if etude.get("variations"):
+        variations = " ; ".join(
+            f"{sens} sur {intervalle}" for intervalle, sens in etude["variations"]
+        )
+        lignes.append(f"- Sens de variation : {variations}")
+    lignes.append(
+        "Rédige l'étude complète dans cet ordre : domaine, limites aux bornes, "
+        "dérivée et son signe, puis tableau de variation. Donne-la DIRECTEMENT et "
+        "en entier — ne commence pas par une question, ne demande pas à l'élève de "
+        "retrouver le domaine ou la dérivée. Tu peux terminer par une question "
+        "d'approfondissement, une fois l'étude fournie."
+    )
+    return "\n".join(lignes)
+
+
+def consigne_complexe(analyse: dict) -> str:
+    """Éléments vérifiés d'un nombre complexe défini par l'énoncé (cas QA #6).
+
+    Même contrat que :func:`consigne_etude_de_fonction` : les valeurs sont
+    établies par SymPy et ne doivent pas être recalculées. La différence tient
+    à ce qui était en jeu — ici l'agent disposait des bons extraits de cours et
+    s'interdisait quand même tout résultat, faute d'avoir pu vérifier quoi que
+    ce soit sur une expression où ``i`` n'était pas l'unité imaginaire.
+    """
+    nom = analyse["nom"]
+    lignes = [
+        f"L'élève travaille sur le nombre complexe {nom} = {analyse['forme']}. "
+        "Les éléments suivants sont établis par l'outil de calcul symbolique — "
+        "ils sont vérifiés : reprends-les tels quels, ne les recalcule pas.",
+        f"- Partie réelle : Re({nom}) = {analyse['partie_reelle']}",
+        f"- Partie imaginaire : Im({nom}) = {analyse['partie_imaginaire']}",
+        f"- Conjugué : {nom}̄ = {analyse['conjugue']}",
+        f"- Module : |{nom}| = {analyse['module']}",
+    ]
+    if analyse.get("argument"):
+        lignes.append(f"- Argument : arg({nom}) = {analyse['argument']} (modulo 2π)")
+    lignes.append(
+        "Réponds à chaque question posée par l'énoncé, en t'appuyant sur ces "
+        "valeurs et en expliquant la méthode qui y mène. Note que « I » est "
+        "l'écriture de l'outil pour l'unité imaginaire : écris « i » à l'élève."
+    )
+    return "\n".join(lignes)
+
+
+def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, attendu: str) -> str:
+    """Consigne de correction d'une affirmation fausse de l'élève (cas QA #15).
+
+    Le texte porte le résultat **déjà vérifié symboliquement** : le modèle n'a
+    donc rien à recalculer, seulement à corriger explicitement. Laisser la
+    correction à sa charge, c'est risquer qu'il valide l'erreur — ce qui est
+    exactement ce que le testeur a observé.
+    """
+    return (
+        f"ATTENTION : l'élève affirme que la {operation} de {sujet} est {affirme}. "
+        f"C'est FAUX — la vérification symbolique donne {attendu}. Tu dois corriger "
+        "cette erreur explicitement et sans détour, avant toute autre chose : dis "
+        "clairement que ce n'est pas le bon résultat, donne le résultat correct, puis "
+        "explique brièvement d'où vient la confusion. Ne réponds surtout pas par une "
+        "question ouverte qui laisserait l'élève croire qu'il avait raison."
+    )
+
+
+#: Consigne posée quand la recherche n'a remonté aucun extrait — soit le seuil
+#: de pertinence les a tous écartés, soit le corpus ne couvre pas le cadre
+#: demandé (cas QA #5).
+#:
+#: Le repli **divulgue puis aide** (décision D6) : taire l'absence de cours
+#: laisserait croire à l'élève que la réponse s'appuie sur son programme, et
+#: refuser tout net dégraderait des comportements déjà validés — les fixtures
+#: positives #54 et #55 portent sur des dérivées, absentes des chapitres
+#: indexés, et leur comportement confirmé est une réponse correcte.
+#:
+#: L'interdiction d'inventer reste entière : elle est portée par la vérification
+#: symbolique et par :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE`, pas par le
+#: silence.
+CONSIGNE_HORS_PERIMETRE = (
+    "AUCUN extrait de cours ne correspond à cette question : ce point n'est pas "
+    "couvert par les chapitres dont tu disposes. Dis-le à l'élève simplement et "
+    "sans détour, en une phrase et sans t'excuser longuement — il doit savoir "
+    "que ce qui suit ne vient pas de son programme. Puis aide-le quand même "
+    "avec ce que tu sais, en restant prudent. N'invente AUCUNE référence à une "
+    "leçon, à un chapitre ou à un cours que tu aurais consulté, et ne prétends "
+    "pas que cette notion figure au programme."
+)
+
+
 def assemble_prompt(
     question: str,
     hint: HintDecision,
@@ -145,6 +270,10 @@ def assemble_prompt(
     conversation_history: list[dict[str, str]] | None = None,
     *,
     calcul_non_verifie: bool = False,
+    correction_affirmation: str | None = None,
+    varier_approche: bool = False,
+    etude_fonction: str | None = None,
+    complexe: str | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
@@ -154,6 +283,11 @@ def assemble_prompt(
 
     ``calcul_non_verifie`` vient de ``route_tool`` : à vrai, l'interdiction
     :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE` est ajoutée au prompt.
+
+    ``varier_approche`` vient de ``detect_frustration`` : à vrai, la consigne
+    :data:`CONSIGNE_VARIATION_APPROCHE` est ajoutée **avant** la consigne
+    d'indice, qu'elle contraint sans la remplacer — le niveau reste la
+    graduation socratique, la variation porte sur la forme.
     """
     ctx = curriculum_context or {}
     scope = ", ".join(
@@ -170,16 +304,86 @@ def assemble_prompt(
         "Documentation de cours (usage interne, invisible pour l'élève) :\n"
         + build_context_block(retrieved)
     )
+    # Juste après le bloc d'extraits, dont elle explique le vide.
+    if not retrieved:
+        parts.append(CONSIGNE_HORS_PERIMETRE)
     if tool_result:
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
     if calcul_non_verifie:
         parts.append(AVERTISSEMENT_CALCUL_NON_VERIFIE)
+    # Placée après le résultat d'outil et avant la consigne d'indice : corriger
+    # une erreur de l'élève prime sur la graduation socratique (cas QA #15).
+    if correction_affirmation:
+        parts.append(correction_affirmation)
+    if varier_approche:
+        parts.append(CONSIGNE_VARIATION_APPROCHE)
+    # Placée juste avant la consigne d'indice, qu'elle précise : l'étude est le
+    # livrable, la graduation ne règle plus que le ton (cas QA #9).
+    if etude_fonction:
+        parts.append(etude_fonction)
+    if complexe:
+        parts.append(complexe)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )
     parts.append(f"Question de l'élève : {question}")
 
     return SYSTEM_PERSONA, "\n\n".join(parts)
+
+
+#: Consigne d'accueil (cas QA #38 et #41). Nommer ce qu'il ne faut PAS faire est
+#: ici aussi utile que l'inverse : les deux testeurs ont reçu, l'un une question
+#: de vérification de compréhension, l'autre une reformulation générique — deux
+#: façons de répondre à un bonsoir par un exercice.
+CONSIGNE_ACCUEIL = (
+    "L'élève te salue, sans rien demander d'autre. Réponds d'abord à la "
+    "salutation, simplement et chaleureusement, en une phrase. Présente-toi en "
+    "une ligne, puis propose les chapitres ci-dessus et demande-lui sur quoi il "
+    "veut travailler. N'enchaîne PAS sur une question de vérification de "
+    "compréhension, ne reformule PAS sa salutation, et ne lance aucun exercice : "
+    "il n'a encore rien demandé."
+)
+
+
+def assemble_accueil_prompt(
+    question: str,
+    catalogue: list[str],
+    curriculum_context: dict | None = None,
+) -> tuple[str, str]:
+    """Retourne ``(system_prompt, user_prompt)`` pour une **salutation seule**.
+
+    Même ancrage que le tour méta, et pour la même raison : proposer des
+    chapitres suppose de savoir lesquels existent. Les lire dans le store plutôt
+    que de les laisser au modèle évite d'accueillir un élève en lui proposant un
+    chapitre absent — ce que le cas #28 reproche précisément à l'écran d'accueil.
+
+    Aucun historique n'est réinjecté : une salutation ouvre un échange, et lui
+    adjoindre le fil précédent inviterait à évoquer un passé que l'élève n'a pas
+    convoqué (règle non-négociable n°3).
+    """
+    ctx = curriculum_context or {}
+    parts: list[str] = []
+
+    if catalogue:
+        parts.append(
+            "Chapitres réellement disponibles dans ta documentation "
+            f"({len(catalogue)}) :\n" + "\n".join(f"- {c}" for c in catalogue)
+        )
+    else:
+        parts.append(
+            "Ta documentation ne contient actuellement AUCUN chapitre indexé. "
+            "Accueille l'élève et dis-le franchement au lieu d'en citer un."
+        )
+
+    declare = ", ".join(
+        f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
+    )
+    if declare:
+        parts.append(f"Cadre déclaré par l'élève (ne rien supposer au-delà) : {declare}.")
+
+    parts.append(CONSIGNE_ACCUEIL)
+    parts.append(f"Message de l'élève : {question}")
+    return SYSTEM_PERSONA_META, "\n\n".join(parts)
 
 
 def assemble_meta_prompt(

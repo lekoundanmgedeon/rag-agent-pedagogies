@@ -37,8 +37,8 @@ seule la façon de lancer l'infrastructure et les processus change.
 (historique, qui fait encore tourner le déploiement). Les commandes ci-dessus
 lancent le **Vue** ; pour le Next.js, voir [§4.3](#43--quel-frontend--deux-coexistent).
 
-Pour une **démo publique hébergée** (mono-conteneur SPA + API, sans worker ni
-Qdrant), voir [`DEPLOIEMENT_RENDER.md`](DEPLOIEMENT_RENDER.md).
+Pour une **mise en ligne** (VPS ou cloud, pile complète avec worker et
+Qdrant), voir [`DEPLOIEMENT_TEST.md`](DEPLOIEMENT_TEST.md).
 
 ---
 

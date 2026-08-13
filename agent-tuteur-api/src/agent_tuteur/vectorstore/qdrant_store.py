@@ -44,12 +44,41 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
         self._rrf_k = rrf_k
         self._ensure_collection()
 
+    def _verifier_dimension(self) -> None:
+        """Refuse de servir une collection dont la dimension dense a changé.
+
+        Changer d'embedder change la dimension (« light » 256 → BGE-M3 1024).
+        Sans ce contrôle, ``_ensure_collection`` voyait la collection présente,
+        sortait, et l'application démarrait sur un index inutilisable : les
+        vecteurs déjà stockés répondent encore aux recherches mais dans un
+        espace qui n'a plus rien à voir avec celui des requêtes. Les résultats
+        restent plausibles — c'est le pire des cas de figure, une dérive
+        silencieuse plutôt qu'une panne.
+
+        On échoue donc au démarrage, avec la marche à suivre. Recréer la
+        collection à la volée serait pire : cela effacerait un index de
+        production sur un simple changement de variable d'environnement.
+        """
+        info = self._client.get_collection(self._collection)
+        vecteurs = info.config.params.vectors or {}
+        params = vecteurs.get(self.DENSE) if isinstance(vecteurs, dict) else None
+        if params is None or params.size == self._dense_dim:
+            return
+        raise RuntimeError(
+            f"La collection Qdrant « {self._collection} » est en {params.size} dimensions, "
+            f"l'embedder courant en produit {self._dense_dim}. L'index existant est "
+            "inutilisable tel quel. Recréez-le explicitement — supprimez la collection "
+            "puis relancez l'ingestion du corpus — ou pointez QDRANT_COLLECTION sur un "
+            "nouveau nom pour conserver l'ancien index le temps de la bascule."
+        )
+
     def _ensure_collection(self) -> None:
         from qdrant_client import models as qm
         from qdrant_client.http.exceptions import UnexpectedResponse
 
         existing = {c.name for c in self._client.get_collections().collections}
         if self._collection in existing:
+            self._verifier_dimension()
             return
         try:
             self._client.create_collection(
@@ -175,6 +204,9 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
             limit=top_k,
             with_payload=True,
         )
+        cosinus = self._cosinus_par_point(
+            [point.id for point in response.points], query, qfilter
+        )
         results: list[ScoredChunk] = []
         for point in response.points:
             payload = dict(point.payload or {})
@@ -186,9 +218,48 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
                 ScoredChunk(
                     chunk=Chunk(id=chunk_id, text=text, metadata=metadata),
                     score=round(float(point.score), 6),
+                    dense_score=cosinus.get(point.id),
                 )
             )
         return results
+
+    def _cosinus_par_point(self, point_ids: list, query: Embedding, qfilter) -> dict:
+        """Similarité cosinus dense, par identifiant de point.
+
+        ``score`` ne peut pas servir de mesure de pertinence : la fusion RRF
+        est fondée sur les **rangs** (~1/(k+rang)), si bien qu'un résultat sans
+        aucun rapport avec le corpus obtient un score voisin d'un résultat
+        parfaitement pertinent — mesuré sur ce dépôt, un hors-périmètre à 0,0325
+        au-dessus d'un témoin dans le périmètre à 0,0318. Aucun seuil ne peut
+        être posé là-dessus (cas QA #5).
+
+        On rappelle donc le **cosinus**, borné et interprétable, par une seconde
+        requête dense pure. Elle est restreinte aux identifiants déjà retenus :
+        le coût est un aller-retour, pas un second classement, et chaque chunk
+        rendu porte son cosinus exact plutôt qu'une valeur approchée par une
+        fenêtre de candidats.
+
+        Un identifiant absent de la réponse reçoit ``None`` et non ``0.0`` :
+        « inconnu » et « orthogonal » sont deux choses différentes, et les
+        confondre ferait rejeter à tort un chunk par un futur seuil.
+        """
+        if not point_ids:
+            return {}
+        from qdrant_client import models as qm
+
+        conditions = [qm.HasIdCondition(has_id=list(point_ids))]
+        filtre = qm.Filter(must=conditions)
+        if qfilter is not None:
+            filtre = qm.Filter(must=[*conditions, qfilter])
+        reponse = self._client.query_points(
+            collection_name=self._collection,
+            query=query.dense.tolist(),
+            using=self.DENSE,
+            filter=filtre,
+            limit=len(point_ids),
+            with_payload=False,
+        )
+        return {p.id: round(float(p.score), 6) for p in reponse.points}
 
     def delete_by_source(self, source_document: str) -> int:
         from qdrant_client import models as qm

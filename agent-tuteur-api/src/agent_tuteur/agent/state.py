@@ -65,12 +65,28 @@ class AgentState(TypedDict, total=False):
     #: des TD et exercices ? Quand c'est faux, le prompt interdit explicitement
     #: d'inventer le cours manquant (cf. ``prompt.assemble_course_prompt``).
     has_course: bool
+    #: Aucun extrait n'a survécu à la recherche : soit le seuil de pertinence a
+    #: tout écarté, soit le cadre curriculaire ne couvre pas le sujet. Le prompt
+    #: fait alors dire à l'agent qu'il n'a pas ce chapitre, au lieu de répondre
+    #: sur des extraits étrangers (cas QA #5, règle non-négociable n°4).
+    hors_perimetre: bool
     frustration_score: float
     repetitions: int
     markers: int
+    #: L'élève a signalé lui-même que l'explication a déjà été donnée. Distinct
+    #: de ``repetitions``, qui est observé par comparaison des questions
+    #: récentes : ici c'est l'élève qui l'énonce (cas QA #20).
+    blocage_declare: bool
     hint_level: int
     hint_label: str
     hint_reason: str
+    #: Étude de fonction vérifiée par SymPy (domaine, dérivée, limites,
+    #: variations), quand l'élève en a demandé une. ``None`` sinon — y compris
+    #: quand la demande était bien une étude mais que rien n'a pu être établi :
+    #: on ne remplit pas le vide (cas QA #9, règle n°2).
+    etude_fonction: dict | None
+    #: Éléments vérifiés d'un nombre complexe défini par l'énoncé (cas QA #6).
+    complexe: dict | None
     tool_used: str | None
     tool_result: str | None
     #: Le résultat seul (sans « expression → »), pour le contrôle de fidélité
@@ -80,6 +96,13 @@ class AgentState(TypedDict, total=False):
     #: pas pu vérifier. Le prompt interdit alors d'annoncer un résultat plutôt
     #: que de laisser le modèle en inventer un (règle non-négociable n°2).
     calcul_non_verifie: bool
+    #: Verdict symbolique sur une affirmation mathématique de l'élève
+    #: ({"operation", "sujet", "affirme", "attendu", "correcte"}), ou ``None``
+    #: si rien de vérifiable n'a été détecté. Quand l'affirmation est fausse, le
+    #: prompt impose une correction explicite (cas QA #15) : ne rien dire
+    #: laisserait l'erreur s'installer, et la réfuter sans vérification
+    #: violerait la règle n°2.
+    affirmation_eleve: dict[str, Any] | None
     moderation_flagged: bool
     #: Position dans le cours calculée par course_planner ({"chapitre", "section_index",
     #: "section_key", "section_title", "reason", "chapitre_confirmed", "alternatives",

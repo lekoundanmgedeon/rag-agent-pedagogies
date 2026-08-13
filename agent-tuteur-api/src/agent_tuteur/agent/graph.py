@@ -45,9 +45,13 @@ from langgraph.graph import END, START, StateGraph
 
 from agent_tuteur.agent.course_plan import (
     CoursePosition,
+    Section,
     advance,
     plan_titles,
     resolve_chapitre,
+    sources_absentes,
+    texte_releve_de_la_section,
+    titre_de_section,
 )
 from agent_tuteur.agent.frustration import SessionState, detect_frustration
 from agent_tuteur.agent.guardrails import clamp_hint_level, moderate, sanitize
@@ -56,16 +60,22 @@ from agent_tuteur.agent.hint_strategy import (
     HINT_LABELS,
     HintDecision,
     diagnose_hint_level,
+    escalade_pour_resultat_verifie,
 )
 from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
+from agent_tuteur.agent.profil import detecter_serie, serie_effective
 from agent_tuteur.agent.prompt import (
     SYSTEM_PERSONA_QUIZ,
+    assemble_accueil_prompt,
     assemble_course_prompt,
     assemble_meta_prompt,
     assemble_prompt,
     build_context_block,
+    consigne_complexe,
+    consigne_correction_affirmation,
+    consigne_etude_de_fonction,
 )
 from agent_tuteur.agent.quiz import (
     Quiz,
@@ -78,10 +88,14 @@ from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
+from agent_tuteur.tools.affirmation import verifier_affirmation
+from agent_tuteur.tools.complexe import analyser_la_demande as analyser_complexe_demande
+from agent_tuteur.tools.etude_fonction import etudier_la_demande
 from agent_tuteur.tools.calculator import (
     CalculationError,
     compute,
     demande_un_calcul_concret,
+    est_un_calcul_trivial,
     looks_like_calculation,
 )
 from agent_tuteur.vectorstore.retriever import HybridRetriever
@@ -311,6 +325,46 @@ class TutorAgent:
         }
 
     # ------------------------------------------------------------------ nœuds
+    @_timed_node("profil_eleve")
+    async def _n_profil_eleve(self, state: AgentState) -> dict:
+        """Résout la série applicable au tour — cas QA #8.
+
+        Placé **avant** ``detect_intent``, donc en amont du retrieval et de
+        tous les assembleurs de prompt : la série sert de filtre de recherche
+        autant que de cadre annoncé à l'élève, et les deux doivent voir la même
+        valeur. Le corriger plus bas laisserait la recherche tourner sur
+        l'ancienne série.
+
+        Une déclaration explicite écrase immédiatement l'état antérieur et la
+        série du profil, pour tout le reste de la session (règle n°5). En
+        l'absence de déclaration comme d'un profil, rien n'est écrit : le tour
+        se déroule sans série plutôt qu'avec une série devinée (règle n°3).
+        """
+        session = state.get("session") or SessionState()
+        contexte = dict(state.get("curriculum_context", {}))
+
+        declaree = detecter_serie(state["question"])
+        if declaree is not None:
+            session.serie = declaree
+
+        effective = serie_effective(session.serie, contexte)
+        if effective is not None:
+            contexte["serie"] = effective
+        else:
+            # Aucune source fiable : on retire la clé plutôt que de la laisser
+            # vide, pour que les assembleurs de prompt n'annoncent aucun cadre.
+            contexte.pop("serie", None)
+
+        return {
+            "curriculum_context": contexte,
+            "node_trace": [{
+                "node": "profil_eleve",
+                "serie_declaree": declaree,
+                "serie_effective": effective,
+                "corrigee_par_eleve": session.serie is not None,
+            }],
+        }
+
     @_timed_node("detect_intent")
     async def _n_detect_intent(self, state: AgentState) -> dict:
         in_course = bool(state.get("course_state"))
@@ -338,18 +392,30 @@ class TutorAgent:
             return {
                 "retrieved": resultats.tous(),
                 "has_course": resultats.a_du_cours,
+                "hors_perimetre": not resultats.tous(),
                 "node_trace": [{
                     "node": "retrieve_context",
                     "n_sources": len(resultats.tous()),
                     "n_course": len(resultats.cours),
                     "has_course": resultats.a_du_cours,
+                    "hors_perimetre": not resultats.tous(),
                 }],
             }
 
         retrieved = self._retriever.retrieve(query, context, top_k=self._top_k)
         return {
             "retrieved": retrieved,
-            "node_trace": [{"node": "retrieve_context", "n_sources": len(retrieved)}],
+            # Le corpus n'a rien à dire sur cette question : soit aucun extrait
+            # n'a passé le seuil de pertinence, soit le cadre curriculaire ne
+            # couvre pas le sujet. Pour l'élève, les deux se disent pareil — il
+            # faut l'avouer plutôt que répondre sur des extraits étrangers
+            # (cas QA #5, règle non-négociable n°4).
+            "hors_perimetre": not retrieved,
+            "node_trace": [{
+                "node": "retrieve_context",
+                "n_sources": len(retrieved),
+                "hors_perimetre": not retrieved,
+            }],
         }
 
     @_timed_node("detect_frustration")
@@ -361,13 +427,20 @@ class TutorAgent:
             "frustration_score": signal.score,
             "repetitions": signal.repetitions,
             "markers": signal.markers,
-            "node_trace": [{"node": "detect_frustration", "score": signal.score}],
+            "blocage_declare": signal.blocage_declare,
+            "node_trace": [
+                {"node": "detect_frustration", "score": signal.score,
+                 "blocage_declare": signal.blocage_declare}
+            ],
         }
 
     @_timed_node("diagnose_hint_level")
     async def _n_hint(self, state: AgentState) -> dict:
         decision = diagnose_hint_level(
-            state["question"], state.get("frustration_score", 0.0), state.get("repetitions", 0)
+            state["question"],
+            state.get("frustration_score", 0.0),
+            state.get("repetitions", 0),
+            calcul_trivial=est_un_calcul_trivial(state["question"]),
         )
         return {
             "hint_level": decision.level,
@@ -403,14 +476,87 @@ class TutorAgent:
                 tool_result_brut = res.result
             except CalculationError:
                 calcul_non_verifie = demande_un_calcul_concret(question)
+
+        # Trajet inverse de la vérification ci-dessus : ce n'est plus ce que
+        # l'agent s'apprête à dire qu'on contrôle, mais ce que l'élève vient
+        # d'affirmer (cas QA #15). Indépendant de ``looks_like_calculation`` :
+        # « la dérivée de ln(x) c'est bien 1/x² non ? » est une demande de
+        # confirmation, pas une demande de calcul.
+        verdict = verifier_affirmation(question)
+        affirmation = None
+        if verdict is not None:
+            # Le contenu mathématique du tour A été vérifié symboliquement, même
+            # si ``compute`` a renoncé : la phrase n'est pas une demande de
+            # calcul, c'est une demande de confirmation. Laisser
+            # ``calcul_non_verifie`` à vrai mettrait dans le prompt deux
+            # consignes contradictoires — « n'annonce aucun résultat » et
+            # « donne le résultat correct » — et la première ferait taire la
+            # correction que le cas #15 exige précisément.
+            calcul_non_verifie = False
+            affirmation = {
+                "operation": verdict.operation,
+                "sujet": verdict.sujet,
+                "affirme": verdict.affirme,
+                "attendu": verdict.attendu,
+                "correcte": verdict.correcte,
+            }
+            if verdict.a_corriger:
+                log_event(
+                    _logger, "affirmation:erreur_eleve", trace_id=state.get("trace_id"),
+                    operation=verdict.operation, affirme=verdict.affirme, attendu=verdict.attendu,
+                )
+        # Troisième usage du calcul symbolique dans ce nœud, après la
+        # vérification d'un calcul demandé et celle d'une affirmation de
+        # l'élève : établir une étude de fonction complète. Le corpus ne peut
+        # pas la fournir (aucune leçon indexée sur l'étude des fonctions), et la
+        # laisser au modèle violerait la règle n°2 — elle est donc calculée.
+        etude = etudier_la_demande(question)
+        etude_fonction = None
+        if etude is not None:
+            etude_fonction = {
+                "expression": etude.expression,
+                "domaine": etude.domaine,
+                "derivee": etude.derivee,
+                "limites": [list(couple) for couple in etude.limites],
+                "variations": [list(couple) for couple in etude.variations],
+            }
+            # Même raison qu'au verdict d'affirmation ci-dessus : le contenu
+            # mathématique du tour A été vérifié. Garder l'avertissement
+            # armé interdirait d'annoncer l'étude qu'on vient d'établir.
+            calcul_non_verifie = False
+
+        # Quatrième usage du calcul symbolique de ce nœud. Sans lui, l'exercice
+        # le plus basique du chapitre le mieux couvert (« z = 3 + 4i ») armait
+        # calcul_non_verifie : `i` n'étant pas l'unité imaginaire, `compute`
+        # échouait et le prompt interdisait d'annoncer le moindre résultat.
+        analyse = analyser_complexe_demande(question)
+        complexe = None
+        if analyse is not None:
+            complexe = {
+                "nom": analyse.nom,
+                "forme": analyse.forme,
+                "partie_reelle": analyse.partie_reelle,
+                "partie_imaginaire": analyse.partie_imaginaire,
+                "conjugue": analyse.conjugue,
+                "module": analyse.module,
+                "argument": analyse.argument,
+            }
+            calcul_non_verifie = False
+
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
             "tool_result_brut": tool_result_brut,
             "calcul_non_verifie": calcul_non_verifie,
+            "affirmation_eleve": affirmation,
+            "etude_fonction": etude_fonction,
+            "complexe": complexe,
             "node_trace": [
                 {"node": "route_tool", "tool_used": tool_used,
-                 "calcul_non_verifie": calcul_non_verifie}
+                 "calcul_non_verifie": calcul_non_verifie,
+                 "etude_fonction": etude_fonction is not None,
+                 "complexe": complexe is not None,
+                 "affirmation_correcte": None if affirmation is None else affirmation["correcte"]}
             ],
         }
 
@@ -428,10 +574,40 @@ class TutorAgent:
             instruction=HINT_INSTRUCTIONS[level],
             reason=state.get("hint_reason", ""),
         )
+        # Le niveau a été décidé deux nœuds plus tôt, avant que l'outil ait
+        # tourné. C'est ici — et seulement ici — qu'on sait *à la fois* quelle
+        # consigne va partir et si un résultat vérifié l'accompagne : le seul
+        # endroit où la contradiction des cas #11 et #13 est visible.
+        decision = escalade_pour_resultat_verifie(
+            decision,
+            resultat_verifie=state.get("tool_result") is not None,
+            demande_concrete=demande_un_calcul_concret(question),
+        )
+        etude = state.get("etude_fonction")
+        complexe = state.get("complexe")
+        # Une étude de fonction est un livrable, pas un indice : la même
+        # contradiction que pour les cas #11/#13 s'y appliquait, en plus large.
+        if etude:
+            decision = escalade_pour_resultat_verifie(
+                decision, resultat_verifie=True, demande_concrete=True
+            )
+        level = decision.level
+        affirmation = state.get("affirmation_eleve")
+        correction = None
+        if affirmation is not None and not affirmation["correcte"]:
+            correction = consigne_correction_affirmation(
+                affirmation["operation"], affirmation["sujet"],
+                affirmation["affirme"], affirmation["attendu"],
+            )
+        varier_approche = bool(state.get("blocage_declare"))
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
             calcul_non_verifie=bool(state.get("calcul_non_verifie")),
+            correction_affirmation=correction,
+            varier_approche=varier_approche,
+            etude_fonction=consigne_etude_de_fonction(etude) if etude else None,
+            complexe=consigne_complexe(complexe) if complexe else None,
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -443,11 +619,16 @@ class TutorAgent:
             "hint_label": HINT_LABELS[level],
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
+            "blocage_declare": varier_approche,
+            "etude_fonction": etude,
+            "complexe": complexe,
             "tool_used": state.get("tool_used"),
             "tool_result": state.get("tool_result"),
             "calcul_non_verifie": bool(state.get("calcul_non_verifie")),
+            "affirmation_eleve": affirmation,
             "competence": competence,
             "course": None,
+            "hors_perimetre": bool(state.get("hors_perimetre")),
             "sources": _sources_payload(retrieved),
             "scores": [sc.score for sc in retrieved],
         }
@@ -498,6 +679,42 @@ class TutorAgent:
             "node_trace": [{"node": "guardrail_meta", "n_chapitres": len(catalogue)}],
         }
 
+    @_timed_node("guardrail_accueil")
+    async def _n_guardrail_accueil(self, state: AgentState) -> dict:
+        """Salutation seule : on accueille, sans rien chercher (cas #38, #41).
+
+        Branché au même endroit que ``guardrail_meta``, avant la recherche, et
+        pour une raison voisine : « Bonsoir » n'a aucun contenu à retrouver, et
+        la recherche y remontait quand même cinq extraits à des scores
+        indiscernables (~0,03) — du bruit, qui servait ensuite de matière à une
+        question de vérification que l'élève n'avait pas appelée.
+        """
+        ctx = state.get("curriculum_context", {})
+        catalogue = self._retriever.catalogue(ctx)
+        system, user_prompt = assemble_accueil_prompt(state["question"], catalogue, ctx)
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "securite": None,
+            "hint_level": None,
+            "hint_label": "Accueil",
+            "hint_reason": "salutation seule",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": None,
+            "course": None,
+            "sources": [],
+            "scores": [],
+            "catalogue": catalogue,
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": system,
+            "final_prompt": user_prompt,
+            "retrieved": [],
+            "trace": trace,
+            "node_trace": [{"node": "guardrail_accueil", "n_chapitres": len(catalogue)}],
+        }
+
     # ------------------------------------------------------------ branche cours
     @_timed_node("course_planner")
     async def _n_course_planner(self, state: AgentState) -> dict:
@@ -530,6 +747,9 @@ class TutorAgent:
         # RAG : on restreint les extraits au chapitre enseigné (sauf si cela ne
         # laisse rien, auquel cas mieux vaut un contexte large que pas de contexte).
         focused = _focus_on_chapitre(retrieved, position.chapitre)
+        focused, sections_servies = self._ancrer_sur_la_section(
+            focused, section, position.chapitre, ctx
+        )
         return {
             "retrieved": focused,
             "course_section": course_section,
@@ -538,9 +758,47 @@ class TutorAgent:
                  "section_index": position.section_index,
                  "chapitre": position.chapitre,
                  "chapitre_confirmed": position.chapitre_confirmed,
+                 "sections_servies": sections_servies,
                  "n_sources_focused": len(focused)}
             ],
         }
+
+    def _ancrer_sur_la_section(
+        self, focused: list[ScoredChunk], section: Section, chapitre: str | None, ctx: dict
+    ) -> tuple[list[ScoredChunk], list[str]]:
+        """Place en tête les extraits de la section enseignée, en les cherchant au besoin.
+
+        La récupération a lieu **avant** ce nœud, sur la phrase brute de l'élève :
+        elle ignore donc quelle section va être enseignée. Sur « Fais-moi un
+        cours sur les nombres complexes », elle remontait Introduction, Astuces
+        et Auto-évaluation — la définition fondatrice n'était nulle part, et le
+        modèle n'avait rien pour l'énoncer (cas QA #12).
+
+        Deux temps, dans cet ordre : réordonner ce qu'on a déjà, puis compléter
+        par une recherche circonscrite au chapitre **uniquement si** une source
+        déclarée manque encore. Le cas nominal ne coûte donc aucun appel
+        supplémentaire.
+
+        Le repli est silencieux et volontaire : si le corpus ne contient pas la
+        section (leçon partielle), on rend ce qu'on a. Inventer la section
+        manquante serait exactement ce que la règle n°4 interdit ; c'est au
+        prompt de dire honnêtement ce qui manque, pas à ce nœud de le combler.
+        """
+        if not section.sources:
+            return focused, []
+
+        de_la_section = [sc for sc in focused if texte_releve_de_la_section(sc.chunk.text, section)]
+        autres = [sc for sc in focused if sc not in de_la_section]
+
+        titres_retenus = [t for sc in de_la_section if (t := titre_de_section(sc.chunk.text))]
+        if sources_absentes(titres_retenus, section) and chapitre:
+            deja = {sc.chunk.id for sc in focused}
+            for sc in self._retriever.chunks_du_chapitre(chapitre, ctx):
+                if sc.chunk.id not in deja and texte_releve_de_la_section(sc.chunk.text, section):
+                    de_la_section.append(sc)
+
+        servies = [t for sc in de_la_section if (t := titre_de_section(sc.chunk.text))]
+        return [*de_la_section, *autres], servies
 
     @_timed_node("guardrail_course")
     async def _n_guardrail_course(self, state: AgentState) -> dict:
@@ -799,6 +1057,7 @@ class TutorAgent:
         # Disjoncteur de sécurité : en tête, avec sa propre sortie vers END.
         g.add_node("triage_securite", self._n_triage_securite)
         g.add_node("reponse_securite", self._n_reponse_securite)
+        g.add_node("profil_eleve", self._n_profil_eleve)
         g.add_node("detect_intent", self._n_detect_intent)
         g.add_node("retrieve_context", self._n_retrieve)
         # Branche exercice (posture socratique) — inchangée.
@@ -814,20 +1073,29 @@ class TutorAgent:
         g.add_node("guardrail_quiz", self._n_guardrail_quiz)
         # Branche méta (question sur le service) — sans recherche de contenu.
         g.add_node("guardrail_meta", self._n_guardrail_meta)
+        g.add_node("guardrail_accueil", self._n_guardrail_accueil)
 
         g.add_edge(START, "triage_securite")
+        # Le profil est résolu avant tout le reste (sauf la mise en sécurité,
+        # qui prime sur tout) : la série gouverne les filtres de recherche
+        # autant que le cadre annoncé dans le prompt (cas #8).
         g.add_conditional_edges(
             "triage_securite",
             _route_par_securite,
-            {"detresse": "reponse_securite", "normal": "detect_intent"},
+            {"detresse": "reponse_securite", "normal": "profil_eleve"},
         )
+        g.add_edge("profil_eleve", "detect_intent")
         g.add_edge("reponse_securite", END)
         # Une question méta est détournée AVANT la recherche : c'est le
         # retrieval lui-même qui produisait la réponse hors-sujet (cas #2/#3/#4).
         g.add_conditional_edges(
             "detect_intent",
             _route_meta_ou_contenu,
-            {"meta": "guardrail_meta", "contenu": "retrieve_context"},
+            {
+                "meta": "guardrail_meta",
+                "accueil": "guardrail_accueil",
+                "contenu": "retrieve_context",
+            },
         )
         g.add_conditional_edges(
             "retrieve_context",
@@ -855,6 +1123,7 @@ class TutorAgent:
             g.add_edge("guardrail_course", "compose_response")
             g.add_edge("guardrail_quiz", "compose_response")
             g.add_edge("guardrail_meta", "compose_response")
+            g.add_edge("guardrail_accueil", "compose_response")
             g.add_edge("compose_response", "verify_response")
             g.add_edge("verify_response", "persist_progression")
             g.add_edge("persist_progression", END)
@@ -863,6 +1132,7 @@ class TutorAgent:
             g.add_edge("guardrail_course", END)
             g.add_edge("guardrail_quiz", END)
             g.add_edge("guardrail_meta", END)
+            g.add_edge("guardrail_accueil", END)
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -1042,9 +1312,15 @@ def _route_meta_ou_contenu(state: AgentState) -> str:
     """Aiguillage juste après ``detect_intent``, avant toute recherche.
 
     Défaut sûr : ``contenu``. Une intention non reconnue continue vers le
-    pipeline habituel — la sélectivité est portée par ``intent.is_meta_request``.
+    pipeline habituel — la sélectivité est portée par ``intent.is_meta_request``
+    et ``intent.est_une_salutation``.
     """
-    return "meta" if state.get("intent") == Intent.META.value else "contenu"
+    intention = state.get("intent")
+    if intention == Intent.META.value:
+        return "meta"
+    if intention == Intent.SALUTATION.value:
+        return "accueil"
+    return "contenu"
 
 
 def _route_by_intent(state: AgentState) -> str:
@@ -1063,13 +1339,23 @@ def _route_by_intent(state: AgentState) -> str:
 
 
 def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
-    """Liste d'attribution des sources RAG (identique aux deux branches)."""
+    """Liste d'attribution des sources RAG (identique aux deux branches).
+
+    ``score`` est le score de fusion RRF, fondé sur les rangs : il classe mais
+    ne mesure pas, et deux extraits d'à-propos opposés y sont voisins.
+    ``dense_score`` est le cosinus, borné et interprétable — c'est sur lui, et
+    non sur ``score``, qu'un seuil de pertinence pourra être calibré (cas QA #5).
+    Il est exposé ici pour que cette calibration puisse s'observer sur la pile
+    réelle plutôt que se deviner. Il vaut ``None`` quand le backend ne le
+    fournit pas : une absence de mesure, pas une similarité nulle.
+    """
     return [
         {
             "id": sc.chunk.id,
             "label": sc.source_label,
             "type_chunk": sc.chunk.metadata.type_chunk,
             "score": sc.score,
+            "dense_score": sc.dense_score,
         }
         for sc in retrieved
     ]

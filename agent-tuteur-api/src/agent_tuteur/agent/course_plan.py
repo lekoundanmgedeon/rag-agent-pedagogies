@@ -31,6 +31,13 @@ class Section:
     title: str
     #: Consigne de rédaction pour le LLM lorsqu'il enseigne cette section.
     instruction: str
+    #: Titres des sections du **format pilote** (18 sections) sur lesquelles
+    #: cette étape doit s'appuyer. Sert à choisir les extraits à injecter de
+    #: façon déterministe : les chunks du corpus commencent par leur titre
+    #: numéroté (« 3. Définitions\n\n… »), ce qui permet de les sélectionner
+    #: sans dépendre de la similarité vectorielle — donc sans dépendre du choix
+    #: d'embedder, encore ouvert (RC-0).
+    sources: tuple[str, ...] = ()
 
 
 # Progression didactique (8 étapes) — agrège les 18 sections du format pilote.
@@ -38,9 +45,20 @@ LESSON_SECTIONS: tuple[Section, ...] = (
     Section(
         "introduction",
         "Introduction",
-        "Situe le chapitre : à quoi il sert, d'où il vient, où il intervient au "
-        "Baccalauréat, et ses applications concrètes. Reste motivant et bref. "
-        "N'entre pas encore dans les définitions formelles.",
+        # Cette consigne disait « N'entre pas encore dans les définitions
+        # formelles » — et c'était, littéralement, le cas QA #12 : l'élève
+        # demandait un cours sur les nombres complexes et recevait l'histoire
+        # et les usages du chapitre, jamais « z = a + ib » ni « i² = -1 ». La
+        # définition fondatrice ouvre désormais le cours ; la section suivante
+        # garde son rôle, qui est de les énoncer *toutes*, une par une.
+        "Commence par énoncer la définition fondatrice du chapitre, avec sa "
+        "notation exacte, telle qu'elle figure dans les extraits — c'est ce que "
+        "l'élève est venu chercher. Situe ensuite le chapitre brièvement : à "
+        "quoi il sert, où il intervient au Baccalauréat, ses applications. "
+        "Garde le cadrage motivant court, et toujours APRÈS la définition. "
+        "N'entre pas encore dans le détail des autres définitions ni dans les "
+        "démonstrations.",
+        sources=("Introduction", "Définitions"),
     ),
     Section(
         "definitions",
@@ -48,6 +66,7 @@ LESSON_SECTIONS: tuple[Section, ...] = (
         "Énonce les définitions clés une par une, avec la notation exacte, à "
         "partir des extraits. Illustre chaque définition d'un mini-exemple "
         "immédiat. Ne démontre rien ici.",
+        sources=("Définitions", "Glossaire"),
     ),
     Section(
         "theoremes",
@@ -55,12 +74,14 @@ LESSON_SECTIONS: tuple[Section, ...] = (
         "Présente les théorèmes et propriétés essentiels : énoncé, conditions "
         "d'application, et une justification courte quand elle éclaire (sans "
         "dérouler toutes les démonstrations). Mets en garde sur les hypothèses.",
+        sources=("Théorèmes", "Propriétés", "Démonstrations"),
     ),
     Section(
         "methodes",
         "Méthodes",
         "Décris les méthodes-types du chapitre sous forme d'étapes numérotées "
         "réutilisables (« pour faire X : 1… 2… 3… »), telles qu'attendues au Bac.",
+        sources=("Méthodes",),
     ),
     Section(
         "exemples",
@@ -68,12 +89,14 @@ LESSON_SECTIONS: tuple[Section, ...] = (
         "Déroule un ou deux exemples entièrement résolus, étape par étape, en "
         "explicitant le raisonnement à chaque ligne. C'est ici qu'on montre "
         "comment appliquer méthodes et théorèmes.",
+        sources=("Exemples résolus",),
     ),
     Section(
         "erreurs",
         "Erreurs fréquentes et astuces",
         "Liste les erreurs classiques à éviter et les astuces de calcul, de "
         "rédaction et de Bac. Formule chaque point de façon actionnable.",
+        sources=("Erreurs fréquentes", "Astuces"),
     ),
     Section(
         "exercices",
@@ -82,12 +105,14 @@ LESSON_SECTIONS: tuple[Section, ...] = (
         "SANS donner les corrigés d'emblée : invite l'élève à s'y essayer et "
         "à demander une correction ou un indice s'il bloque. Ici la posture "
         "redevient légèrement socratique.",
+        sources=("Exercices", "Questions type Bac"),
     ),
     Section(
         "resume",
         "Résumé et fiche de révision",
         "Synthétise l'essentiel du chapitre en une fiche de révision compacte : "
         "formules-clés, résultats à retenir, en quelques puces. Clôture le cours.",
+        sources=("Résumé", "Fiche de révision"),
     ),
 )
 
@@ -95,6 +120,52 @@ _SECTION_BY_KEY: dict[str, int] = {s.key: i for i, s in enumerate(LESSON_SECTION
 
 FIRST_INDEX = 0
 LAST_INDEX = len(LESSON_SECTIONS) - 1
+
+
+#: Titre en tête d'un chunk du format pilote : « 3. Définitions », « 11. Exercices ».
+#: Le découpage à l'ingestion conserve ce titre en première ligne du texte, ce
+#: qui en fait un identifiant de section utilisable tel quel.
+_TITRE_DE_CHUNK = re.compile(r"^\s*\d+\.\s*(?P<titre>[^\n]+)")
+
+
+def titre_de_section(texte: str) -> str | None:
+    """Titre du format pilote en tête d'un chunk, ou ``None`` s'il n'y en a pas.
+
+    Le chunk de tête d'une leçon (« # Leçon Pilote — … ») n'en porte pas : il
+    décrit le document, pas une section.
+    """
+    correspondance = _TITRE_DE_CHUNK.match(texte)
+    return correspondance.group("titre").strip() if correspondance else None
+
+
+def source_couverte_par(source: str, titre: str) -> bool:
+    """Vrai si ``titre`` (lu dans le corpus) correspond à la source déclarée.
+
+    Comparaison sur les *tokens*, et non sur la chaîne brute : le corpus écrit
+    « 9. Erreurs fréquentes » là où le plan dit « Erreurs fréquentes », et un
+    accord ou un mot en plus ne doivent pas faire échouer la liaison.
+    """
+    return {_stem(t) for t in tokenize(source)} <= {_stem(t) for t in tokenize(titre)}
+
+
+def texte_releve_de_la_section(texte: str, section: Section) -> bool:
+    """Vrai si ce chunk est l'une des sources déclarées de l'étape.
+
+    Une section sans ``sources`` déclarées ne réclame rien.
+    """
+    titre = titre_de_section(texte)
+    if titre is None or not section.sources:
+        return False
+    return any(source_couverte_par(source, titre) for source in section.sources)
+
+
+def sources_absentes(titres: list[str], section: Section) -> list[str]:
+    """Sources déclarées de l'étape qu'aucun des ``titres`` ne couvre."""
+    return [
+        source
+        for source in section.sources
+        if not any(source_couverte_par(source, titre) for titre in titres)
+    ]
 
 
 def plan_titles() -> list[str]:
