@@ -75,6 +75,11 @@ class AgentState(TypedDict, total=False):
     hint_level: int
     hint_label: str
     hint_reason: str
+    #: Étude de fonction vérifiée par SymPy (domaine, dérivée, limites,
+    #: variations), quand l'élève en a demandé une. ``None`` sinon — y compris
+    #: quand la demande était bien une étude mais que rien n'a pu être établi :
+    #: on ne remplit pas le vide (cas QA #9, règle n°2).
+    etude_fonction: dict | None
     tool_used: str | None
     tool_result: str | None
     #: Le résultat seul (sans « expression → »), pour le contrôle de fidélité

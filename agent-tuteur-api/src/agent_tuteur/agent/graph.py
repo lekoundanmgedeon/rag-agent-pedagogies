@@ -73,6 +73,7 @@ from agent_tuteur.agent.prompt import (
     assemble_prompt,
     build_context_block,
     consigne_correction_affirmation,
+    consigne_etude_de_fonction,
 )
 from agent_tuteur.agent.quiz import (
     Quiz,
@@ -86,6 +87,7 @@ from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.tools.affirmation import verifier_affirmation
+from agent_tuteur.tools.etude_fonction import etudier_la_demande
 from agent_tuteur.tools.calculator import (
     CalculationError,
     compute,
@@ -488,15 +490,37 @@ class TutorAgent:
                     _logger, "affirmation:erreur_eleve", trace_id=state.get("trace_id"),
                     operation=verdict.operation, affirme=verdict.affirme, attendu=verdict.attendu,
                 )
+        # Troisième usage du calcul symbolique dans ce nœud, après la
+        # vérification d'un calcul demandé et celle d'une affirmation de
+        # l'élève : établir une étude de fonction complète. Le corpus ne peut
+        # pas la fournir (aucune leçon indexée sur l'étude des fonctions), et la
+        # laisser au modèle violerait la règle n°2 — elle est donc calculée.
+        etude = etudier_la_demande(question)
+        etude_fonction = None
+        if etude is not None:
+            etude_fonction = {
+                "expression": etude.expression,
+                "domaine": etude.domaine,
+                "derivee": etude.derivee,
+                "limites": [list(couple) for couple in etude.limites],
+                "variations": [list(couple) for couple in etude.variations],
+            }
+            # Même raison qu'au verdict d'affirmation ci-dessus : le contenu
+            # mathématique du tour A été vérifié. Garder l'avertissement
+            # armé interdirait d'annoncer l'étude qu'on vient d'établir.
+            calcul_non_verifie = False
+
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
             "tool_result_brut": tool_result_brut,
             "calcul_non_verifie": calcul_non_verifie,
             "affirmation_eleve": affirmation,
+            "etude_fonction": etude_fonction,
             "node_trace": [
                 {"node": "route_tool", "tool_used": tool_used,
                  "calcul_non_verifie": calcul_non_verifie,
+                 "etude_fonction": etude_fonction is not None,
                  "affirmation_correcte": None if affirmation is None else affirmation["correcte"]}
             ],
         }
@@ -524,6 +548,13 @@ class TutorAgent:
             resultat_verifie=state.get("tool_result") is not None,
             demande_concrete=demande_un_calcul_concret(question),
         )
+        etude = state.get("etude_fonction")
+        # Une étude de fonction est un livrable, pas un indice : la même
+        # contradiction que pour les cas #11/#13 s'y appliquait, en plus large.
+        if etude:
+            decision = escalade_pour_resultat_verifie(
+                decision, resultat_verifie=True, demande_concrete=True
+            )
         level = decision.level
         affirmation = state.get("affirmation_eleve")
         correction = None
@@ -539,6 +570,7 @@ class TutorAgent:
             calcul_non_verifie=bool(state.get("calcul_non_verifie")),
             correction_affirmation=correction,
             varier_approche=varier_approche,
+            etude_fonction=consigne_etude_de_fonction(etude) if etude else None,
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -551,6 +583,7 @@ class TutorAgent:
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
             "blocage_declare": varier_approche,
+            "etude_fonction": etude,
             "tool_used": state.get("tool_used"),
             "tool_result": state.get("tool_result"),
             "calcul_non_verifie": bool(state.get("calcul_non_verifie")),

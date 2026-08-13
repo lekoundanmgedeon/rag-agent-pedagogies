@@ -173,6 +173,18 @@ def analyser_expression(expression: str):
     return _parse(normaliser_expression(expression))
 
 
+def extraire_expression(query: str) -> str:
+    """Isole l'expression mathématique d'une question en langage naturel.
+
+    Point d'entrée public de :func:`_extract_expression`, avec sa propriété de
+    sûreté : l'extraction ne tronque jamais en silence, elle lève plutôt que de
+    rendre un fragment. Exposé pour les outils qui analysent la demande de
+    l'élève sans faire un simple calcul (ex. l'étude de fonction), afin qu'ils
+    n'aient pas à réimplémenter — moins bien — la même isolation.
+    """
+    return _extract_expression(query)
+
+
 def evaluate(expression: str) -> CalculationResult:
     """Évalue/simplifie une expression (arithmétique ou algébrique composite)."""
     expr = _parse(expression)
