@@ -95,6 +95,20 @@ def _cas_resultat_attendu(resultat, cas) -> None:
     assert resultat.trace["hint_reason"] == "résultat vérifié et explicitement demandé"
 
 
+# --- Cas 9 — Étude de fonction remplacée par une relance socratique -----------
+def _cas_09_etude_de_fonction(resultat, cas) -> None:
+    """« fais moi l'etude de fonction de ln(x) » (Mohamed FAYE).
+
+    Une étude est un livrable, pas un indice. Les valeurs sont établies par
+    SymPy — le corpus n'a aucune leçon sur l'étude des fonctions, et les faire
+    produire par le modèle violerait la règle n°2.
+    """
+    etude = resultat.trace["etude_fonction"]
+    assert etude is not None, "aucune étude de fonction établie"
+    assert etude["domaine"] and etude["derivee"]
+    assert resultat.trace["hint_level"] == 4
+
+
 # --- Cas 12 — Définition fondatrice jamais donnée -----------------------------
 def _cas_12_definition_fondatrice(resultat, cas) -> None:
     """« Fais-moi un cours sur les nombres complexes » (Tony SARRE).
@@ -129,6 +143,7 @@ ATTENTES: dict[int, Attente] = {
     4: _cas_meta,
     7: _cas_07_detresse,
     8: _cas_08_serie,
+    9: _cas_09_etude_de_fonction,
     10: _cas_10_calcul_trivial,
     11: _cas_resultat_attendu,
     12: _cas_12_definition_fondatrice,

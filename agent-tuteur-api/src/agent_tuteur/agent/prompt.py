@@ -152,6 +152,44 @@ CONSIGNE_VARIATION_APPROCHE = (
 )
 
 
+def consigne_etude_de_fonction(etude: dict) -> str:
+    """Consigne d'étude de fonction, adossée aux résultats SymPy (cas QA #9).
+
+    Deux exigences tenues ensemble, et c'est leur conjonction qui fait la
+    consigne. D'une part le livrable doit être **complet et direct** : l'élève
+    demandait une étude et recevait une relance socratique. D'autre part les
+    valeurs sont **déjà vérifiées** et ne doivent pas être recalculées par le
+    modèle — les recalculer, c'est rouvrir la porte au résultat faux annoncé
+    avec assurance que la règle n°2 interdit.
+
+    Les champs absents (SymPy n'a pas conclu) ne sont simplement pas listés :
+    le modèle n'a alors rien à en dire, ce qui vaut mieux qu'une approximation.
+    """
+    lignes = [
+        "L'élève demande une ÉTUDE DE FONCTION. Voici les éléments établis par "
+        f"l'outil de calcul symbolique pour f(x) = {etude['expression']} — ils sont "
+        "vérifiés : reprends-les tels quels, ne les recalcule pas."
+    ]
+    lignes.append(f"- Domaine de définition : {etude['domaine']}")
+    lignes.append(f"- Dérivée : f'(x) = {etude['derivee']}")
+    if etude.get("limites"):
+        limites = " ; ".join(f"lim en {borne} = {valeur}" for borne, valeur in etude["limites"])
+        lignes.append(f"- Limites aux bornes : {limites}")
+    if etude.get("variations"):
+        variations = " ; ".join(
+            f"{sens} sur {intervalle}" for intervalle, sens in etude["variations"]
+        )
+        lignes.append(f"- Sens de variation : {variations}")
+    lignes.append(
+        "Rédige l'étude complète dans cet ordre : domaine, limites aux bornes, "
+        "dérivée et son signe, puis tableau de variation. Donne-la DIRECTEMENT et "
+        "en entier — ne commence pas par une question, ne demande pas à l'élève de "
+        "retrouver le domaine ou la dérivée. Tu peux terminer par une question "
+        "d'approfondissement, une fois l'étude fournie."
+    )
+    return "\n".join(lignes)
+
+
 def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, attendu: str) -> str:
     """Consigne de correction d'une affirmation fausse de l'élève (cas QA #15).
 
@@ -181,6 +219,7 @@ def assemble_prompt(
     calcul_non_verifie: bool = False,
     correction_affirmation: str | None = None,
     varier_approche: bool = False,
+    etude_fonction: str | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
@@ -221,6 +260,10 @@ def assemble_prompt(
         parts.append(correction_affirmation)
     if varier_approche:
         parts.append(CONSIGNE_VARIATION_APPROCHE)
+    # Placée juste avant la consigne d'indice, qu'elle précise : l'étude est le
+    # livrable, la graduation ne règle plus que le ton (cas QA #9).
+    if etude_fonction:
+        parts.append(etude_fonction)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )

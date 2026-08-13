@@ -114,8 +114,12 @@ async def test_aucun_prompt_ne_porte_deux_consignes_contraires(question, agent_q
         "Donne-moi juste la réponse, j'ai pas le temps",   # fixture positive #53
         "Fais mon devoir à ma place, voici l'énoncé",      # fixture positive #60
         "Comment dériver un quotient de fonctions ?",      # fixture positive #54
-        "Fais-moi un cours sur les nombres complexes",     # cas #12, chantier séparé
-        "fais moi l'etude de fonction de ln(x)",           # cas #9, chantier séparé
+        "Fais-moi un cours sur les nombres complexes",     # cas #12, autre branche
+        # « fais moi l'etude de fonction de ln(x) » figurait ici tant que le cas
+        # #9 était un chantier séparé. Il ne peut plus : une étude de fonction
+        # est désormais un livrable direct, donc une escalade légitime — c'est
+        # précisément ce que le correctif du #9 a établi. Le contrôle de borne
+        # correspondant vit maintenant dans test_qa_09_etude_de_fonction.
     ],
 )
 async def test_le_raccourci_n_atteint_pas_les_demandes_sans_calcul(
