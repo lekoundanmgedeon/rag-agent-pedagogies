@@ -175,6 +175,9 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
             limit=top_k,
             with_payload=True,
         )
+        cosinus = self._cosinus_par_point(
+            [point.id for point in response.points], query, qfilter
+        )
         results: list[ScoredChunk] = []
         for point in response.points:
             payload = dict(point.payload or {})
@@ -186,9 +189,48 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
                 ScoredChunk(
                     chunk=Chunk(id=chunk_id, text=text, metadata=metadata),
                     score=round(float(point.score), 6),
+                    dense_score=cosinus.get(point.id),
                 )
             )
         return results
+
+    def _cosinus_par_point(self, point_ids: list, query: Embedding, qfilter) -> dict:
+        """Similarité cosinus dense, par identifiant de point.
+
+        ``score`` ne peut pas servir de mesure de pertinence : la fusion RRF
+        est fondée sur les **rangs** (~1/(k+rang)), si bien qu'un résultat sans
+        aucun rapport avec le corpus obtient un score voisin d'un résultat
+        parfaitement pertinent — mesuré sur ce dépôt, un hors-périmètre à 0,0325
+        au-dessus d'un témoin dans le périmètre à 0,0318. Aucun seuil ne peut
+        être posé là-dessus (cas QA #5).
+
+        On rappelle donc le **cosinus**, borné et interprétable, par une seconde
+        requête dense pure. Elle est restreinte aux identifiants déjà retenus :
+        le coût est un aller-retour, pas un second classement, et chaque chunk
+        rendu porte son cosinus exact plutôt qu'une valeur approchée par une
+        fenêtre de candidats.
+
+        Un identifiant absent de la réponse reçoit ``None`` et non ``0.0`` :
+        « inconnu » et « orthogonal » sont deux choses différentes, et les
+        confondre ferait rejeter à tort un chunk par un futur seuil.
+        """
+        if not point_ids:
+            return {}
+        from qdrant_client import models as qm
+
+        conditions = [qm.HasIdCondition(has_id=list(point_ids))]
+        filtre = qm.Filter(must=conditions)
+        if qfilter is not None:
+            filtre = qm.Filter(must=[*conditions, qfilter])
+        reponse = self._client.query_points(
+            collection_name=self._collection,
+            query=query.dense.tolist(),
+            using=self.DENSE,
+            filter=filtre,
+            limit=len(point_ids),
+            with_payload=False,
+        )
+        return {p.id: round(float(p.score), 6) for p in reponse.points}
 
     def delete_by_source(self, source_document: str) -> int:
         from qdrant_client import models as qm

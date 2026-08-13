@@ -1326,13 +1326,23 @@ def _route_by_intent(state: AgentState) -> str:
 
 
 def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
-    """Liste d'attribution des sources RAG (identique aux deux branches)."""
+    """Liste d'attribution des sources RAG (identique aux deux branches).
+
+    ``score`` est le score de fusion RRF, fondé sur les rangs : il classe mais
+    ne mesure pas, et deux extraits d'à-propos opposés y sont voisins.
+    ``dense_score`` est le cosinus, borné et interprétable — c'est sur lui, et
+    non sur ``score``, qu'un seuil de pertinence pourra être calibré (cas QA #5).
+    Il est exposé ici pour que cette calibration puisse s'observer sur la pile
+    réelle plutôt que se deviner. Il vaut ``None`` quand le backend ne le
+    fournit pas : une absence de mesure, pas une similarité nulle.
+    """
     return [
         {
             "id": sc.chunk.id,
             "label": sc.source_label,
             "type_chunk": sc.chunk.metadata.type_chunk,
             "score": sc.score,
+            "dense_score": sc.dense_score,
         }
         for sc in retrieved
     ]
