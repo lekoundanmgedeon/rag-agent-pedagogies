@@ -272,6 +272,61 @@ def assemble_prompt(
     return SYSTEM_PERSONA, "\n\n".join(parts)
 
 
+#: Consigne d'accueil (cas QA #38 et #41). Nommer ce qu'il ne faut PAS faire est
+#: ici aussi utile que l'inverse : les deux testeurs ont reçu, l'un une question
+#: de vérification de compréhension, l'autre une reformulation générique — deux
+#: façons de répondre à un bonsoir par un exercice.
+CONSIGNE_ACCUEIL = (
+    "L'élève te salue, sans rien demander d'autre. Réponds d'abord à la "
+    "salutation, simplement et chaleureusement, en une phrase. Présente-toi en "
+    "une ligne, puis propose les chapitres ci-dessus et demande-lui sur quoi il "
+    "veut travailler. N'enchaîne PAS sur une question de vérification de "
+    "compréhension, ne reformule PAS sa salutation, et ne lance aucun exercice : "
+    "il n'a encore rien demandé."
+)
+
+
+def assemble_accueil_prompt(
+    question: str,
+    catalogue: list[str],
+    curriculum_context: dict | None = None,
+) -> tuple[str, str]:
+    """Retourne ``(system_prompt, user_prompt)`` pour une **salutation seule**.
+
+    Même ancrage que le tour méta, et pour la même raison : proposer des
+    chapitres suppose de savoir lesquels existent. Les lire dans le store plutôt
+    que de les laisser au modèle évite d'accueillir un élève en lui proposant un
+    chapitre absent — ce que le cas #28 reproche précisément à l'écran d'accueil.
+
+    Aucun historique n'est réinjecté : une salutation ouvre un échange, et lui
+    adjoindre le fil précédent inviterait à évoquer un passé que l'élève n'a pas
+    convoqué (règle non-négociable n°3).
+    """
+    ctx = curriculum_context or {}
+    parts: list[str] = []
+
+    if catalogue:
+        parts.append(
+            "Chapitres réellement disponibles dans ta documentation "
+            f"({len(catalogue)}) :\n" + "\n".join(f"- {c}" for c in catalogue)
+        )
+    else:
+        parts.append(
+            "Ta documentation ne contient actuellement AUCUN chapitre indexé. "
+            "Accueille l'élève et dis-le franchement au lieu d'en citer un."
+        )
+
+    declare = ", ".join(
+        f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
+    )
+    if declare:
+        parts.append(f"Cadre déclaré par l'élève (ne rien supposer au-delà) : {declare}.")
+
+    parts.append(CONSIGNE_ACCUEIL)
+    parts.append(f"Message de l'élève : {question}")
+    return SYSTEM_PERSONA_META, "\n\n".join(parts)
+
+
 def assemble_meta_prompt(
     question: str,
     catalogue: list[str],

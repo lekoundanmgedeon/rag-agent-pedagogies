@@ -136,6 +136,38 @@ def _cas_20_blocage_declare(resultat, cas) -> None:
     assert resultat.trace["hint_level"] > 1
 
 
+# --- Cas 32 — Dérivée demandée, seule la formule était donnée -----------------
+def _cas_32_derivee_livree(resultat, cas) -> None:
+    """« Calcule la dérivée de x^3 - 3x. » (Mohamed FAYE).
+
+    Aucun correctif propre : le cas est couvert par la conjonction de deux
+    correctifs antérieurs — l'extraction Unicode du cas #1 et l'escalade des cas
+    #11/#13. L'attente est enregistrée pour que cette couverture soit *prouvée*
+    à chaque exécution plutôt que supposée, et pour qu'une régression sur l'un
+    des deux se signale ici aussi.
+    """
+    import sympy
+
+    assert resultat.trace["tool_used"] == "sympy_calculator"
+    calcule = resultat.trace["tool_result"].split("→")[-1].strip()
+    assert sympy.simplify(sympy.sympify(calcule) - sympy.sympify("3*x**2 - 3")) == 0
+    assert resultat.trace["hint_level"] == 4
+
+
+# --- Cas 38 et 41 — Salutation reçue comme un exercice ------------------------
+def _cas_salutation(resultat, cas) -> None:
+    """« Bonsoir » (Rafiatou) et « Salut » (Pontiane).
+
+    Sans intention dédiée, une salutation tombait en EXERCICE puis au niveau
+    d'indice 0 — « reformule la question de l'élève pour vérifier sa
+    compréhension ». Les deux comportements rapportés sont les deux moitiés de
+    cette consigne.
+    """
+    assertions.assert_intention(resultat, "salutation")
+    assertions.assert_pas_de_retrieval(resultat)
+    assert resultat.trace["hint_label"] == "Accueil"
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
@@ -150,6 +182,9 @@ ATTENTES: dict[int, Attente] = {
     13: _cas_resultat_attendu,
     15: _cas_15_affirmation_fausse,
     20: _cas_20_blocage_declare,
+    32: _cas_32_derivee_livree,
+    38: _cas_salutation,
+    41: _cas_salutation,
 }
 
 #: Contexte curriculaire du rejeu, quand le cas exige autre chose que le défaut.
