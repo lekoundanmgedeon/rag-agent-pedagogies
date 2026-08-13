@@ -123,7 +123,7 @@ async def _try_create_arq_pool(redis_url: str) -> ArqRedis | None:
 def _mount_spa(app: FastAPI, dist_dir: str) -> None:
     """Sert le build statique du SPA Vue depuis l'API elle-même.
 
-    Utilisé par l'image mono-conteneur (``Dockerfile.render``) : un seul service
+    Utilisé par un déploiement mono-conteneur : un seul service
     à déployer, donc même origine pour le SPA et l'API — pas de CORS, et le flux
     SSE de ``/api/chat`` n'est relayé par aucun proxy intermédiaire susceptible
     de le bufferiser. En dev et en Docker Compose, ``spa_dist_dir`` est vide et

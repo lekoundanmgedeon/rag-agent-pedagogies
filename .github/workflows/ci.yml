@@ -144,9 +144,8 @@ jobs:
         run: docker build -t agent-tuteur-api:ci agent-tuteur-api
 
   frontend-vue:
-    # Frontend historique, encore utilisé par le déploiement Render tant que la
-    # bascule n'est pas faite (cf. JOURNAL_FUSION.md, module 8). À retirer en
-    # même temps que `agent-tuteur-web/`.
+    # Frontend historique (cf. JOURNAL_FUSION.md, module 8). À retirer en même
+    # temps que `agent-tuteur-web/` — chantier distinct de la sortie de Render.
     name: Build du frontend Vue (historique)
     runs-on: ubuntu-latest
     steps:
