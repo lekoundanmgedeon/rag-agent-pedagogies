@@ -42,6 +42,19 @@ class BaseEmbedder(ABC):
     @abstractmethod
     def dense_dim(self) -> int: ...
 
+    #: Similarité minimale pour qu'un extrait soit jugé sur le sujet.
+    #:
+    #: Un seuil de pertinence n'est pas un réglage d'application : c'est une
+    #: propriété de l'**espace vectoriel**, donc de l'embedder qui le produit.
+    #: La même valeur n'a aucun sens d'un backend à l'autre, et un seuil hérité
+    #: d'un embedder précédent est pire que pas de seuil du tout — il écarte du
+    #: cours pertinent en silence.
+    #:
+    #: ``None`` signifie « aucun seuil posable sur cet espace » : le retriever
+    #: ne filtre alors rien plutôt que de deviner. C'est le cas de tous les
+    #: backends à ce jour — cf. les mesures ci-dessous et `qa/qa_status.json` #5.
+    seuil_pertinence: float | None = None
+
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[Embedding]: ...
 
@@ -60,6 +73,22 @@ class LightEmbedder(BaseEmbedder):
     @property
     def dense_dim(self) -> int:
         return self._dim
+
+    #: Aucun seuil. Mesuré, et non supposé : les deux nuages se recouvrent.
+    #:
+    #: Sur les 12 leçons du corpus (216 chunks), 28 questions couvertes contre
+    #: 16 hors périmètre : le cosinus dense le plus bas d'une question couverte
+    #: (0,278 — « loi binomiale, dans quel cas l'utiliser ») tombe **sous** le
+    #: plus haut d'une question hors périmètre (0,524 — « limite de sin(x)/x »).
+    #: Aucune valeur ne sépare : à 0,40, quatre questions étrangères passent
+    #: encore et deux questions couvertes sont déjà rejetées. Le score lexical
+    #: ne fait pas mieux (marge −0,168 sur le corpus figé QA).
+    #:
+    #: C'est attendu d'un hachage de n-grammes — la proximité y mesure un
+    #: recouvrement de caractères, pas un rapport de sens. Poser malgré tout un
+    #: seuil ici reviendrait à l'ajuster aux prompts des testeurs, ce que
+    #: CLAUDE.md interdit explicitement (cas QA #5).
+    seuil_pertinence = None
 
     def _dense(self, tokens: list[str]) -> np.ndarray:
         """Hashing trick : chaque feature indexe une dimension avec un signe.
@@ -98,7 +127,20 @@ class LightEmbedder(BaseEmbedder):
 
 
 class BGEM3Embedder(BaseEmbedder):
-    """Adaptateur BGE-M3 (dense + sparse lexical natifs). Import tardif."""
+    """Adaptateur BGE-M3 (dense + sparse lexical natifs). Import tardif.
+
+    Pas de ``seuil_pertinence`` déclaré à ce jour, et ce n'est pas un oubli.
+    Mesuré sur le corpus figé QA (36 chunks, 2 chapitres), le **cosinus dense**
+    ne sépare pas : le prompt exact du cas QA #5 y vaut 0,5031 quand la question
+    couverte la plus faible vaut 0,5178. Toute valeur qui rejette l'un sans
+    rejeter l'autre vit dans une fenêtre de 0,015 — soit un seuil ajusté au
+    prompt d'un testeur, ce que CLAUDE.md interdit.
+
+    Le **score lexical** du même modèle sépare, lui : 0,1402 pour ce prompt
+    contre 0,2105 pour la question couverte la plus faible. Le poser en seuil
+    suppose d'abord de rappeler ce score depuis Qdrant, comme cela a été fait
+    pour ``dense_score``. Cf. `qa/qa_status.json` #5.
+    """
 
     def __init__(self, model_name: str = "BAAI/bge-m3") -> None:
         try:

@@ -73,6 +73,24 @@ def _cas_06_complexe(resultat, cas) -> None:
     assert resultat.trace["calcul_non_verifie"] is False
 
 
+# --- Cas 5 — Chunks non pertinents servis faute de seuil ----------------------
+def _cas_05_hors_perimetre(resultat, cas) -> None:
+    """« Différence entre une suite arithmétique et une suite géométrique ? »
+    (Pierre Ndong).
+
+    Les suites ne sont pas dans l'index figé de la démo (Nombres Complexes,
+    Calcul Intégral). Le système servait quand même ses moins mauvais résultats.
+    Règle non-négociable n°4 : sous le seuil, **aucun** chunk n'est utilisé, et
+    le tour est marqué hors périmètre pour que le prompt l'avoue à l'élève.
+    """
+    assert resultat.retrieved == [], (
+        "extraits servis sur un sujet non couvert : "
+        f"{[sc.chunk.metadata.chapitre for sc in resultat.retrieved]}"
+    )
+    assert resultat.trace["hors_perimetre"] is True
+    assert resultat.trace["sources"] == []
+
+
 # --- Cas 8 — Série fabriquée faute de déclaration -----------------------------
 def _cas_08_serie(resultat, cas) -> None:
     """« je suis en classe de terminale » (Mohamed FAYE).
@@ -192,6 +210,11 @@ ATTENTES: dict[int, Attente] = {
     2: _cas_meta,
     3: _cas_meta,
     4: _cas_meta,
+    # 5: _cas_05_hors_perimetre — enregistré le jour où un embedder déclare un
+    # seuil. La mécanique est en place et testée ; c'est la *grandeur* à
+    # seuiller qui reste à trancher (cf. qa_status.json #5 et l'attente
+    # ci-dessus, déjà écrite). Le cas ressort donc en xfail, comme un cas non
+    # traité — ce qu'il est encore.
     6: _cas_06_complexe,
     7: _cas_07_detresse,
     8: _cas_08_serie,
@@ -206,6 +229,16 @@ ATTENTES: dict[int, Attente] = {
     38: _cas_salutation,
     41: _cas_salutation,
 }
+
+#: Pile de rejeu, quand le cas ne peut pas être jugé sur la pile hors-ligne.
+#:
+#: Le cas #5 porte sur le **seuil de pertinence**, qui est une propriété de
+#: l'espace vectoriel : mesuré sur les 12 leçons, « light » ne sépare pas les
+#: questions couvertes des questions étrangères (0,278 contre 0,524, nuages
+#: recouverts). Le rejouer sur « light » ne prouverait donc rien — pire, il
+#: ferait passer pour vert un correctif inopérant. Il est jugé sur BGE-M3,
+#: l'embedder de production depuis la décision D3.
+AGENT_PAR_CAS: dict[int, str] = {5: "agent_qa_bge"}
 
 #: Contexte curriculaire du rejeu, quand le cas exige autre chose que le défaut.
 #: Le cas 8 se joue **sans profil de compte** : c'est sa situation d'origine, et

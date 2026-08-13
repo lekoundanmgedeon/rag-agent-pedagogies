@@ -9,14 +9,24 @@ LLM mock) sans aucune infrastructure.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EmbeddingBackend = Literal["light", "bge_m3"]
 VectorBackend = Literal["memory", "qdrant"]
 LLMBackend = Literal["auto", "mistral", "gemini", "ollama", "mock"]
+
+
+def _vide_vaut_absent(valeur):
+    """``CLE=`` dans un ``.env`` vaut « non renseigné », pas « chaîne vide ».
+
+    Sans cela, un réglage optionnel laissé vide dans ``.env.example`` fait
+    échouer le démarrage sur une erreur de conversion — un fichier d'exemple
+    doit pouvoir être copié tel quel.
+    """
+    return None if isinstance(valeur, str) and not valeur.strip() else valeur
 
 
 class Settings(BaseSettings):
@@ -83,6 +93,15 @@ class Settings(BaseSettings):
     # --- RAG ---
     retrieval_top_k: int = Field(default=5, ge=1, le=50)
     rrf_k: int = Field(default=60, ge=1)
+    #: Cosinus dense minimal pour qu'un extrait soit servi (cas QA #5, règle
+    #: non-négociable n°4). Vide = celui de l'embedder, qui seul connaît son
+    #: espace vectoriel — c'est le cas normal. Ce réglage n'existe que pour
+    #: réajuster la valeur en exploitation sans redéployer, une fois la mesure
+    #: refaite sur l'index réel ; il ne sert pas à en inventer une là où
+    #: l'embedder déclare qu'aucun seuil n'est posable (« light »).
+    rag_seuil_pertinence: Annotated[float | None, BeforeValidator(_vide_vaut_absent)] = Field(
+        default=None, ge=-1.0, le=1.0
+    )
 
 
 @lru_cache

@@ -237,6 +237,30 @@ def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, at
     )
 
 
+#: Consigne posée quand la recherche n'a remonté aucun extrait — soit le seuil
+#: de pertinence les a tous écartés, soit le corpus ne couvre pas le cadre
+#: demandé (cas QA #5).
+#:
+#: Le repli **divulgue puis aide** (décision D6) : taire l'absence de cours
+#: laisserait croire à l'élève que la réponse s'appuie sur son programme, et
+#: refuser tout net dégraderait des comportements déjà validés — les fixtures
+#: positives #54 et #55 portent sur des dérivées, absentes des chapitres
+#: indexés, et leur comportement confirmé est une réponse correcte.
+#:
+#: L'interdiction d'inventer reste entière : elle est portée par la vérification
+#: symbolique et par :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE`, pas par le
+#: silence.
+CONSIGNE_HORS_PERIMETRE = (
+    "AUCUN extrait de cours ne correspond à cette question : ce point n'est pas "
+    "couvert par les chapitres dont tu disposes. Dis-le à l'élève simplement et "
+    "sans détour, en une phrase et sans t'excuser longuement — il doit savoir "
+    "que ce qui suit ne vient pas de son programme. Puis aide-le quand même "
+    "avec ce que tu sais, en restant prudent. N'invente AUCUNE référence à une "
+    "leçon, à un chapitre ou à un cours que tu aurais consulté, et ne prétends "
+    "pas que cette notion figure au programme."
+)
+
+
 def assemble_prompt(
     question: str,
     hint: HintDecision,
@@ -280,6 +304,9 @@ def assemble_prompt(
         "Documentation de cours (usage interne, invisible pour l'élève) :\n"
         + build_context_block(retrieved)
     )
+    # Juste après le bloc d'extraits, dont elle explique le vide.
+    if not retrieved:
+        parts.append(CONSIGNE_HORS_PERIMETRE)
     if tool_result:
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
     if calcul_non_verifie:

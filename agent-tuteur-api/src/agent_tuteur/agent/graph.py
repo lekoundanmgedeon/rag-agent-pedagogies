@@ -392,18 +392,30 @@ class TutorAgent:
             return {
                 "retrieved": resultats.tous(),
                 "has_course": resultats.a_du_cours,
+                "hors_perimetre": not resultats.tous(),
                 "node_trace": [{
                     "node": "retrieve_context",
                     "n_sources": len(resultats.tous()),
                     "n_course": len(resultats.cours),
                     "has_course": resultats.a_du_cours,
+                    "hors_perimetre": not resultats.tous(),
                 }],
             }
 
         retrieved = self._retriever.retrieve(query, context, top_k=self._top_k)
         return {
             "retrieved": retrieved,
-            "node_trace": [{"node": "retrieve_context", "n_sources": len(retrieved)}],
+            # Le corpus n'a rien à dire sur cette question : soit aucun extrait
+            # n'a passé le seuil de pertinence, soit le cadre curriculaire ne
+            # couvre pas le sujet. Pour l'élève, les deux se disent pareil — il
+            # faut l'avouer plutôt que répondre sur des extraits étrangers
+            # (cas QA #5, règle non-négociable n°4).
+            "hors_perimetre": not retrieved,
+            "node_trace": [{
+                "node": "retrieve_context",
+                "n_sources": len(retrieved),
+                "hors_perimetre": not retrieved,
+            }],
         }
 
     @_timed_node("detect_frustration")
@@ -616,6 +628,7 @@ class TutorAgent:
             "affirmation_eleve": affirmation,
             "competence": competence,
             "course": None,
+            "hors_perimetre": bool(state.get("hors_perimetre")),
             "sources": _sources_payload(retrieved),
             "scores": [sc.score for sc in retrieved],
         }

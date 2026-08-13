@@ -65,6 +65,11 @@ class AgentState(TypedDict, total=False):
     #: des TD et exercices ? Quand c'est faux, le prompt interdit explicitement
     #: d'inventer le cours manquant (cf. ``prompt.assemble_course_prompt``).
     has_course: bool
+    #: Aucun extrait n'a survécu à la recherche : soit le seuil de pertinence a
+    #: tout écarté, soit le cadre curriculaire ne couvre pas le sujet. Le prompt
+    #: fait alors dire à l'agent qu'il n'a pas ce chapitre, au lieu de répondre
+    #: sur des extraits étrangers (cas QA #5, règle non-négociable n°4).
+    hors_perimetre: bool
     frustration_score: float
     repetitions: int
     markers: int
