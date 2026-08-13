@@ -55,6 +55,11 @@ class _StoreFactice:
 
 
 class _EmbedderFactice:
+    #: Aucun seuil de pertinence : ces tests portent sur la *partition* cours /
+    #: compléments, avec des scores fabriqués. Un seuil y filtrerait sur des
+    #: valeurs choisies pour illustrer un classement, pas une similarité.
+    seuil_pertinence = None
+
     def embed_query(self, query):
         return [0.0]
 

@@ -130,3 +130,9 @@ testpaths = ["tests"]
 # seconde, l'oubli se traduisait par un `ModuleNotFoundError` à la collecte.
 pythonpath = ["src", "."]
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    # Sollicite le vrai modèle BGE-M3 : dépendances lourdes (torch) et
+    # téléchargement du modèle au premier appel. Ignoré automatiquement quand
+    # FlagEmbedding est absent, pour que la suite reste exécutable hors-ligne.
+    "bge: exerce l'embedder BGE-M3 réel (FlagEmbedding requis)",
+]

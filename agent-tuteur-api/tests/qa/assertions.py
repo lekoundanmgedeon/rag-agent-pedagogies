@@ -144,6 +144,76 @@ def assert_pas_de_retrieval(resultat) -> None:
     assert resultat.trace["scores"] == []
 
 
+def assert_llm_reel(agent, resultat) -> None:
+    """Garde-fou d'entrée de la couche B : la prose vient d'un vrai fournisseur.
+
+    Ce n'est pas une précaution de confort. ``FallbackRouter`` place **toujours**
+    ``MockLLM`` en fin de chaîne (``agent/llm/router.py``), par un choix délibéré
+    et sain côté production : l'élève n'est jamais laissé sans réponse. En test,
+    la même propriété est un piège — une clé expirée, un quota dépassé ou une
+    coupure réseau feraient basculer silencieusement sur le mock, et toute la
+    couche B jugerait la prose figée de ``MockLLM.generate`` en se croyant face
+    au modèle. Une suite verte qui ne teste rien est pire que pas de suite.
+
+    Deux conditions, parce qu'il y a deux façons de ne pas solliciter le modèle :
+
+    * ``compose_response`` doit figurer dans le parcours — un tour de mise en
+      sécurité écrit sa réponse lui-même et contourne le nœud de génération ;
+    * le fournisseur effectif ne doit pas être le mock.
+
+    Le fournisseur est lu sur l'**agent** et non sur la trace : seul le chemin
+    streaming renseigne ``trace["llm_provider"]`` (``agent/graph.py``, dans
+    ``stream()``), alors que le rejeu QA passe par ``respond()``. La lecture vaut
+    pour le dernier appel, ce qui suppose un agent par test — c'est ce que
+    garantit la portée « fonction » de la fixture ``agent_qa_llm``.
+    """
+    noeuds = _noeuds(resultat)
+    assert "compose_response" in noeuds, (
+        f"aucune génération dans ce tour (réponse court-circuitée) : {noeuds}"
+    )
+    fournisseur = agent.last_llm_used
+    assert fournisseur != "mock", (
+        "couche B tombée sur le mock : le fournisseur réel n'a pas répondu "
+        "(clé absente ou invalide, quota, réseau). Le test aurait jugé la "
+        "réponse figée de MockLLM."
+    )
+    assert fournisseur is not None, "aucun fournisseur LLM enregistré pour ce tour"
+
+
+def assert_serie_effective(resultat, attendue: str | None) -> None:
+    """Série retenue par le nœud ``profil_eleve`` pour ce tour (cas QA #8).
+
+    ``None`` signifie « aucune série connue », ce qui est un état légitime et
+    distinct de « série par défaut » : la règle n°3 interdit d'en inventer une.
+    """
+    entree = next((e for e in resultat.node_trace if e["node"] == "profil_eleve"), None)
+    assert entree is not None, "le nœud profil_eleve n'a pas été traversé"
+    assert entree["serie_effective"] == attendue, (
+        f"série attendue {attendue!r}, obtenue {entree['serie_effective']!r}"
+    )
+
+
+def assert_aucune_serie_annoncee(prepared) -> None:
+    """Le prompt n'attribue aucune série à l'élève (cas QA #8, règle n°3).
+
+    On vérifie le prompt et non la réponse : c'est du texte produit par le
+    code, donc assérable. Le cadre curriculaire n'est écrit que si une série
+    est connue — l'absence de la mention est la preuve qu'aucune n'a été
+    fabriquée pour combler le vide.
+    """
+    plat = _aplatir(prepared.final_prompt)
+    assert "serie=" not in plat, (
+        f"une série est annoncée alors qu'aucune n'a été déclarée : {prepared.final_prompt!r}"
+    )
+
+
+def assert_serie_dans_le_cadre(prepared, attendue: str) -> None:
+    """Le prompt annonce bien la série retenue, sous sa forme canonique."""
+    assert f"serie={attendue}" in prepared.final_prompt, (
+        f"série {attendue!r} absente du cadre curriculaire : {prepared.final_prompt!r}"
+    )
+
+
 def assert_catalogue_honnete(prepared, chapitres_indexes: set[str]) -> None:
     """Le prompt annonce exactement les chapitres réellement indexés.
 

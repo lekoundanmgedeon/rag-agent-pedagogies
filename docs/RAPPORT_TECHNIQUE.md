@@ -166,7 +166,6 @@ rag-agent-pedagogie/
     ├── api.md                     Chaque endpoint (requête/réponse/SSE)
     ├── adr/0001…0010               10 décisions d'architecture (0010 = la fusion)
     ├── GUIDE_LANCEMENT.md         Tous les modes de lancement + dépannage
-    ├── DEPLOIEMENT_RENDER.md      Démo publique hébergée (mono-conteneur)
     ├── DEPLOIEMENT_TEST.md        Mise en ligne sur un VPS d'équipe
     ├── migration.md                Méthode d'import de données antérieures
     ├── RAPPORT_FUSION.md          Résultat de la fusion, pour la réunion

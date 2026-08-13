@@ -36,8 +36,12 @@ langgraph==1.2.8
 pymupdf==1.28.0
 
 # --- Backends « réels » (activables par configuration, import tardif) ---
-# BGE-M3 dense+sparse — décommenter pour EMBEDDING_BACKEND=bge_m3
-# FlagEmbedding>=1.2,<2
+# BGE-M3 dense+sparse — actif depuis la sortie de Render (décision D3) : le
+# plafond de 512 Mo qui imposait l'embedder « light » n'existe plus.
+# torch arrive par cette dépendance. Le Dockerfile installe DÉLIBÉRÉMENT la
+# variante CPU en amont (voir son commentaire) : le wheel PyPI par défaut tire
+# les bibliothèques CUDA, ~2 Go inutiles sur un VPS sans GPU.
+FlagEmbedding>=1.2,<2
 # Qdrant serveur — utilisé par défaut dans docker-compose.dev/prod.yml.
 # Ne jamais redescendre sous 1.18 : les versions antérieures n'exposent pas
 # `query_points()`, la seule API de recherche qu'utilise ce dépôt.

@@ -18,8 +18,6 @@ docs/                   STATUS.md, architecture.md, api.md, adr/, guides
 .github/workflows/      Intégration continue (5 vérifications par proposition)
 JOURNAL_FUSION.md       Journal de la fusion NURU × ATS, module par module
 REPRISE_FUSION.md       Historique d'avancement de la fusion (archive)
-Dockerfile.render       Image mono-conteneur (SPA + API) pour une démo hébergée
-render.yaml             Blueprint Render correspondant
 ```
 
 👉 **Pour reprendre le travail, lire [`docs/STATUS.md`](docs/STATUS.md)** : état
@@ -55,7 +53,6 @@ badges et recommandations.
 | Résultat de la fusion NURU × ATS, pour la réunion | [`docs/RAPPORT_FUSION.md`](docs/RAPPORT_FUSION.md) |
 | Détail de la fusion, module par module | [`JOURNAL_FUSION.md`](JOURNAL_FUSION.md) |
 | Import de données antérieures | [`docs/migration.md`](docs/migration.md) |
-| Démo publique hébergée (Render) | [`docs/DEPLOIEMENT_RENDER.md`](docs/DEPLOIEMENT_RENDER.md) |
 | Mise en ligne sur un VPS d'équipe | [`docs/DEPLOIEMENT_TEST.md`](docs/DEPLOIEMENT_TEST.md) |
 
 Les documents `COMPARATIF_ARCHITECTURES.md`, `SYNTHESE_REUNION_TECHNIQUE.md` et
