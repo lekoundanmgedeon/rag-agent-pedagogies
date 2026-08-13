@@ -9,19 +9,31 @@ from __future__ import annotations
 
 import pytest
 
-from .attentes import ATTENTES, CONTEXTE_DEFAUT, CONTEXTES
+from .attentes import AGENT_PAR_CAS, ATTENTES, CONTEXTE_DEFAUT, CONTEXTES
 from .cas import cas_critiques
 
 CAS = cas_critiques()
 
 
-@pytest.mark.parametrize("cas", CAS, ids=[c.identifiant_test for c in CAS])
-async def test_cas_critique(cas, agent_qa, session_eleve):
+def _parametre(cas):
+    """Un cas rejoué sur une pile plus lourde porte le marqueur correspondant.
+
+    Sans cela, ``-m "not bge"`` ne saurait pas quels cas il vient d'écarter.
+    """
+    marks = [pytest.mark.bge] if cas.id in AGENT_PAR_CAS else []
+    return pytest.param(cas, marks=marks, id=cas.identifiant_test)
+
+
+@pytest.mark.parametrize("cas", [_parametre(c) for c in CAS])
+async def test_cas_critique(cas, request, session_eleve):
     attente = ATTENTES.get(cas.id)
     if attente is None:
         pytest.xfail(f"cas QA #{cas.id} ({cas.subtheme}) — encore « à_traiter »")
+    # La plupart des cas se jugent sur la pile hors-ligne ; certains exigent
+    # l'embedder de production (cf. AGENT_PAR_CAS).
+    agent = request.getfixturevalue(AGENT_PAR_CAS.get(cas.id, "agent_qa"))
     contexte = CONTEXTES.get(cas.id, CONTEXTE_DEFAUT)
-    resultat = await agent_qa.respond(cas.prompt, contexte, session_eleve)
+    resultat = await agent.respond(cas.prompt, contexte, session_eleve)
     attente(resultat, cas)
 
 

@@ -77,6 +77,43 @@ def agent_qa(pile_qa: PileQA) -> TutorAgent:
     )
 
 
+# --- Même corpus figé, mais encodé par l'embedder de production --------------
+# Le seuil de pertinence (cas #5) est une propriété de l'espace vectoriel :
+# « light » n'en admet aucun (mesuré — les questions couvertes et les questions
+# étrangères s'y recouvrent), donc un cas qui en dépend ne peut pas être jugé
+# sur la pile hors-ligne. Ces fixtures rejouent le même corpus avec BGE-M3.
+#
+# Coût assumé : l'encodage des 36 chunks prend plusieurs minutes sur CPU. D'où
+# la portée « session » et le marqueur ``bge``, qui garde la suite ordinaire
+# rapide et exécutable sans FlagEmbedding.
+
+
+@pytest.fixture(scope="session")
+def pile_qa_bge() -> PileQA:
+    try:
+        import FlagEmbedding  # type: ignore  # noqa: F401
+    except ImportError:
+        pytest.skip("FlagEmbedding non installé : cas jugés sur BGE-M3 ignorés")
+    embedder = build_embedder("bge_m3")
+    store = build_vector_store("memory", rrf_k=60)
+    indexer = Indexer(embedder, store)
+    for chemin in sorted(CORPUS_QA.glob("*.md")):
+        ingest_and_index(chemin.name, chemin.read_bytes(), indexer)
+    return PileQA(store=store, retriever=HybridRetriever(embedder, store, top_k=5))
+
+
+@pytest.fixture
+def agent_qa_bge(pile_qa_bge: PileQA) -> TutorAgent:
+    """Agent hors-ligne, seuil de pertinence actif (embedder de production)."""
+    return TutorAgent(
+        pile_qa_bge.retriever,
+        MockLLM(),
+        memory=InMemoryStudentMemory(),
+        audit=InMemoryAuditLog(),
+        top_k=5,
+    )
+
+
 @pytest.fixture
 def session_eleve() -> SessionState:
     return SessionState(student_id="eleve-qa", tenant_id="qa")

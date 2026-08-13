@@ -104,6 +104,47 @@ de seuil ne remplacera.
 
 ---
 
+## D6 — Que fait l'agent quand aucun extrait ne passe le seuil ?
+
+**Statut : ACTÉE le 2026-08-13 — divulguer, puis aider**
+
+**Contexte.** Le seuil de pertinence du cas #5 fait tomber à zéro les extraits
+servis sur un sujet non couvert. Restait à dire ce que l'élève reçoit alors. Deux
+exigences du backlog se contredisaient :
+
+- le cas #5 (« message de repli honnête : sujet non couvert ») et le cas #30
+  (« signaler explicitement le hors-périmètre ») demandent un aveu ;
+- les fixtures positives **#54** (« Comment dériver un quotient de fonctions ? »)
+  et **#55** (« Calcule la dérivée de f(x) = x²·ln(x) ») portent sur des
+  dérivées, qui ne sont dans **aucun** chapitre indexé, et leur comportement
+  validé par les testeurs est une **réponse correcte**. Un repli qui refuserait
+  de répondre les dégraderait — ce que CLAUDE.md interdit sans validation
+  humaine explicite.
+
+Ce n'était pas une question technique : aucune valeur de seuil ne la règle.
+
+**Décision : divulguer puis aider.**
+**Date :** 2026-08-13
+
+**Notes.** Quand aucun extrait ne passe le seuil, l'agent : (1) n'utilise aucun
+chunk et n'affiche aucune source ; (2) dit à l'élève, en une phrase, que ce point
+n'est pas couvert par les chapitres dont il dispose ; (3) répond quand même avec
+ce qu'il sait, sans jamais prétendre s'appuyer sur une leçon.
+
+L'interdiction d'inventer reste portée par la vérification symbolique et par
+`AVERTISSEMENT_CALCUL_NON_VERIFIE`, pas par le silence — c'est ce qui permet au
+#55 de continuer à recevoir une dérivée juste (calculée par SymPy, pas par le
+corpus) tout en apprenant que le chapitre n'est pas indexé.
+
+Incarnation : `prompt.CONSIGNE_HORS_PERIMETRE`, posée dès que `retrieved` est
+vide ; drapeau `hors_perimetre` dans l'état, le `node_trace` et la trace.
+
+**Ce que cette décision ne règle PAS.** Le cas #30 demande le signalement du
+hors-périmètre sur un tour où le RAG remontait un indice sans rapport : il reste
+à vérifier au sprint 3 que l'aveu suffit à le clore.
+
+---
+
 ## D4 — Répartition du sprint Haute priorité
 
 **Statut : Ouverte — en attente du retour de Claude Code**

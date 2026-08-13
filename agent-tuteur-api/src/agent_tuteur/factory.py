@@ -50,7 +50,13 @@ def build_rag_stack(settings: Settings | None = None) -> RagStack:
         dense_dim=embedder.dense_dim,
     )
     indexer = Indexer(embedder, store)
-    retriever = HybridRetriever(embedder, store, top_k=settings.retrieval_top_k)
+    retriever = HybridRetriever(
+        embedder,
+        store,
+        top_k=settings.retrieval_top_k,
+        # None = le seuil de l'embedder. Cf. Settings.rag_seuil_pertinence.
+        seuil_pertinence=settings.rag_seuil_pertinence,
+    )
     return RagStack(indexer=indexer, retriever=retriever)
 
 
