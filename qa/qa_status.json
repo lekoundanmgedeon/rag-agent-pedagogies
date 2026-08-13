@@ -46,9 +46,9 @@
     "commit": "f32d930"
   },
   "9": {
-    "status": "à_traiter",
+    "status": "en_cours",
     "pr": null,
-    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Assertable : le routage (branche « étude de fonction » n'engageant ni indice socratique ni règle du quotient, et prompt exigeant domaine/limites/dérivée/tableau). Non assertable en A : que la prose contienne réellement les 4 blocs -> dépend de D2. Vérifié : looks_like_calculation('fais moi l'etude de fonction de ln(x)') = False, donc rien ne route aujourd'hui. NE PAS MUTUALISER LA FIXTURE AVEC LE CAS 17 malgré le prompt identique : deux testeurs, deux attentes distinctes."
+    "notes": "CLASSIFICATION SPRINT HAUTE (2026-08-12, vérifiée contre le code, pas déduite des libellés). COUCHE A avec résidu B. Assertable : le routage (branche « étude de fonction » n'engageant ni indice socratique ni règle du quotient, et prompt exigeant domaine/limites/dérivée/tableau). Non assertable en A : que la prose contienne réellement les 4 blocs -> dépend de D2. Vérifié : looks_like_calculation('fais moi l'etude de fonction de ln(x)') = False, donc rien ne route aujourd'hui. NE PAS MUTUALISER LA FIXTURE AVEC LE CAS 17 malgré le prompt identique : deux testeurs, deux attentes distinctes. EN COURS (2026-08-13). Diagnostic mesuré : intent=exercice, hint_level=1, tool_used=None. La consigne de niveau 1 dit littéralement « Rappelle la règle, la définition ou le théorème utile, SANS l'appliquer au cas de l'élève » — la « définition redemandée » rapportée par le testeur n'est donc pas une dérive du modèle mais l'exécution fidèle de la consigne. Aucune branche n'existait pour une demande d'étude. Second constat, décisif pour la conception : le contenu ne peut PAS venir du corpus (les 2 chapitres indexés sont Nombres Complexes et Calcul Intégral ; la recherche remonte 5 extraits de calcul intégral). Le faire produire par le modèle serait le résultat faux annoncé avec assurance qu'interdit la règle n°2 → l'étude doit être calculée symboliquement."
   },
   "10": {
     "status": "corrigé",
