@@ -73,6 +73,7 @@ from agent_tuteur.agent.prompt import (
     assemble_meta_prompt,
     assemble_prompt,
     build_context_block,
+    consigne_complexe,
     consigne_correction_affirmation,
     consigne_etude_de_fonction,
 )
@@ -88,6 +89,7 @@ from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.tools.affirmation import verifier_affirmation
+from agent_tuteur.tools.complexe import analyser_la_demande as analyser_complexe_demande
 from agent_tuteur.tools.etude_fonction import etudier_la_demande
 from agent_tuteur.tools.calculator import (
     CalculationError,
@@ -511,6 +513,24 @@ class TutorAgent:
             # armé interdirait d'annoncer l'étude qu'on vient d'établir.
             calcul_non_verifie = False
 
+        # Quatrième usage du calcul symbolique de ce nœud. Sans lui, l'exercice
+        # le plus basique du chapitre le mieux couvert (« z = 3 + 4i ») armait
+        # calcul_non_verifie : `i` n'étant pas l'unité imaginaire, `compute`
+        # échouait et le prompt interdisait d'annoncer le moindre résultat.
+        analyse = analyser_complexe_demande(question)
+        complexe = None
+        if analyse is not None:
+            complexe = {
+                "nom": analyse.nom,
+                "forme": analyse.forme,
+                "partie_reelle": analyse.partie_reelle,
+                "partie_imaginaire": analyse.partie_imaginaire,
+                "conjugue": analyse.conjugue,
+                "module": analyse.module,
+                "argument": analyse.argument,
+            }
+            calcul_non_verifie = False
+
         return {
             "tool_used": tool_used,
             "tool_result": tool_result,
@@ -518,10 +538,12 @@ class TutorAgent:
             "calcul_non_verifie": calcul_non_verifie,
             "affirmation_eleve": affirmation,
             "etude_fonction": etude_fonction,
+            "complexe": complexe,
             "node_trace": [
                 {"node": "route_tool", "tool_used": tool_used,
                  "calcul_non_verifie": calcul_non_verifie,
                  "etude_fonction": etude_fonction is not None,
+                 "complexe": complexe is not None,
                  "affirmation_correcte": None if affirmation is None else affirmation["correcte"]}
             ],
         }
@@ -550,6 +572,7 @@ class TutorAgent:
             demande_concrete=demande_un_calcul_concret(question),
         )
         etude = state.get("etude_fonction")
+        complexe = state.get("complexe")
         # Une étude de fonction est un livrable, pas un indice : la même
         # contradiction que pour les cas #11/#13 s'y appliquait, en plus large.
         if etude:
@@ -572,6 +595,7 @@ class TutorAgent:
             correction_affirmation=correction,
             varier_approche=varier_approche,
             etude_fonction=consigne_etude_de_fonction(etude) if etude else None,
+            complexe=consigne_complexe(complexe) if complexe else None,
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -585,6 +609,7 @@ class TutorAgent:
             "frustration_score": state.get("frustration_score", 0.0),
             "blocage_declare": varier_approche,
             "etude_fonction": etude,
+            "complexe": complexe,
             "tool_used": state.get("tool_used"),
             "tool_result": state.get("tool_result"),
             "calcul_non_verifie": bool(state.get("calcul_non_verifie")),

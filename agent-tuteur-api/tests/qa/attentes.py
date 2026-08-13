@@ -54,6 +54,25 @@ def _cas_01_derivee(resultat, cas) -> None:
     assert sympy.simplify(sympy.sympify(calcule) - sympy.sympify("3*x**2 - 3")) == 0
 
 
+# --- Cas 6 — Chapitre indexé « non retrouvé » sur un exercice basique ---------
+def _cas_06_complexe(resultat, cas) -> None:
+    """« z = 3 + 4i : partie réelle, imaginaire, conjugué, module » (Pierre Ndong).
+
+    Deux moitiés vérifiées ici : les extraits du chapitre indexé sont bien
+    servis, et les quatre grandeurs sont établies symboliquement — sans quoi
+    ``calcul_non_verifie`` interdisait au prompt d'annoncer le moindre résultat.
+    """
+    chapitres = {sc.chunk.metadata.chapitre for sc in resultat.retrieved}
+    assert chapitres == {"Les Nombres Complexes"}, chapitres
+
+    complexe = resultat.trace["complexe"]
+    assert complexe is not None, "le complexe de l'énoncé n'a pas été analysé"
+    assert complexe["partie_reelle"] == "3"
+    assert complexe["partie_imaginaire"] == "4"
+    assert complexe["module"] == "5"
+    assert resultat.trace["calcul_non_verifie"] is False
+
+
 # --- Cas 8 — Série fabriquée faute de déclaration -----------------------------
 def _cas_08_serie(resultat, cas) -> None:
     """« je suis en classe de terminale » (Mohamed FAYE).
@@ -173,6 +192,7 @@ ATTENTES: dict[int, Attente] = {
     2: _cas_meta,
     3: _cas_meta,
     4: _cas_meta,
+    6: _cas_06_complexe,
     7: _cas_07_detresse,
     8: _cas_08_serie,
     9: _cas_09_etude_de_fonction,

@@ -190,6 +190,35 @@ def consigne_etude_de_fonction(etude: dict) -> str:
     return "\n".join(lignes)
 
 
+def consigne_complexe(analyse: dict) -> str:
+    """Éléments vérifiés d'un nombre complexe défini par l'énoncé (cas QA #6).
+
+    Même contrat que :func:`consigne_etude_de_fonction` : les valeurs sont
+    établies par SymPy et ne doivent pas être recalculées. La différence tient
+    à ce qui était en jeu — ici l'agent disposait des bons extraits de cours et
+    s'interdisait quand même tout résultat, faute d'avoir pu vérifier quoi que
+    ce soit sur une expression où ``i`` n'était pas l'unité imaginaire.
+    """
+    nom = analyse["nom"]
+    lignes = [
+        f"L'élève travaille sur le nombre complexe {nom} = {analyse['forme']}. "
+        "Les éléments suivants sont établis par l'outil de calcul symbolique — "
+        "ils sont vérifiés : reprends-les tels quels, ne les recalcule pas.",
+        f"- Partie réelle : Re({nom}) = {analyse['partie_reelle']}",
+        f"- Partie imaginaire : Im({nom}) = {analyse['partie_imaginaire']}",
+        f"- Conjugué : {nom}̄ = {analyse['conjugue']}",
+        f"- Module : |{nom}| = {analyse['module']}",
+    ]
+    if analyse.get("argument"):
+        lignes.append(f"- Argument : arg({nom}) = {analyse['argument']} (modulo 2π)")
+    lignes.append(
+        "Réponds à chaque question posée par l'énoncé, en t'appuyant sur ces "
+        "valeurs et en expliquant la méthode qui y mène. Note que « I » est "
+        "l'écriture de l'outil pour l'unité imaginaire : écris « i » à l'élève."
+    )
+    return "\n".join(lignes)
+
+
 def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, attendu: str) -> str:
     """Consigne de correction d'une affirmation fausse de l'élève (cas QA #15).
 
@@ -220,6 +249,7 @@ def assemble_prompt(
     correction_affirmation: str | None = None,
     varier_approche: bool = False,
     etude_fonction: str | None = None,
+    complexe: str | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
@@ -264,6 +294,8 @@ def assemble_prompt(
     # livrable, la graduation ne règle plus que le ton (cas QA #9).
     if etude_fonction:
         parts.append(etude_fonction)
+    if complexe:
+        parts.append(complexe)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )
