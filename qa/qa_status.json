@@ -120,107 +120,107 @@
   "22": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A partiellement, MAIS NÉCESSITE LA STACK RÉELLE. Mesuré : la question part en mode COURS (intent=cours, noeuds course_planner/guardrail_course) alors qu'aucun chapitre de physique n'existe. prepare() aboutit sous MockLLM — la « réponse vide » ne se reproduit donc pas hors-ligne et vient du modèle ou de la route SSE. Le volet « fuite admin » est un audit d'étanchéité de contexte, pas un correctif d'agent : à traiter sur docker-compose.dev.yml avec un vrai compte admin."
   },
   "23": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). HORS PÉRIMÈTRE DU MOTEUR PÉDAGOGIQUE. Bug produit (suppression de conversation) ; recommended_action dit explicitement « transmettre à l'équipe technique/produit ». Candidat à ne_sera_pas_corrigé dans ce backlog, sous réserve d'arbitrage humain."
   },
   "24": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). HORS PÉRIMÈTRE — ÉTUDE DE FAISABILITÉ. Upload d'image + OCR : nouvelle capacité produit, pas un correctif de comportement. Le volet corrigeable ici est mince (répondre honnêtement « je ne sais pas lire d'image » au lieu de dévier sur LaTeX) et dépend de D2 pour la prose."
   },
   "25": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). HORS PÉRIMÈTRE — ÉTUDE DE FAISABILITÉ. Résumé de session + export PDF : fonctionnalité produit. Note : la mémoire de session existe (SessionState) mais n'est pas exposée à l'élève."
   },
   "26": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A — FRANC. Mesuré : intent=cours (noeuds course_planner/guardrail_course) alors que c'est une question MÉTA sur la couverture. Le mot « cours » dans « les chapitres du cours de maths » capte le routage avant le garde-fou méta des cas #2/#3/#4. Corrigeable en réutilisant store.catalogue(), déjà en place. Le volet « réponse déterministe » demandé par recommended_action est assertable sur le routage."
   },
   "27": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE B — NÉCESSITE D2. « Aide moi à devenir meilleure » est une demande ouverte ; la qualité de la question de clarification est du jugement de prose. Volet couche A possible mais mince : éviter le niveau 0 sur une demande sans expression."
   },
   "28": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A — FRANC, MAIS HORS DU BACKEND AGENT. La liste des sujets proposés à l'accueil doit venir de store.catalogue() plutôt que d'une liste figée. Le correctif est côté frontend/API d'accueil, pas dans le graphe. À vérifier : où cette liste est produite."
   },
   "29": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). BLOQUÉ SUR RC-0 (D3). Même cause que le cas #5 : sans seuil de pertinence, la recherche remonte ses meilleurs chunks (scores ~0.03, du bruit) et l'agent dévie vers le calcul intégral. Le signaler honnêtement suppose d'abord savoir que rien n'est pertinent."
   },
   "30": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). BLOQUÉ SUR RC-0 (D3). Mesuré : hint=1, scores 0.032/0.0318/0.0315 — indiscernables, donc du bruit servi comme pertinent. L'« indice sans rapport (factorisation) » en découle directement."
   },
   "31": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A — FRANC. Mesuré : hint_level=1, dont la consigne dit « Rappelle la règle SANS l'appliquer au cas de l'élève » — d'où la règle générale au lieu de l'exercice. Même famille que #9/#11/#13 : une demande de livrable concret reçoit une posture socratique. Le corpus PORTE des exercices de calcul intégral (section « 11. Exercices »), donc l'ancrage déterministe par section posé au cas #12 est réutilisable."
   },
   "32": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A — DÉJÀ COUVERT PAR LES CORRECTIFS EXISTANTS (mesuré 2026-08-13, pas déduit). tool_used=sympy_calculator, tool_result='x^3 - 3x → 3*x**2 - 3', hint_level=4 motif « résultat vérifié et explicitement demandé ». Le correctif du cas #1 (extraction Unicode) et l'escalade des cas #11/#13 le couvrent ensemble. Ne demande qu'une attente enregistrée pour être protégé contre la régression."
   },
   "33": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). HORS PÉRIMÈTRE IMMÉDIAT — partiellement adressé. Le vérificateur symbolique demandé existe désormais (tools/calculator, tools/etude_fonction, verify.py), mais il ne couvre pas les démonstrations par récurrence sur suites. Chantier à part entière."
   },
   "34": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE B — NÉCESSITE D2. « Fiabiliser la ré-génération dans un format différent » porte sur la stabilité de la prose entre deux tours ; aucune décision de pipeline ne l'observe."
   },
   "35": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE B — NÉCESSITE D2, avec un volet RC-0. « Ne pas introduire de sujet non mentionné » est une contrainte de formulation du refus. Le sujet parasite (nombres complexes) vient des chunks hors-sujet remontés faute de seuil."
   },
   "36": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A avec résidu B. Volet assertable : au premier tour, conversation_history est vide — le prompt ne doit rien contenir qui suggère un contenu antérieur. Volet non assertable : la référence inventée par le modèle et la relecture grammaticale -> D2."
   },
   "37": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE B — NÉCESSITE D2. Rendu LaTeX des expressions : jugement sur la forme du texte produit."
   },
   "38": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A — FRANC. Mesuré : intent=exercice, hint_level=0 sur « Bonsoir » (question de moins de 4 tokens). La consigne du niveau 0 dit « Reformule la question de l'élève […] n'apporte AUCUNE information nouvelle et ne résous rien » — l'enchaînement sur une question de vérification est donc prescrit. Famille avec #41."
   },
   "39": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE B — NÉCESSITE D2. « Reformulation simplifiée avec exemple concret » : la consigne de variation d'approche posée au cas #20 s'en approche, mais juger qu'elle est effectivement plus simple est de la prose."
   },
   "40": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE B — NÉCESSITE D2, avec un volet RC-0. « Laisser l'élève décider de la suite » est une contrainte de formulation ; la reprise forcée du cours vient du prompt qui injecte toujours les extraits remontés."
   },
   "41": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). COUCHE A — FRANC. Mesuré : intent=exercice, hint_level=0 sur « Salut ». Cause racine identique au cas #38, à traiter dans le même changement."
   },
   "42": {
     "status": "à_traiter",
     "pr": null,
-    "notes": ""
+    "notes": "CLASSIFICATION SPRINT MOYENNE (2026-08-13, vérifiée contre le code et par rejeu, pas déduite des libellés). BLOQUÉ — D2 + RC-0. Comparaison instructive : la fixture positive #61 (« Apprends moi a cuisiner les pommes sautes ») produit un refus VALIDÉ sur une demande hors maths de même nature. L'écart entre les deux tient à la prose, donc à D2 ; le pivot vers le calcul intégral tient aux chunks servis sans seuil, donc à RC-0."
   },
   "43": {
     "status": "à_traiter",
