@@ -33,6 +33,10 @@ class Intent(str, Enum):
     #: couverts, méthode de travail, capacités de l'agent. Aucune recherche de
     #: contenu ne doit être lancée (cas QA #2, #3, #4).
     META = "meta"
+    #: Le message n'est **qu'**une salutation (« Bonsoir », « Salut »). Il n'y a
+    #: rien à chercher ni à socratiser : on accueille, puis on oriente vers ce
+    #: que le corpus couvre réellement (cas QA #38, #41).
+    SALUTATION = "salutation"
 
 
 class Navigation(str, Enum):
@@ -177,6 +181,49 @@ _META_HORS_COURS = re.compile(
 )
 
 
+# --- Salutations -------------------------------------------------------------
+# Un « Bonsoir » tombait en EXERCICE, et comme il fait moins de 4 tokens,
+# `diagnose_hint_level` le classait au niveau 0, dont la consigne dit
+# « Reformule la question de l'élève […] n'apporte AUCUNE information nouvelle ».
+# L'enchaînement sur une question de vérification que rapportent les testeurs
+# était donc prescrit, pas accidentel (cas QA #38 et #41).
+_SALUTATION = re.compile(
+    r"\b(?:bonjour|bonsoir|salut|coucou|bjr|bsr|slt|cc|hello|hi|hey|yo|"
+    r"bonne\s+(?:journ[ée]e|soir[ée]e)|re)\b",
+    re.IGNORECASE,
+)
+
+#: Politesses et formules de civilité qui accompagnent une salutation sans rien
+#: y ajouter de substantiel : « Bonsoir, ça va ? » reste une salutation.
+_CIVILITES = re.compile(
+    r"\b(?:[çc]a\s+va|comment\s+(?:vas[\s-]?tu|allez[\s-]?vous|tu\s+vas)|"
+    r"tu\s+vas\s+bien|vous\s+allez\s+bien|merci|s['e]il\s+(?:te|vous)\s+pla[îi]t|"
+    r"stp|svp|et\s+toi|moi\s+c['e]est\s+\w+|je\s+m['e]appelle\s+\w+|"
+    r"le\s+tuteur|monsieur|madame|prof(?:esseur)?)\b",
+    re.IGNORECASE,
+)
+
+#: Ce qui reste après retrait des salutations et civilités. Tout caractère
+#: alphanumérique résiduel signale une vraie demande.
+_RESIDU_SIGNIFIANT = re.compile(r"[^\W_]", re.UNICODE)
+
+
+def est_une_salutation(question: str) -> bool:
+    """Vrai si le message n'est **rien d'autre** qu'une salutation.
+
+    La condition « rien d'autre » est le cœur du prédicat, et pas un raffinement :
+    « Salut, comment on calcule le module d'un nombre complexe ? » est une vraie
+    question, et l'accueillir sans y répondre reproduirait le défaut qu'on
+    corrige, à l'envers. On retire donc les salutations et les civilités, puis on
+    exige que le résidu ne porte plus aucun caractère alphanumérique.
+    """
+    if not _SALUTATION.search(question):
+        return False
+    residu = _SALUTATION.sub(" ", question)
+    residu = _CIVILITES.sub(" ", residu)
+    return not _RESIDU_SIGNIFIANT.search(residu)
+
+
 def is_meta_request(question: str, *, in_course: bool = False) -> bool:
     """Vrai si la question porte sur le service plutôt que sur une notion."""
     if _META_TOUJOURS.search(question):
@@ -233,6 +280,13 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
     cas, une relance sans marqueur explicite reste dans le cours (poursuite du
     fil), sur la section courante.
     """
+    # Un message qui n'est qu'une salutation passe avant tout le reste : il n'y
+    # a ni notion à chercher, ni exercice à socratiser. Le prédicat exige que le
+    # message ne contienne rien d'autre, donc aucune vraie demande n'est
+    # absorbée ici — « Salut, calcule 1+1 » n'est pas une salutation.
+    if est_une_salutation(question):
+        return IntentDecision(Intent.SALUTATION, "salutation seule", None)
+
     # Une demande d'évaluation prime sur tout le reste, y compris sur la
     # continuité d'un cours : « teste-moi » pendant un cours veut bien dire
     # « interroge-moi maintenant », pas « continue à m'expliquer ».

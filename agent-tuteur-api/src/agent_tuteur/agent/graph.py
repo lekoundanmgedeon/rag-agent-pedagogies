@@ -68,6 +68,7 @@ from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPor
 from agent_tuteur.agent.profil import detecter_serie, serie_effective
 from agent_tuteur.agent.prompt import (
     SYSTEM_PERSONA_QUIZ,
+    assemble_accueil_prompt,
     assemble_course_prompt,
     assemble_meta_prompt,
     assemble_prompt,
@@ -640,6 +641,42 @@ class TutorAgent:
             "node_trace": [{"node": "guardrail_meta", "n_chapitres": len(catalogue)}],
         }
 
+    @_timed_node("guardrail_accueil")
+    async def _n_guardrail_accueil(self, state: AgentState) -> dict:
+        """Salutation seule : on accueille, sans rien chercher (cas #38, #41).
+
+        Branché au même endroit que ``guardrail_meta``, avant la recherche, et
+        pour une raison voisine : « Bonsoir » n'a aucun contenu à retrouver, et
+        la recherche y remontait quand même cinq extraits à des scores
+        indiscernables (~0,03) — du bruit, qui servait ensuite de matière à une
+        question de vérification que l'élève n'avait pas appelée.
+        """
+        ctx = state.get("curriculum_context", {})
+        catalogue = self._retriever.catalogue(ctx)
+        system, user_prompt = assemble_accueil_prompt(state["question"], catalogue, ctx)
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "securite": None,
+            "hint_level": None,
+            "hint_label": "Accueil",
+            "hint_reason": "salutation seule",
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": None,
+            "course": None,
+            "sources": [],
+            "scores": [],
+            "catalogue": catalogue,
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": system,
+            "final_prompt": user_prompt,
+            "retrieved": [],
+            "trace": trace,
+            "node_trace": [{"node": "guardrail_accueil", "n_chapitres": len(catalogue)}],
+        }
+
     # ------------------------------------------------------------ branche cours
     @_timed_node("course_planner")
     async def _n_course_planner(self, state: AgentState) -> dict:
@@ -998,6 +1035,7 @@ class TutorAgent:
         g.add_node("guardrail_quiz", self._n_guardrail_quiz)
         # Branche méta (question sur le service) — sans recherche de contenu.
         g.add_node("guardrail_meta", self._n_guardrail_meta)
+        g.add_node("guardrail_accueil", self._n_guardrail_accueil)
 
         g.add_edge(START, "triage_securite")
         # Le profil est résolu avant tout le reste (sauf la mise en sécurité,
@@ -1015,7 +1053,11 @@ class TutorAgent:
         g.add_conditional_edges(
             "detect_intent",
             _route_meta_ou_contenu,
-            {"meta": "guardrail_meta", "contenu": "retrieve_context"},
+            {
+                "meta": "guardrail_meta",
+                "accueil": "guardrail_accueil",
+                "contenu": "retrieve_context",
+            },
         )
         g.add_conditional_edges(
             "retrieve_context",
@@ -1043,6 +1085,7 @@ class TutorAgent:
             g.add_edge("guardrail_course", "compose_response")
             g.add_edge("guardrail_quiz", "compose_response")
             g.add_edge("guardrail_meta", "compose_response")
+            g.add_edge("guardrail_accueil", "compose_response")
             g.add_edge("compose_response", "verify_response")
             g.add_edge("verify_response", "persist_progression")
             g.add_edge("persist_progression", END)
@@ -1051,6 +1094,7 @@ class TutorAgent:
             g.add_edge("guardrail_course", END)
             g.add_edge("guardrail_quiz", END)
             g.add_edge("guardrail_meta", END)
+            g.add_edge("guardrail_accueil", END)
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -1230,9 +1274,15 @@ def _route_meta_ou_contenu(state: AgentState) -> str:
     """Aiguillage juste après ``detect_intent``, avant toute recherche.
 
     Défaut sûr : ``contenu``. Une intention non reconnue continue vers le
-    pipeline habituel — la sélectivité est portée par ``intent.is_meta_request``.
+    pipeline habituel — la sélectivité est portée par ``intent.is_meta_request``
+    et ``intent.est_une_salutation``.
     """
-    return "meta" if state.get("intent") == Intent.META.value else "contenu"
+    intention = state.get("intent")
+    if intention == Intent.META.value:
+        return "meta"
+    if intention == Intent.SALUTATION.value:
+        return "accueil"
+    return "contenu"
 
 
 def _route_by_intent(state: AgentState) -> str:
