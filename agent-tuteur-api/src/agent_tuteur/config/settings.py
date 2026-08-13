@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     # Répertoire du build statique du SPA Vue (`agent-tuteur-web/dist`). Vide par
     # défaut : en dev comme en Docker Compose, c'est nginx qui sert le SPA et
     # l'API n'expose que /api + /health. Renseigné uniquement dans l'image
-    # mono-conteneur (Dockerfile.render), où FastAPI sert aussi le frontend.
+    # mono-conteneur, où FastAPI sert aussi le frontend (cf. api.main._mount_spa).
     spa_dist_dir: str = ""
 
     @property

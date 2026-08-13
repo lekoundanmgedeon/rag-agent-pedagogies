@@ -22,7 +22,6 @@ pour une nouvelle session (humaine ou Claude) — pas une doc de référence fin
 | Décisions techniques argumentées | [`docs/RAPPORT_TECHNIQUE.md`](RAPPORT_TECHNIQUE.md) |
 | **Comment lancer (Docker/local, tous modes)** | [`docs/GUIDE_LANCEMENT.md`](GUIDE_LANCEMENT.md) |
 | **Mettre en ligne sur un VPS (test d'équipe)** | [`docs/DEPLOIEMENT_TEST.md`](DEPLOIEMENT_TEST.md) |
-| Démo publique hébergée (Render) | [`docs/DEPLOIEMENT_RENDER.md`](DEPLOIEMENT_RENDER.md) |
 | ADR individuelles (dont **0010** sur la fusion) | [`docs/adr/`](adr/) |
 | Import de données antérieures | [`docs/migration.md`](migration.md) |
 | **Résultat de la fusion, pour la réunion** | [`docs/RAPPORT_FUSION.md`](RAPPORT_FUSION.md) |
