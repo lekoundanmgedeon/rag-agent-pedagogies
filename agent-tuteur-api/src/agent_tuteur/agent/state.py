@@ -80,6 +80,8 @@ class AgentState(TypedDict, total=False):
     #: quand la demande était bien une étude mais que rien n'a pu être établi :
     #: on ne remplit pas le vide (cas QA #9, règle n°2).
     etude_fonction: dict | None
+    #: Éléments vérifiés d'un nombre complexe défini par l'énoncé (cas QA #6).
+    complexe: dict | None
     tool_used: str | None
     tool_result: str | None
     #: Le résultat seul (sans « expression → »), pour le contrôle de fidélité
