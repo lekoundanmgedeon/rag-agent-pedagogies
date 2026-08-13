@@ -42,7 +42,12 @@ def build_rag_stack(settings: Settings | None = None) -> RagStack:
         url=settings.qdrant_url,
         api_key=settings.qdrant_api_key,
         collection=settings.qdrant_collection,
-        dense_dim=settings.embedding_dense_dim,
+        # La dimension vient de l'EMBEDDER, jamais du réglage : lui seul la
+        # connaît. ``embedding_dense_dim`` ne pilote que le backend « light » ;
+        # BGE-M3 impose 1024 et ignore ce réglage. Passer la valeur configurée
+        # créerait une collection en 256 pour des vecteurs en 1024 — collection
+        # muette à la création, puis en échec au premier upsert.
+        dense_dim=embedder.dense_dim,
     )
     indexer = Indexer(embedder, store)
     retriever = HybridRetriever(embedder, store, top_k=settings.retrieval_top_k)

@@ -69,7 +69,7 @@ services:
       VECTOR_BACKEND: qdrant
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:?}
-      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-light}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-bge_m3}
       LLM_BACKEND: auto
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY requis (ou vide si Ollama seul assumé)}
       MISTRAL_MODEL: ${MISTRAL_MODEL:-mistral-small-latest}
@@ -94,7 +94,7 @@ services:
       VECTOR_BACKEND: qdrant
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:?}
-      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-light}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-bge_m3}
     command: ["arq", "agent_tuteur.workers.ingestion_worker.WorkerSettings"]
     restart: unless-stopped
     depends_on:
