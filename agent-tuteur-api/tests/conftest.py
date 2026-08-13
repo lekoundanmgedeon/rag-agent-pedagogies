@@ -19,6 +19,26 @@ from agent_tuteur.vectorstore.store import BaseVectorStore, build_vector_store
 CORPUS_DIR = Path(__file__).resolve().parents[1] / "corpus"
 
 
+def pytest_collection_modifyitems(config, items):
+    """Rend les tests ``bge`` opt-in, même quand FlagEmbedding est installé.
+
+    Un simple ``skipif`` sur l'absence du paquet ne suffit pas : depuis que
+    BGE-M3 est une dépendance réelle, il est présent partout, et la suite
+    passerait de vingt secondes à une dizaine de minutes — chargement du modèle
+    et inférence à chaque exécution. Une suite qu'on n'a plus envie de lancer
+    est une suite qui ne protège plus rien.
+
+    Même patron que le marqueur ``llm`` de la couche B QA : on la déclenche
+    explicitement, par ``QA_BGE=1``.
+    """
+    if os.environ.get("QA_BGE") == "1":
+        return
+    saut = pytest.mark.skip(reason="modèle BGE-M3 non sollicité (poser QA_BGE=1)")
+    for item in items:
+        if "bge" in item.keywords:
+            item.add_marker(saut)
+
+
 @dataclass
 class RagStack:
     embedder: BaseEmbedder

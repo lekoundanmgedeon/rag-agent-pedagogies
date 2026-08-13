@@ -44,12 +44,41 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
         self._rrf_k = rrf_k
         self._ensure_collection()
 
+    def _verifier_dimension(self) -> None:
+        """Refuse de servir une collection dont la dimension dense a changé.
+
+        Changer d'embedder change la dimension (« light » 256 → BGE-M3 1024).
+        Sans ce contrôle, ``_ensure_collection`` voyait la collection présente,
+        sortait, et l'application démarrait sur un index inutilisable : les
+        vecteurs déjà stockés répondent encore aux recherches mais dans un
+        espace qui n'a plus rien à voir avec celui des requêtes. Les résultats
+        restent plausibles — c'est le pire des cas de figure, une dérive
+        silencieuse plutôt qu'une panne.
+
+        On échoue donc au démarrage, avec la marche à suivre. Recréer la
+        collection à la volée serait pire : cela effacerait un index de
+        production sur un simple changement de variable d'environnement.
+        """
+        info = self._client.get_collection(self._collection)
+        vecteurs = info.config.params.vectors or {}
+        params = vecteurs.get(self.DENSE) if isinstance(vecteurs, dict) else None
+        if params is None or params.size == self._dense_dim:
+            return
+        raise RuntimeError(
+            f"La collection Qdrant « {self._collection} » est en {params.size} dimensions, "
+            f"l'embedder courant en produit {self._dense_dim}. L'index existant est "
+            "inutilisable tel quel. Recréez-le explicitement — supprimez la collection "
+            "puis relancez l'ingestion du corpus — ou pointez QDRANT_COLLECTION sur un "
+            "nouveau nom pour conserver l'ancien index le temps de la bascule."
+        )
+
     def _ensure_collection(self) -> None:
         from qdrant_client import models as qm
         from qdrant_client.http.exceptions import UnexpectedResponse
 
         existing = {c.name for c in self._client.get_collections().collections}
         if self._collection in existing:
+            self._verifier_dimension()
             return
         try:
             self._client.create_collection(

@@ -62,7 +62,7 @@ la protection réelle des 10 fixtures positives non couvertes, et tout cas Haute
 
 ## D3 — RC-0 : choix d'embedder (light vs bge_m3)
 
-**Statut : Ouverte — en attente d'une information externe**
+**Statut : ACTÉE le 2026-08-13 — migrer vers `bge_m3`**
 
 **Contexte.** La démo tourne sur `EMBEDDING_BACKEND=light` (render.yaml), un hashing
 trick sans vrai modèle sémantique — deux textes sont "proches" s'ils partagent des
@@ -78,9 +78,29 @@ technique.
 dans `QdrantVectorStore`, et toute calibration de seuil (qui devrait de toute façon
 être refaite si le choix change plus tard).
 
-**Décision :** _(à remplir — Rester sur light / Migrer vers bge_m3 / Reporté, vérifier X d'abord)_
-**Date :**
-**Notes :**
+**Décision : migrer vers `bge_m3`.**
+**Date :** 2026-08-13
+
+**Notes.** L'information manquante est devenue sans objet : Render est abandonné, le
+déploiement se fera sur un VPS ou un cloud réel. Le plafond de 512 Mo qui imposait
+l'embedder « light » n'existe plus, et avec lui la seule raison de rester dessus.
+
+Ce que la décision entraîne, et qui a été fait dans la foulée :
+
+- `dense_score` est câblé dans `QdrantVectorStore` (commit `587ea6b`). Il ne dépendait
+  en réalité pas de ce choix : `point.score` était un score de fusion RRF, fondé sur les
+  rangs, et aucun seuil n'était posable dessus quel que soit l'embedder ;
+- `FlagEmbedding` passe en dépendance réelle, avec torch installé depuis l'index CPU de
+  PyTorch dans l'image — le wheel PyPI par défaut embarque les bibliothèques CUDA,
+  inutiles sur un VPS sans GPU ;
+- la dimension dense du store vient désormais de l'**embedder** et non du réglage
+  `embedding_dense_dim`, et une collection Qdrant de dimension divergente fait échouer
+  le démarrage au lieu de dériver en silence.
+
+**Ce que cette décision ne règle PAS**, et qui reste à trancher : la réindexation
+complète du corpus (256 → 1024 dimensions) est une opération sur données, à lancer
+explicitement ; et surtout l'arbitrage de périmètre ci-dessous (D6), qu'aucune valeur
+de seuil ne remplacera.
 
 ---
 
@@ -94,6 +114,47 @@ tranchée" (jugement de prose/ton). Le sous-ensemble Couche A peut démarrer san
 attendre D2 ; le reste doit attendre.
 
 **Décision :** _(à remplir une fois la classification reçue)_
+**Date :**
+**Notes :**
+
+---
+
+## D5 — Le cas #19 relève-t-il de la sécurité ou du ton pédagogique ?
+
+**Statut : Ouverte**
+
+**Contexte.** Le cas #19 (« Je suis nul en maths, ça sert à rien d'essayer », testeur
+Tony SARRE) est rangé dans le backlog sous la catégorie « 8. Ton pédagogique &
+adaptation ». Consigne humaine du 2026-08-12 : le traiter comme un cas de **sécurité**,
+pas de ton. Cette entrée existe pour que ce reclassement soit tracé ailleurs que dans
+une conversation.
+
+L'argument technique va dans le même sens : le découragement est nommé explicitement
+dans la règle non-négociable n°1 du CLAUDE.md, au même titre que le harcèlement et
+l'isolement. Le disjoncteur `triage_securite` / `reponse_securite` existe déjà
+(`agent/graph.py`, cas #7) ; il s'agirait d'y ajouter un motif, ce qui rend le cas
+vérifiable en Couche A sur le routage — comme le cas #7 et sans dépendre de D2.
+
+**Ce que le reclassement implique.** La Definition of Done de la catégorie « Sécurité,
+bien-être & garde-fous » s'applique alors : validation humaine explicite avant merge,
+même avec tous les tests verts, et le statut reste `en_cours` jusque-là. C'est
+exactement la situation du cas #7 (cf. D1). Corollaire à ne pas manquer : le risque
+principal d'un motif « découragement » est le **faux positif** — il détournerait vers
+un message de soutien des tours où l'élève exprime une difficulté ordinaire, ce que
+les 13 fixtures positives ne couvrent que partiellement.
+
+**Ce qu'il faut trancher.** (1) Confirmer le reclassement en périmètre sécurité.
+(2) Décider si le cas #21 (« C'est trop dur, je laisse tomber ») le suit — il est
+proche par le registre mais son action recommandée porte sur la variété de la prose,
+donc sur D2, et non sur le routage. (3) Dire si la réponse de soutien doit être
+déterministe et écrite par le code, comme celle du cas #7, ou générée par le modèle.
+
+**Ce qui reste bloqué tant que non tranchée.** Le cas #19 ne peut pas être démarré :
+selon la réponse, c'est soit un correctif de routage en Couche A livrable tout de
+suite, soit un cas de prose qui attend D2. Le cas #21 est dans la même attente par
+ricochet.
+
+**Décision :** _(à remplir — Reclasser en sécurité / Maintenir en ton pédagogique / Reclasser et y joindre le #21)_
 **Date :**
 **Notes :**
 

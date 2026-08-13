@@ -12,6 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
+# torch AVANT requirements.txt, et depuis l'index CPU de PyTorch. FlagEmbedding
+# (BGE-M3) en dépend ; le wheel PyPI par défaut embarque les bibliothèques CUDA,
+# soit ~2 Go de plus dans l'image pour un VPS qui n'a pas de GPU. Installé en
+# premier, il satisfait la dépendance et pip ne retélécharge pas la variante
+# CUDA ensuite.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
