@@ -119,6 +119,26 @@ class HybridRetriever:
         """
         return self._store.catalogue(build_filters(context or {}))
 
+    def chunks_du_chapitre(
+        self, chapitre: str, context: dict | None = None, *, limite: int = 40
+    ) -> list[ScoredChunk]:
+        """Extraits d'un chapitre donné, ratissés large pour être triés ensuite.
+
+        Le mode cours a besoin d'atteindre la section qu'il enseigne, pas la
+        section la plus proche de la phrase de l'élève : « Fais-moi un cours sur
+        les nombres complexes » ne ressemble lexicalement ni à « 3. Définitions »
+        ni à « 7. Méthodes », si bien que la section servie tenait du hasard du
+        classement (cas QA #12).
+
+        On récupère donc largement **dans le chapitre** — le filtre porte sur les
+        métadonnées, pas sur la similarité — et l'appelant choisit ensuite ses
+        extraits sur le titre de section, de façon déterministe. La requête
+        vectorielle ne sert plus qu'à ordonner un ensemble déjà circonscrit, ce
+        qui rend le résultat indépendant du choix d'embedder resté ouvert (RC-0).
+        """
+        cible = {**(context or {}), "chapitre": chapitre}
+        return self.retrieve(chapitre, cible, top_k=limite)
+
     def retrieve_course_first(
         self,
         query: str,

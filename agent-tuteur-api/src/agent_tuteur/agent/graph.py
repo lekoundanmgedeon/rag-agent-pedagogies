@@ -45,9 +45,13 @@ from langgraph.graph import END, START, StateGraph
 
 from agent_tuteur.agent.course_plan import (
     CoursePosition,
+    Section,
     advance,
     plan_titles,
     resolve_chapitre,
+    sources_absentes,
+    texte_releve_de_la_section,
+    titre_de_section,
 )
 from agent_tuteur.agent.frustration import SessionState, detect_frustration
 from agent_tuteur.agent.guardrails import clamp_hint_level, moderate, sanitize
@@ -635,6 +639,9 @@ class TutorAgent:
         # RAG : on restreint les extraits au chapitre enseigné (sauf si cela ne
         # laisse rien, auquel cas mieux vaut un contexte large que pas de contexte).
         focused = _focus_on_chapitre(retrieved, position.chapitre)
+        focused, sections_servies = self._ancrer_sur_la_section(
+            focused, section, position.chapitre, ctx
+        )
         return {
             "retrieved": focused,
             "course_section": course_section,
@@ -643,9 +650,47 @@ class TutorAgent:
                  "section_index": position.section_index,
                  "chapitre": position.chapitre,
                  "chapitre_confirmed": position.chapitre_confirmed,
+                 "sections_servies": sections_servies,
                  "n_sources_focused": len(focused)}
             ],
         }
+
+    def _ancrer_sur_la_section(
+        self, focused: list[ScoredChunk], section: Section, chapitre: str | None, ctx: dict
+    ) -> tuple[list[ScoredChunk], list[str]]:
+        """Place en tête les extraits de la section enseignée, en les cherchant au besoin.
+
+        La récupération a lieu **avant** ce nœud, sur la phrase brute de l'élève :
+        elle ignore donc quelle section va être enseignée. Sur « Fais-moi un
+        cours sur les nombres complexes », elle remontait Introduction, Astuces
+        et Auto-évaluation — la définition fondatrice n'était nulle part, et le
+        modèle n'avait rien pour l'énoncer (cas QA #12).
+
+        Deux temps, dans cet ordre : réordonner ce qu'on a déjà, puis compléter
+        par une recherche circonscrite au chapitre **uniquement si** une source
+        déclarée manque encore. Le cas nominal ne coûte donc aucun appel
+        supplémentaire.
+
+        Le repli est silencieux et volontaire : si le corpus ne contient pas la
+        section (leçon partielle), on rend ce qu'on a. Inventer la section
+        manquante serait exactement ce que la règle n°4 interdit ; c'est au
+        prompt de dire honnêtement ce qui manque, pas à ce nœud de le combler.
+        """
+        if not section.sources:
+            return focused, []
+
+        de_la_section = [sc for sc in focused if texte_releve_de_la_section(sc.chunk.text, section)]
+        autres = [sc for sc in focused if sc not in de_la_section]
+
+        titres_retenus = [t for sc in de_la_section if (t := titre_de_section(sc.chunk.text))]
+        if sources_absentes(titres_retenus, section) and chapitre:
+            deja = {sc.chunk.id for sc in focused}
+            for sc in self._retriever.chunks_du_chapitre(chapitre, ctx):
+                if sc.chunk.id not in deja and texte_releve_de_la_section(sc.chunk.text, section):
+                    de_la_section.append(sc)
+
+        servies = [t for sc in de_la_section if (t := titre_de_section(sc.chunk.text))]
+        return [*de_la_section, *autres], servies
 
     @_timed_node("guardrail_course")
     async def _n_guardrail_course(self, state: AgentState) -> dict:

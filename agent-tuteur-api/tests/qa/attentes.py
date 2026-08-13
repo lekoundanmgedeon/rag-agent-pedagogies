@@ -95,6 +95,21 @@ def _cas_resultat_attendu(resultat, cas) -> None:
     assert resultat.trace["hint_reason"] == "résultat vérifié et explicitement demandé"
 
 
+# --- Cas 12 — Définition fondatrice jamais donnée -----------------------------
+def _cas_12_definition_fondatrice(resultat, cas) -> None:
+    """« Fais-moi un cours sur les nombres complexes » (Tony SARRE).
+
+    Le premier tour ouvre bien sur l'introduction, mais il doit désormais
+    disposer de la définition fondatrice — sélectionnée sur le titre de section,
+    donc sans dépendre de la similarité vectorielle (RC-0).
+    """
+    entree = next(e for e in resultat.node_trace if e["node"] == "course_planner")
+    assert entree["section"] == "introduction"
+    assert any("Définitions" in titre for titre in entree["sections_servies"]), (
+        f"aucune section de définitions servie : {entree['sections_servies']}"
+    )
+
+
 # --- Cas 20 — Même explication redonnée une quatrième fois --------------------
 def _cas_20_blocage_declare(resultat, cas) -> None:
     """« Ça fait 3 fois que tu m'expliques, je comprends pas » (Tony SARRE).
@@ -116,6 +131,7 @@ ATTENTES: dict[int, Attente] = {
     8: _cas_08_serie,
     10: _cas_10_calcul_trivial,
     11: _cas_resultat_attendu,
+    12: _cas_12_definition_fondatrice,
     13: _cas_resultat_attendu,
     15: _cas_15_affirmation_fausse,
     20: _cas_20_blocage_declare,
