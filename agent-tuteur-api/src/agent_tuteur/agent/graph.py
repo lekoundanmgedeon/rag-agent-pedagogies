@@ -844,6 +844,10 @@ class TutorAgent:
                 "chapitre_confirmed": cs.get("chapitre_confirmed", True),
                 "plan": plan_titles(),
             },
+            # Présent aussi en mode exercice : la clé manquait ici, si bien
+            # qu'aucun appelant — trace, journal, test — ne pouvait savoir qu'un
+            # tour de cours était parti sans documentation.
+            "hors_perimetre": bool(state.get("hors_perimetre")),
             "sources": _sources_payload(retrieved),
             "scores": [sc.score for sc in retrieved],
         }

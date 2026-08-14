@@ -63,6 +63,57 @@ def test_la_saisie_sans_accents_est_reconnue():
     assert detecter_detresse("je suis deprime").detectee
 
 
+# --- Trous de rappel mesurés (cas QA #7, seconde passe) ----------------------
+# Ces formulations ne viennent d'aucun prompt de testeur : elles ont été
+# produites en sondant le détecteur sur des tournures courantes. Trois familles
+# sortaient à découvert — l'élision tapée sans apostrophe, l'intensifieur
+# intercalé, et « je déprime » sans « je suis ».
+
+
+@pytest.mark.parametrize(
+    ("question", "attendu"),
+    [
+        # Élision sans apostrophe : ratait le marqueur de première personne
+        # lui-même, donc *toute* confidence saisie ainsi, quelle que soit sa
+        # gravité — c'était le trou le plus large.
+        ("j ai envie de pleurer", MotifDetresse.MAL_ETRE),
+        ("j ai envie de mourir", MotifDetresse.DANGER_IMMEDIAT),
+        ("je n ai pas d amis", MotifDetresse.ISOLEMENT),
+        # Intensifieur intercalé.
+        ("je me sens tout seul au lycée", MotifDetresse.ISOLEMENT),
+        ("je me sens très seul", MotifDetresse.ISOLEMENT),
+        ("je me sens vraiment mal", MotifDetresse.MAL_ETRE),
+        # Formes verbales et lexique manquants.
+        ("je déprime", MotifDetresse.MAL_ETRE),
+        ("je suis le souffre-douleur de ma classe", MotifDetresse.HARCELEMENT),
+    ],
+)
+def test_les_tournures_courantes_ne_passent_plus_a_travers(question, attendu):
+    assert detecter_detresse(question).nature is attendu
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # « mal » adverbe de manière : la difficulté scolaire ordinaire ne doit
+        # pas emprunter le disjoncteur de sécurité.
+        "je vais mal placer la virgule",
+        "je vais mal écrire la formule",
+        "j ai du mal en maths",
+        "je vais avoir du mal avec cet exercice",
+        # « seul » au sens de « sans aide », pas au sens d'isolement.
+        "je dois faire cet exercice tout seul",
+        "je préfère travailler seul",
+        # Élision sans apostrophe côté frustration : la normalisation ne doit
+        # pas non plus élargir les faux positifs.
+        "j abandonne",
+        "c est trop dur",
+    ],
+)
+def test_l_elargissement_du_rappel_n_ouvre_pas_de_faux_positif(question):
+    assert not detecter_detresse(question).detectee
+
+
 def test_le_danger_immediat_prime_sur_les_autres_motifs():
     signal = detecter_detresse("je me fais harceler et j'ai envie de mourir")
     assert signal.nature is MotifDetresse.DANGER_IMMEDIAT

@@ -532,6 +532,13 @@ def assemble_course_prompt(
         "Documentation de cours (usage interne, invisible pour l'élève) :\n"
         + build_context_block(retrieved)
     )
+    # Décision D6, sur cette branche aussi. Elle n'y était pas, alors que c'est
+    # ici qu'atterrissent « explique-moi les dérivées » et les « c'est quoi… » :
+    # l'aveu de hors-périmètre ne partait donc jamais sur les tours qui en
+    # avaient le plus besoin. Même placement qu'en mode exercice, juste après le
+    # bloc d'extraits dont elle explique le vide.
+    if not retrieved:
+        parts.append(CONSIGNE_HORS_PERIMETRE)
     if not has_course:
         parts.append(AVERTISSEMENT_SANS_COURS)
     parts.append(

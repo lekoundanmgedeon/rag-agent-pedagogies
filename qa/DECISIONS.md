@@ -12,7 +12,18 @@ ce qui reste bloqué tant qu'elle n'est pas prise, et un champ `Décision` à re
 
 ## D1 — Validation humaine du cas #7 (détresse élève / harcèlement)
 
-**Statut : Ouverte**
+**Statut : ACTÉE le 2026-08-13 — VALIDÉ tel quel**
+
+**Décision : validé.** Le texte de mise en sécurité convient tel qu'il est écrit, et
+l'absence de numéro d'assistance est **assumée** : la règle non-négociable n°1 admet
+« un adulte de confiance **ou** une ressource d'aide », et la redirection vers un
+adulte suffit à la satisfaire. `RESSOURCES_AIDE` reste vide, et le test qui échoue
+dès que quelqu'un y ajoute une entrée reste en place — un numéro ne pourra donc
+entrer qu'en passant par une relecture humaine.
+
+Le cas #7 passe à `corrigé` dans `qa_status.json`. La validation porte sur la
+version issue de la seconde passe ci-dessous (rappel élargi, faux positif refermé),
+pas sur le seul commit `f108dce`.
 
 **Contexte.** Correctif mergé en `f108dce`. Statut technique `en_cours` par design
 (catégorie sécurité, cf. CLAUDE.md — un test vert ne suffit pas seul sur ce périmètre).
@@ -23,6 +34,40 @@ proposée sonne juste — pas seulement si elle contient les bons mots-clés.
 
 **Ce qui reste bloqué tant que non tranchée.** Le cas #7 ne peut pas passer à
 `corrigé` dans `qa_status.json`, quel que soit l'état des tests automatisés.
+
+**SECONDE PASSE AVANT VALIDATION (2026-08-13).** Le détecteur a été sondé sur des
+tournures courantes, écrites pour l'occasion et absentes de tout prompt de testeur.
+Trois familles passaient à travers ; elles sont corrigées, et la validation
+ci-dessous porte donc sur la version corrigée :
+
+- **l'élision tapée sans apostrophe** (« j ai envie de mourir », « je n ai pas d
+  amis ») ratait le *marqueur de première personne* lui-même, donc **toute**
+  confidence saisie ainsi, quelle que soit sa gravité — le trou le plus large ;
+- **l'intensifieur intercalé** (« je me sens **tout** seul », « je me sens
+  **très** seul ») ;
+- « je déprime » sans « je suis », et « souffre-douleur ».
+
+Un **faux positif préexistant** a été refermé au passage : « je vais **mal
+placer** la virgule » déclenchait le disjoncteur de détresse (le motif `je vais …
+mal` ne distinguait pas l'adverbe de manière). L'élargissement du rappel a été
+mesuré contre les faux positifs qui comptent ici — « j'ai du mal en maths », « je
+dois faire cet exercice tout seul », « j'abandonne » — qui restent hors du
+disjoncteur.
+
+**Le texte soumis à validation** (aucun numéro d'assistance, `RESSOURCES_AIDE`
+toujours vide) :
+
+> Merci de m'en parler. Ce que tu vis est important, et ce n'est pas de ta faute.
+>
+> Je suis un assistant scolaire : je ne suis pas la bonne personne pour t'aider
+> là-dessus, et surtout, tu ne dois pas rester seul avec ça.
+>
+> Parles-en dès que tu peux à un adulte de confiance : un parent, un professeur,
+> le surveillant général, l'infirmerie de ton établissement, ou n'importe quel
+> adulte à qui tu te sens capable de le dire. En parler à quelqu'un change
+> vraiment les choses.
+>
+> Je reste là pour les mathématiques quand tu en auras envie.
 
 **Décision :** _(à remplir — Validé / Refusé avec raison / Ajustement requis)_
 **Date :**
@@ -154,7 +199,25 @@ dès maintenant" (décision de pipeline ou réponse extractible) vs "nécessite 
 tranchée" (jugement de prose/ton). Le sous-ensemble Couche A peut démarrer sans
 attendre D2 ; le reste doit attendre.
 
-**Décision :** _(à remplir une fois la classification reçue)_
+**CLASSIFICATION REMISE (2026-08-13).** Huit des quatorze cas sont déjà `corrigé`
+(#8, #9, #10, #11, #12, #13, #15, #20). Les six restants ont été **sondés sur la
+pile hors-ligne**, prompt exact, trace de pipeline relevée — la classification
+ci-dessous est mesurée, pas supposée.
+
+| Cas | Classement | Ce que la sonde a montré |
+|---|---|---|
+| #17 | **Couche A — livrable tout de suite** | **Doublon du #9, déjà clos** : même prompt à la virgule près (« Fais-moi l'étude de fonction de ln(x) », Tony SARRE / Mohamed FAYE). Le pipeline établit déjà l'étude symboliquement — `etude_fonction={expression: log(x), domaine: ]0;+∞[, derivee: 1/x, limites, variations}`, `hint_label="Solution directe"`. Il ne reste qu'à enregistrer l'attente et le test au nom du #17. |
+| #16 | **Couche A — livrable tout de suite** | **Cause racine trouvée, structurelle.** Le bloc de contexte RAG injecte `source_label`, qui contient le **nom de fichier** : `[Réf. interne 1 — Lecon_01_Nombres_Complexes_TS2S4.md — Les Nombres Complexes]`. Le modèle y lit « TS2S4 » et l'attribue à l'élève (« tu as déjà étudié les complexes en S2/S4 »), alors que l'élève n'a jamais donné sa série. Règle non-négociable n°3, et l'hallucination est **fournie par nous**, pas inventée par le modèle. Correctif : retirer le nom de fichier du bloc envoyé au modèle. L'attribution affichée côté client vient de `trace["sources"]`, pas de ce bloc — elle n'est donc pas dégradée. Vérifiable en Couche A : aucun marqueur de série du *document* dans `final_prompt`, `trace["sources"]` inchangé. |
+| #14 | **Mixte — une moitié Couche A, le verdict à D2** | Sondé : « Je ne comprends pas les dérivées » remonte **5 extraits « Les Nombres Complexes »** (les dérivées ne sont dans aucun chapitre indexé). Nourrir le modèle de cours étranger est une cause directe de la reformulation à vide. Cette moitié se juge en Couche A et **suit le cas #5** (périmètre). En revanche « trois prompts avant une information utile » est un jugement sur la prose : verdict à D2. |
+| #19 | **Couche A sur la détection — bloqué sur D5 pour le routage** | Sondé : `frustration_score = **0.0**` sur « Je suis nul en maths, ça sert à rien d'essayer », alors que « c'est trop dur, je laisse tomber » (#21) sort à 0.4 et « je ne comprends pas » à 0.4. **Le signal n'est même pas détecté** — avant toute question de routage. Ce trou se comble quelle que soit l'issue de D5, et se vérifie en Couche A. Le reste (disjoncteur sécurité ou modulation de ton) attend D5. |
+| #21 | **Suspendu à D2** | Le signal *est* détecté (`frustration_score = 0.4`). La demande porte uniquement sur la **variété** de la prose de soutien — non jugeable en Couche A par construction. Souffre aussi du bruit de retrieval (extraits « Nombres Complexes » sur un message d'abandon), qui relève du cas #5. |
+| #18 | **Hors backlog — TRANCHÉ le 2026-08-13** | Le pipeline fait ce qu'on lui demande : mode cours, `chapitre_confirmed=true`, plan en 8 sections, section « Introduction » servie. Le reproche de la testeuse (« dense et incomplet face à ChatGPT ») porte sur la **densité du contenu de la leçon**, donc sur le corpus Markdown — pas sur le comportement de l'agent. **Décision : `ne_sera_pas_corrigé` dans ce backlog**, renvoyé au processus de génération de contenu (template de leçon à 18 sections), que CLAUDE.md tient explicitement hors de ce périmètre. |
+
+**Ordre recommandé** : #17 (une heure, doublon), puis #16 (cause racine tenue,
+règle n°3), puis #19 pour sa moitié détection ; #14/#21 après le cas #5 dont ils
+héritent le bruit ; #18 en attente d'arbitrage de périmètre.
+
+**Décision :** _(à remplir — accepter la classification, ou la corriger)_
 **Date :**
 **Notes :**
 
@@ -162,7 +225,19 @@ attendre D2 ; le reste doit attendre.
 
 ## D5 — Le cas #19 relève-t-il de la sécurité ou du ton pédagogique ?
 
-**Statut : Ouverte**
+**Statut : TRANCHÉE EN PARTIE le 2026-08-13 — combler la détection d'abord**
+
+**Décision (2026-08-13) : combler le trou de détection avant de trancher le
+routage.** Le découragement doit produire un signal dans `frustration.py` — c'est
+livrable en Couche A tout de suite, indépendant de l'arbitrage sécurité-vs-ton, et
+sans la Definition of Done alourdie du périmètre sécurité. Le choix entre
+disjoncteur déterministe (comme le #7) et modulation du ton se prendra **ensuite**,
+sur un signal qui existe : aujourd'hui le débat porte sur ce qu'il faut faire d'un
+signal que rien ne produit.
+
+**Reste ouvert** : (1) le routage lui-même une fois la détection en place ; (2) le
+sort du #21, dont l'action recommandée porte sur la variété de la prose et relève
+donc de D2 quoi qu'il arrive.
 
 **Contexte.** Le cas #19 (« Je suis nul en maths, ça sert à rien d'essayer », testeur
 Tony SARRE) est rangé dans le backlog sous la catégorie « 8. Ton pédagogique &
@@ -183,6 +258,21 @@ exactement la situation du cas #7 (cf. D1). Corollaire à ne pas manquer : le ri
 principal d'un motif « découragement » est le **faux positif** — il détournerait vers
 un message de soutien des tours où l'élève exprime une difficulté ordinaire, ce que
 les 13 fixtures positives ne couvrent que partiellement.
+
+**MESURE APPORTÉE (2026-08-13), qui déplace la question.** Sondé sur la pile
+hors-ligne, le prompt du #19 sort à `frustration_score = **0.0**` — quand « c'est
+trop dur, je laisse tomber » (#21) sort à 0.4 et « je ne comprends pas » à 0.4.
+Autrement dit : le découragement du #19 n'est **détecté par rien** aujourd'hui, ni
+par `securite.py` (volontairement, cf. sa frontière documentée) ni par
+`frustration.py` (involontairement). Le débat sécurité-vs-ton porte sur ce qu'il
+faut faire du signal ; il n'y a pas de signal. Ce trou de détection se comble
+quelle que soit l'issue de D5, et se vérifie en Couche A.
+
+Le corollaire du faux positif reste entier, et vient d'être illustré sur le cas
+#7 : l'élargissement d'un motif de sécurité a failli faire entrer « je vais mal
+placer la virgule » dans le disjoncteur. Un motif « découragement » écrit large
+capterait « je suis nul en maths » — le message même que l'élève envoie en
+travaillant.
 
 **Ce qu'il faut trancher.** (1) Confirmer le reclassement en périmètre sécurité.
 (2) Décider si le cas #21 (« C'est trop dur, je laisse tomber ») le suit — il est
