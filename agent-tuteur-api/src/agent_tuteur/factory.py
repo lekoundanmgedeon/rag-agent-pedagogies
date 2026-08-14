@@ -56,6 +56,8 @@ def build_rag_stack(settings: Settings | None = None) -> RagStack:
         top_k=settings.retrieval_top_k,
         # None = le seuil de l'embedder. Cf. Settings.rag_seuil_pertinence.
         seuil_pertinence=settings.rag_seuil_pertinence,
+        # Idem : None = le consensus déclaré par l'embedder, qui est le cas normal.
+        consensus_chapitre=settings.rag_consensus_chapitre,
     )
     return RagStack(indexer=indexer, retriever=retriever)
 

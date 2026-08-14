@@ -9,6 +9,8 @@ est appliquée ici pour qu'une question en « STIDD1 » atteigne des chunks « T
 from __future__ import annotations
 
 import logging
+import math
+from collections import Counter
 from dataclasses import dataclass
 
 from agent_tuteur.config.taxonomy import (
@@ -32,6 +34,11 @@ QUOTA_COMPLEMENTS_PAR_DEFAUT = 2
 #: après séparation : sur ce corpus, les premiers résultats sont souvent tous
 #: des exercices.
 FACTEUR_SUR_ECHANTILLONNAGE = 4
+
+#: Nombre d'extraits sur lesquels se lit le consensus de chapitre (cas QA #5).
+#: C'est la fenêtre sur laquelle la fraction a été calibrée : la changer sans
+#: refaire la mesure changerait la sévérité de la règle sans le dire.
+FENETRE_CONSENSUS = 5
 
 
 def build_filters(context: dict) -> Filters:
@@ -97,6 +104,7 @@ class HybridRetriever:
         store: BaseVectorStore,
         top_k: int = 5,
         seuil_pertinence: float | None = None,
+        consensus_chapitre: float | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
@@ -108,19 +116,77 @@ class HybridRetriever:
         self._seuil = (
             embedder.seuil_pertinence if seuil_pertinence is None else seuil_pertinence
         )
+        #: Même règle de provenance, pour le vote de chapitre (cf. l'embedder).
+        self._consensus = (
+            embedder.consensus_chapitre if consensus_chapitre is None else consensus_chapitre
+        )
 
     @property
     def seuil_pertinence(self) -> float | None:
         return self._seuil
 
-    def _ecarter_les_hors_sujet(self, resultats: list[ScoredChunk]) -> list[ScoredChunk]:
-        """Écarte les extraits dont le cosinus dense est sous le seuil.
+    @property
+    def consensus_chapitre(self) -> float | None:
+        return self._consensus
 
-        Règle non-négociable n°4 : sous un seuil minimal, **aucun** chunk n'est
-        utilisé — mieux vaut un « je n'ai pas ça » honnête que les moins mauvais
-        résultats d'un corpus qui ne traite pas le sujet. C'est le défaut
-        démontré par le cas QA #5 : une question sur les suites remontait des
-        extraits « Nombres Complexes » et « Calcul Intégral ».
+    def _hors_du_perimetre(self, resultats: list[ScoredChunk]) -> list[ScoredChunk]:
+        """Décide l'appartenance au corpus par **consensus de chapitre**.
+
+        Règle non-négociable n°4 : sous un minimum de pertinence, *aucun* chunk
+        n'est utilisé — mieux vaut un « je n'ai pas ça » honnête que les moins
+        mauvais résultats d'un corpus qui ne traite pas le sujet.
+
+        Ce minimum n'est **pas** un score. Mesuré sur les 12 leçons avec
+        BGE-M3, ni le cosinus dense ni le poids lexical ne séparent les
+        questions couvertes des questions étrangères — toutes les marges sont
+        négatives, et la plus haute question hors périmètre passe au-dessus de
+        la plus basse question couverte. Ce qui sépare est l'**accord** des
+        résultats : une question couverte concentre son top-k sur un chapitre,
+        une question étrangère l'éparpille faute de foyer dans le corpus.
+
+        On exige donc qu'une fraction du top-k se porte sur un même chapitre,
+        et on ne sert que les extraits de ce chapitre-là. À 0,8 sous BGE-M3 :
+        5,7 % de faux rejets, 16,7 % de faux services.
+
+        Un chunk sans chapitre ne peut pas voter — il n'infirme rien non plus,
+        il est simplement muet.
+
+        **Le vote porte sur une fenêtre fixe**, celle sur laquelle la fraction a
+        été calibrée, et non sur tout ce que l'appelant a demandé.
+        :meth:`retrieve_course_first` ratisse quatre fois plus large avant de
+        partitionner : appliquer « 0,8 » à ses vingt résultats exigerait seize
+        extraits du même chapitre, une tout autre règle que celle qui a été
+        mesurée, et bien plus sévère. Le consensus se lit sur les meilleurs
+        résultats ; la décision, elle, s'applique à tous.
+        """
+        if self._consensus is None or not resultats:
+            return resultats
+        fenetre = resultats[:FENETRE_CONSENSUS]
+        votes = Counter(
+            sc.chunk.metadata.chapitre for sc in fenetre if sc.chunk.metadata.chapitre
+        )
+        if not votes:
+            return resultats
+        majoritaire, compte = votes.most_common(1)[0]
+        requis = math.ceil(self._consensus * len(fenetre))
+        if compte < requis:
+            logger.info(
+                "hors périmètre : aucun chapitre ne réunit %d/%d extraits "
+                "(meilleur « %s » à %d) — aucun extrait servi",
+                requis, len(fenetre), majoritaire, compte,
+            )
+            return []
+        return [sc for sc in resultats if sc.chunk.metadata.chapitre == majoritaire]
+
+    def _ecarter_les_hors_sujet(self, resultats: list[ScoredChunk]) -> list[ScoredChunk]:
+        """Plancher de cosinus **facultatif**, en second rideau du consensus.
+
+        L'appartenance au périmètre est décidée par :meth:`_hors_du_perimetre`,
+        qui ne dépend d'aucune échelle. Ce plancher-ci ne sert qu'à couper en
+        exploitation un extrait manifestement lointain sans redéployer : mesuré,
+        il n'améliore pas le compromis du vote (jusqu'à 0,45 il ne retire rien,
+        à 0,50 il coûte plus qu'il ne rapporte), et il vaut donc ``None`` par
+        défaut sur les deux backends.
 
         Le filtre porte sur ``dense_score`` (cosinus, borné et interprétable) et
         jamais sur ``score``, qui est un score de fusion RRF fondé sur les rangs
@@ -169,7 +235,9 @@ class HybridRetriever:
         resultats = self._store.search(
             query_emb, top_k=top_k or self._top_k, filters=filters
         )
-        return self._ecarter_les_hors_sujet(resultats) if filtrer_par_pertinence else resultats
+        if not filtrer_par_pertinence:
+            return resultats
+        return self._ecarter_les_hors_sujet(self._hors_du_perimetre(resultats))
 
     def catalogue(self, context: dict | None = None) -> list[str]:
         """Chapitres réellement disponibles pour ce cadre curriculaire.
