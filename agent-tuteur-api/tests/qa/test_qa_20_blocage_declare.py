@@ -138,10 +138,16 @@ async def test_aucune_fixture_positive_ne_declenche_la_variation(cas, agent_qa, 
 
 
 async def test_un_premier_tour_ordinaire_reste_socratique(agent_qa, session_eleve):
-    """Contrôle de la contrepartie : sans déclaration, rien ne change."""
-    prepared = await agent_qa.prepare(
-        "Je ne comprends pas les dérivées", {"serie": "S2"}, session_eleve
-    )
+    """Contrôle de la contrepartie : sans déclaration, rien ne change.
+
+    La fixture était « Je ne comprends pas les dérivées » ; elle nomme une
+    notion, et depuis le cas #14 une incompréhension déclarée sur une notion
+    ouvre un cours — il n'y a plus de graduation socratique à observer sur ce
+    tour-là. L'invariant contrôlé ici est inchangé : c'est la **déclaration de
+    répétition** qui déclenche la variation, pas la difficulté ordinaire. On la
+    vérifie donc sur une difficulté qui reste dans la branche exercice.
+    """
+    prepared = await agent_qa.prepare("je ne comprends pas", {"serie": "S2"}, session_eleve)
 
     assert prepared.trace["blocage_declare"] is False
     assert CONSIGNE_VARIATION_APPROCHE not in prepared.final_prompt

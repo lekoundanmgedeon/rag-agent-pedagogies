@@ -27,9 +27,48 @@ _MARKERS = [
         r"je\s+bloque",
         r"c['e]est\s+trop\s+dur",
         r"j['e]\s*abandonne",
+        # Même chose que « j'abandonne », dans les mots que les élèves
+        # emploient réellement : « je laisse tomber » n'était couvert par aucun
+        # marqueur, si bien que le cas QA #21 plafonnait au seul « c'est trop
+        # dur ». Deux façons de dire la même chose ne doivent pas produire deux
+        # scores.
+        r"je\s+laisse\s+tomber",
         r"je\s+(?:ne\s+)?sais\s+pas",
         r"\bchais\s+pas\b",
         r"aide[\s-]+moi",
+    )
+]
+
+#: Découragement : l'élève ne dit pas qu'il bute sur une notion, il dit qu'il
+#: ne vaut rien en maths ou que l'effort est vain. Mesuré (cf. DECISIONS.md, D5)
+#: : « Je suis nul en maths, ça sert à rien d'essayer » sortait à **0.0**, quand
+#: « c'est trop dur, je laisse tomber » sortait à 0.4 et « je ne comprends pas »
+#: à 0.4. Le signal n'était détecté par rien — ni ici, ni par ``securite.py``
+#: dont la frontière documentée l'exclut volontairement.
+#:
+#: Liste tenue **étroite** à dessein, et c'est le corollaire nommé en D5 : un
+#: motif large capterait « je suis nul » au sens de « j'ai du mal », c'est-à-dire
+#: le message que l'élève envoie précisément *en travaillant*. Chaque motif exige
+#: donc le jugement de valeur (« nul », « pas fait pour ») ou la futilité de
+#: l'effort (« ça sert à rien d'essayer »), jamais la difficulté seule.
+#:
+#: Ce que ce module produit s'arrête au **signal**. Ce qu'il faut en faire —
+#: disjoncteur déterministe comme le cas #7, ou modulation du ton — reste ouvert
+#: (D5, point 1) : le débat portait jusqu'ici sur un signal que rien ne
+#: produisait.
+_DECOURAGEMENT = [
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        # « nulle part » n'est pas un jugement de valeur.
+        r"je\s+suis\s+(?:vraiment\s+|trop\s+|tellement\s+|si\s+)?nul(?:le)?\b(?!\s*part)",
+        r"je\s+suis\s+(?:un|une)\s+(?:cas\s+d[ée]sesp[ée]r[ée]|catastrophe|bon\s+[àa]\s+rien)",
+        r"je\s+(?:ne\s+)?suis\s+pas\s+fait[e]?\s+pour",
+        r"[çc]a\s+(?:ne\s+)?sert\s+[àa]\s+rien\s+(?:d['e]\s*|de\s+)"
+        r"(?:essayer|travailler|r[ée]viser|continuer|insister|s['e]\s*accrocher|bosser)",
+        r"j['e]\s*(?:y\s+)?arriverai\s+jamais",
+        r"je\s+(?:n['e]\s*)?(?:y\s+)?arriverai\s+jamais",
+        r"je\s+(?:ne\s+)?comprendrai\s+jamais",
+        r"je\s+(?:ne\s+)?serai\s+jamais\s+bon",
     )
 ]
 
@@ -83,6 +122,11 @@ class FrustrationSignal:
     #: ``repetitions``, qui est *observé* : garder les deux séparés permet de
     #: dire dans la trace lequel des deux a déclenché le changement d'approche.
     blocage_declare: bool = False
+    #: L'élève met en cause sa valeur ou l'utilité de l'effort, et non la
+    #: difficulté d'une notion (cas QA #19). Champ distinct de ``markers`` :
+    #: les deux registres appellent des réponses différentes, et les confondre
+    #: dans un compteur rendrait le second invisible à qui lit la trace.
+    decouragement: bool = False
 
 
 def count_repetitions(question: str, recent: list[str]) -> int:
@@ -100,22 +144,42 @@ def detecte_un_blocage_declare(question: str) -> bool:
     return any(pattern.search(question) for pattern in _BLOCAGE_DECLARE)
 
 
+def detecte_un_decouragement(question: str) -> bool:
+    """Vrai si l'élève met en cause sa valeur ou l'utilité de l'effort.
+
+    À distinguer de la difficulté déclarée (« je ne comprends pas », « c'est
+    trop dur »), qui est le signal normal d'un élève au travail : ici l'élève ne
+    parle plus de la notion mais de lui.
+    """
+    return any(pattern.search(question) for pattern in _DECOURAGEMENT)
+
+
 def detect_frustration(question: str, session: SessionState) -> FrustrationSignal:
-    """Score de frustration : ``min(1, 0.3*rep + 0.4*marqueurs + 0.3*blocage)``.
+    """Score : ``min(1, 0.3*rep + 0.4*marqueurs + 0.3*blocage + 0.4*découragement)``.
 
     Le terme de blocage déclaré pèse autant qu'une répétition observée, et pour
     la même raison : dans les deux cas l'élève a déjà reçu l'explication. Sans
     lui, « Ça fait 3 fois que tu m'expliques, je comprends pas » plafonnait à
     0,4 — juste sous le seuil d'escalade de 0,5 — et l'agent repartait sur un
     « Rappel de notion », c'est-à-dire le même registre une fois de plus.
+
+    Le terme de découragement pèse comme **un** marqueur de ton, ni plus ni
+    moins, et c'est délibéré : seul, il porte le tour à 0,4, donc sous le seuil
+    d'escalade de ``hint_strategy``. Le signal existe et se lit dans la trace
+    sans que ce module décide à la place de D5 ce qu'il faut en faire — ce qui
+    était exactement l'ordre demandé (« combler la détection d'abord »). Il
+    pousse au-dessus du seuil dès qu'un second signal l'accompagne, ce qui est
+    le comportement déjà appliqué à tous les autres cumuls.
     """
     repetitions = count_repetitions(question, session.recent_questions)
     markers = count_markers(question)
     blocage = detecte_un_blocage_declare(question)
-    score = min(1.0, 0.3 * repetitions + 0.4 * markers + 0.3 * blocage)
+    decouragement = detecte_un_decouragement(question)
+    score = min(1.0, 0.3 * repetitions + 0.4 * markers + 0.3 * blocage + 0.4 * decouragement)
     return FrustrationSignal(
         score=round(score, 4),
         repetitions=repetitions,
         markers=markers,
         blocage_declare=blocage,
+        decouragement=decouragement,
     )

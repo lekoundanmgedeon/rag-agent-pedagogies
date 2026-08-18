@@ -23,7 +23,12 @@ _COMMON_RULES = (
     "documentation est un mécanisme interne, invisible pour l'élève : ne la lui "
     "mentionne JAMAIS (ni « extraits », ni « sources », ni leur numéro) et ne "
     "laisse jamais entendre qu'il te l'a fournie — dis simplement que cette "
-    "leçon n'est pas encore disponible. Tu "
+    "leçon n'est pas encore disponible. Cette documentation décrit un "
+    "CHAPITRE, jamais l'élève : le niveau, la série ou la classe qui y "
+    "figurent sont ceux du document, et n'apprennent RIEN sur lui. Ne lui "
+    "attribue jamais une série, une classe, un établissement, un historique "
+    "de cours ni des notions « déjà vues » que tu y aurais lus — tu ne sais de "
+    "l'élève que ce qu'il t'a dit lui-même dans cette conversation. Tu "
     "t'exprimes en français clair, avec des formules en LaTeX. Utilise "
     "EXCLUSIVEMENT les délimiteurs $...$ (inline) et $$...$$ (bloc) ; n'utilise "
     "JAMAIS \\(...\\) ni \\[...\\], qui ne s'affichent pas correctement ici."
@@ -92,6 +97,10 @@ def build_context_block(retrieved: list[ScoredChunk]) -> str:
     réelle, le LLM reprenait spontanément le vocabulaire du prompt et citait
     « Source 1 » à l'élève, qui ne voit pourtant rien de ce bloc. L'attribution
     affichée côté client vient de ``trace["sources"]``, pas d'ici.
+
+    L'attribution écrite ici est ``libelle_interne`` (le chapitre) et non
+    ``source_label`` (qui porte le nom de fichier) : ce nom encode la série du
+    document, que le modèle attribuait ensuite à l'élève (cas QA #16).
     """
     if not retrieved:
         return "(Aucune documentation de cours pertinente trouvée.)"
@@ -100,7 +109,7 @@ def build_context_block(retrieved: list[ScoredChunk]) -> str:
         excerpt = sc.chunk.text.strip()
         if len(excerpt) > _MAX_EXCERPT:
             excerpt = excerpt[:_MAX_EXCERPT].rstrip() + " […]"
-        lines.append(f"[Réf. interne {i} — {sc.source_label}]\n{excerpt}")
+        lines.append(f"[Réf. interne {i} — {sc.libelle_interne}]\n{excerpt}")
     return "\n\n".join(lines)
 
 

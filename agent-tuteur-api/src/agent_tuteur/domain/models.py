@@ -94,7 +94,31 @@ class ScoredChunk(BaseModel):
 
     @property
     def source_label(self) -> str:
-        """Libellé court d'attribution pour l'affichage des sources RAG."""
+        """Libellé court d'attribution pour l'affichage des sources RAG.
+
+        Destiné au **client** (onglet sources, trace persistée), où le nom de
+        fichier est une information de provenance utile. Ne jamais l'envoyer au
+        modèle : voir :attr:`libelle_interne`.
+        """
         m = self.chunk.metadata
         parts = [p for p in (m.source_document, m.chapitre or m.competence) if p]
         return " — ".join(parts) if parts else self.chunk.id
+
+    @property
+    def libelle_interne(self) -> str:
+        """Attribution destinée au **prompt** : le chapitre, jamais le fichier.
+
+        Le nom de fichier du corpus encode la série (« Lecon_01_Nombres_
+        Complexes_TS2S4.md »). Envoyé au modèle dans le bloc de documentation,
+        il y était lu comme un fait sur l'élève, qui se voyait répondre « tu as
+        déjà étudié les complexes en S2/S4 » sans avoir jamais donné sa série
+        (cas QA #16, règle non-négociable n°3). L'hallucination était en réalité
+        **fournie par nous** : rien dans ce bloc ne distingue une métadonnée de
+        document d'un fait sur l'élève.
+
+        Le modèle n'a besoin que de savoir de quel chapitre vient l'extrait, ce
+        qui suffit à l'ancrer. L'attribution complète reste servie au client par
+        :attr:`source_label`, qui n'est pas dégradée.
+        """
+        m = self.chunk.metadata
+        return m.chapitre or m.competence or "cours"
