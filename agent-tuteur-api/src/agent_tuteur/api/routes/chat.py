@@ -75,6 +75,38 @@ def _reconstruct_course_state(past_messages: list) -> dict | None:
 async def _chat_stream(
     agent: TutorAgent, payload: ChatRequest, tenant_id: str, student_id: str
 ) -> AsyncIterator[str]:
+    """Enveloppe du tour de chat : toute panne devient une trame ``error``.
+
+    Une exception levée ici part **après** le 200 de la ``StreamingResponse`` :
+    elle ne peut plus s'exprimer par un code HTTP, et la connexion se referme
+    sans ``done``. Côté client, un flux qui s'arrête proprement sans ``done``
+    est indiscernable d'une génération encore en cours — l'interface reste sur
+    son indicateur de chargement indéfiniment (constaté sur l'échec de
+    ``retrieve_context``). On convertit donc toute panne en trame ``error``,
+    que le client sait afficher.
+
+    ``CancelledError`` dérive de ``BaseException`` : une déconnexion du
+    navigateur n'est pas rattrapée ici, et c'est voulu.
+    """
+    try:
+        async for frame in _chat_stream_inner(agent, payload, tenant_id, student_id):
+            yield frame
+    except Exception as exc:  # noqa: BLE001 - le flux doit toujours se conclure
+        log_event(
+            _logger,
+            "chat:stream_failed",
+            error=f"{exc.__class__.__name__}: {exc}",
+            log_level=40,
+        )
+        _logger.exception("chat:stream_failed")
+        yield sse_event(
+            {"error": "Le tuteur n'a pas pu traiter cette question. Réessaie dans un instant."}
+        )
+
+
+async def _chat_stream_inner(
+    agent: TutorAgent, payload: ChatRequest, tenant_id: str, student_id: str
+) -> AsyncIterator[str]:
     async with session_scope(tenant_id) as session:
         memory = ProgressRepository(session)
         audit = AuditLogRepository(session)
