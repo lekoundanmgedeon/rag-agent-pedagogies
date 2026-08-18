@@ -208,7 +208,7 @@ ci-dessous est mesurée, pas supposée.
 |---|---|---|
 | #17 | **Couche A — livrable tout de suite** | **Doublon du #9, déjà clos** : même prompt à la virgule près (« Fais-moi l'étude de fonction de ln(x) », Tony SARRE / Mohamed FAYE). Le pipeline établit déjà l'étude symboliquement — `etude_fonction={expression: log(x), domaine: ]0;+∞[, derivee: 1/x, limites, variations}`, `hint_label="Solution directe"`. Il ne reste qu'à enregistrer l'attente et le test au nom du #17. |
 | #16 | **Couche A — livrable tout de suite** | **Cause racine trouvée, structurelle.** Le bloc de contexte RAG injecte `source_label`, qui contient le **nom de fichier** : `[Réf. interne 1 — Lecon_01_Nombres_Complexes_TS2S4.md — Les Nombres Complexes]`. Le modèle y lit « TS2S4 » et l'attribue à l'élève (« tu as déjà étudié les complexes en S2/S4 »), alors que l'élève n'a jamais donné sa série. Règle non-négociable n°3, et l'hallucination est **fournie par nous**, pas inventée par le modèle. Correctif : retirer le nom de fichier du bloc envoyé au modèle. L'attribution affichée côté client vient de `trace["sources"]`, pas de ce bloc — elle n'est donc pas dégradée. Vérifiable en Couche A : aucun marqueur de série du *document* dans `final_prompt`, `trace["sources"]` inchangé. |
-| #14 | **Mixte — une moitié Couche A, le verdict à D2** | Sondé : « Je ne comprends pas les dérivées » remonte **5 extraits « Les Nombres Complexes »** (les dérivées ne sont dans aucun chapitre indexé). Nourrir le modèle de cours étranger est une cause directe de la reformulation à vide. Cette moitié se juge en Couche A et **suit le cas #5** (périmètre). En revanche « trois prompts avant une information utile » est un jugement sur la prose : verdict à D2. |
+| #14 | **Mixte — une moitié Couche A, le verdict à D2** | Sondé : « Je ne comprends pas les dérivées » remonte **5 extraits « Les Nombres Complexes »** (les dérivées ne sont dans aucun chapitre indexé). Nourrir le modèle de cours étranger est une cause directe de la reformulation à vide. Cette moitié se juge en Couche A et ~~**suit le cas #5** (périmètre)~~ — **corrigé le 2026-08-16, voir ci-dessous**. En revanche « trois prompts avant une information utile » est un jugement sur la prose : verdict à D2. |
 | #19 | **Couche A sur la détection — bloqué sur D5 pour le routage** | Sondé : `frustration_score = **0.0**` sur « Je suis nul en maths, ça sert à rien d'essayer », alors que « c'est trop dur, je laisse tomber » (#21) sort à 0.4 et « je ne comprends pas » à 0.4. **Le signal n'est même pas détecté** — avant toute question de routage. Ce trou se comble quelle que soit l'issue de D5, et se vérifie en Couche A. Le reste (disjoncteur sécurité ou modulation de ton) attend D5. |
 | #21 | **Suspendu à D2** | Le signal *est* détecté (`frustration_score = 0.4`). La demande porte uniquement sur la **variété** de la prose de soutien — non jugeable en Couche A par construction. Souffre aussi du bruit de retrieval (extraits « Nombres Complexes » sur un message d'abandon), qui relève du cas #5. |
 | #18 | **Hors backlog — TRANCHÉ le 2026-08-13** | Le pipeline fait ce qu'on lui demande : mode cours, `chapitre_confirmed=true`, plan en 8 sections, section « Introduction » servie. Le reproche de la testeuse (« dense et incomplet face à ChatGPT ») porte sur la **densité du contenu de la leçon**, donc sur le corpus Markdown — pas sur le comportement de l'agent. **Décision : `ne_sera_pas_corrigé` dans ce backlog**, renvoyé au processus de génération de contenu (template de leçon à 18 sections), que CLAUDE.md tient explicitement hors de ce périmètre. |
@@ -217,7 +217,36 @@ ci-dessous est mesurée, pas supposée.
 règle n°3), puis #19 pour sa moitié détection ; #14/#21 après le cas #5 dont ils
 héritent le bruit ; #18 en attente d'arbitrage de périmètre.
 
-**Décision :** _(à remplir — accepter la classification, ou la corriger)_
+**CORRECTION APPORTÉE À CETTE CLASSIFICATION (2026-08-16).** L'ordre a été suivi
+et les cinq cas restants traités jusqu'où ils pouvaient l'être. Un point de la
+classification ci-dessus s'est révélé **faux à la mesure**, et il faut le savoir
+avant de s'y fier :
+
+- **#14 n'hérite pas du cas #5.** La ligne du tableau annonce que sa moitié
+  Couche A « suit le cas #5 (périmètre) ». Sondé sur **BGE-M3**, l'embedder de
+  production, « Je ne comprends pas les dérivées » remonte cinq extraits
+  « Le Calcul Intégral » **unanimes** : le consensus vaut 5/5, franchit le seuil
+  de 0,8, et `hors_perimetre` reste **faux**. Le mécanisme du #5 mesure
+  l'*accord* du top-k ; il ne peut rien contre un top-k unanime sur le mauvais
+  chapitre (cf. **D7** ci-dessous). Le cas a donc été traité **par une autre
+  voie** — une asymétrie de routage dans `intent.py` : « je veux comprendre les
+  dérivées » ouvrait un cours, « je ne comprends pas les dérivées » partait en
+  exercice, alors que les deux phrases disent la même chose. Une fois le tour
+  routé en cours, `resolve_chapitre` (liaison par **titre**, pas par similarité)
+  échoue sur « dérivées » et le prompt reçoit l'avertissement de couverture qui
+  interdit d'enseigner un autre chapitre à la place.
+
+Ce qui a été confirmé tel quel : #17 est bien un doublon du #9 (un test le
+vérifie désormais au lieu de l'affirmer) ; #16 a bien pour cause racine le
+`source_label` du bloc de contexte, et c'était bien l'**unique** marqueur de
+série du `final_prompt` ; #19 sortait bien à `frustration_score = 0.0`.
+
+État après cette session : **#16 et #17 `corrigé`** (attentes enregistrées, cas
+rejoués et verts dans le harnais générique) ; **#14, #19 et #21 `en_cours`** —
+le mécanisme est livré et testé pour chacun, seul le verdict manque, et il
+manque pour une raison nommée (D2 pour #14 et #21, D5 point 1 pour #19).
+
+**Décision :** _(à remplir — accepter la classification ainsi corrigée, ou la corriger encore)_
 **Date :**
 **Notes :**
 
@@ -238,6 +267,32 @@ signal que rien ne produit.
 **Reste ouvert** : (1) le routage lui-même une fois la détection en place ; (2) le
 sort du #21, dont l'action recommandée porte sur la variété de la prose et relève
 donc de D2 quoi qu'il arrive.
+
+**LA DÉTECTION EST EN PLACE (2026-08-16).** Le premier temps de cette décision est
+exécuté ; la question (1) ci-dessus porte donc désormais sur un signal qui existe.
+
+- `frustration.py` : liste `_DECOURAGEMENT`, prédicat `detecte_un_decouragement`,
+  champ `FrustrationSignal.decouragement` ; propagé dans `AgentState`, le
+  `node_trace` et la trace. Le prompt du #19 passe de **0,0 à 0,4**.
+- **Le poids est celui d'un marqueur de ton (0,4), délibérément.** Seul, le
+  découragement reste **sous** le seuil d'escalade de 0,5 : le signal se lit sans
+  que le code décide à la place de cette décision. Un poids qui aurait franchi le
+  seuil à lui seul aurait tranché (1) par la bande.
+- Un test vérifie explicitement que le tour **ne déclenche pas** le disjoncteur de
+  sécurité : combler la détection ne devait pas reclasser le cas par effet de bord,
+  sur un périmètre qui exige justement une validation humaine.
+- Le corollaire du faux positif a été traité comme tel : chaque motif exige le
+  jugement de valeur (« nul », « pas fait pour ») ou la futilité de l'effort
+  (« ça sert à rien d'essayer »), jamais la difficulté seule. Restent hors du
+  signal, et testés : « j'ai du mal en maths », « c'est difficile », « je bloque
+  sur cette question », « je suis nulle part dans le tableau de variation », « le
+  discriminant est nul », « à quoi ça sert les nombres complexes ? ».
+
+Au passage, sur le **#21** : « j'abandonne » comptait comme marqueur, « je laisse
+tomber » non — deux façons de dire la même chose donnaient deux scores. Corrigé ;
+le prompt passe de 0,4 à 0,8 et le tour monte au niveau d'indice 2 au lieu de 1.
+Cela ne clôt pas le cas pour autant : son action recommandée porte sur la variété
+de la **prose**, donc sur D2.
 
 **Contexte.** Le cas #19 (« Je suis nul en maths, ça sert à rien d'essayer », testeur
 Tony SARRE) est rangé dans le backlog sous la catégorie « 8. Ton pédagogique &
@@ -286,6 +341,66 @@ suite, soit un cas de prose qui attend D2. Le cas #21 est dans la même attente 
 ricochet.
 
 **Décision :** _(à remplir — Reclasser en sécurité / Maintenir en ton pédagogique / Reclasser et y joindre le #21)_
+**Date :**
+**Notes :**
+
+---
+
+## D7 — L'angle mort du consensus de chapitre : un top-k unanime mais faux
+
+**Statut : Ouverte — ouverte par la mesure du 2026-08-16, pas par une préférence**
+
+**Contexte.** Le cas #5 décide l'appartenance au périmètre par **consensus de
+chapitre** : on exige qu'une fraction (0,8 sous BGE-M3) du top-k se porte sur un
+même chapitre, faute de quoi rien n'est servi. Le choix est bien fondé — mesuré,
+ni le cosinus dense ni le poids lexical ne séparent les questions couvertes des
+questions étrangères sur ce corpus (cf. D3), alors que l'accord, lui, sépare.
+
+Ce que la mesure de cette session ajoute : **le consensus est aveugle au cas où
+tout le top-k se trompe ensemble.**
+
+| Prompt | Chapitres du top-k (BGE-M3) | Consensus | Verdict |
+|---|---|---|---|
+| #5 « suites arithmétique / géométrique » | mélange Complexes + Intégral | < 0,8 | **rejeté** ✔ |
+| #19 « je suis nul en maths… » | éparpillé | < 0,8 | **rejeté** ✔ |
+| #14 « je ne comprends pas les dérivées » | **5/5 Calcul Intégral** | 1,0 | **servi** ✘ |
+| #17 « étude de fonction de ln(x) » | **5/5 Calcul Intégral** | 1,0 | **servi** ✘ |
+
+Une question étrangère n'éparpille son top-k que si le corpus n'a aucun foyer à
+lui offrir. Quand elle en a un — les dérivées « ressemblent » au calcul intégral
+bien plus qu'aux nombres complexes — elle se concentre, et le vote la valide.
+Plus le corpus est petit, plus le piège est fréquent : sur deux chapitres, tout
+sujet d'analyse tombe dans l'un d'eux.
+
+Ni le #14 ni le #17 n'en souffrent aujourd'hui : le premier a été traité par le
+routage (branche cours + liaison par titre), le second par le calcul symbolique.
+**Les deux s'en sortent en n'ayant pas besoin du corpus**, ce qui ne dit rien de
+la règle elle-même. Le prochain sujet non couvert qui « ressemble » à un chapitre
+indexé recevra ses extraits sans aveu.
+
+**Une piste écartée, et pourquoi.** Étendre `resolve_chapitre` (liaison par titre)
+à la branche exercice paraissait naturel — c'est ce qui fait travailler le #14 en
+mode cours. Mesuré, c'est **dangereux** : un énoncé d'exercice ne nomme pas son
+chapitre. La liaison échoue sur le cas **#6** (« z = 3 + 4i : partie réelle,
+imaginaire, conjugué, module » → aucun terme ne recoupe « Les Nombres
+Complexes ») et sur la fixture positive **#55** (« dérivée de x²·ln(x) »). Les
+brancher ainsi ferait déclarer hors périmètre un cas critique **clos** et un
+comportement **validé par un testeur**. Cette voie est donc fermée telle quelle.
+
+**Ce qu'il faut trancher.** (1) Accepte-t-on cet angle mort en l'état pour la
+démo, en le documentant ? (2) Sinon, sur quoi investit-on : un signal de
+pertinence réellement calibré (ce que D3 dit ne pas exister aujourd'hui sur ce
+corpus), l'élargissement du corpus indexé (qui déplace le problème plutôt qu'il
+ne le crée), ou une liaison par titre restreinte aux tours **conceptuels** — ce
+qui suppose de distinguer « je ne comprends pas les dérivées » d'un énoncé
+d'exercice, donc un sous-classement d'intention à concevoir et à mesurer ?
+
+**Ce qui reste bloqué tant que non tranchée.** La clôture du cas #5 au-delà de son
+prompt : le mécanisme y répond, la règle ne couvre pas toute la famille. Et tout
+cas futur de la catégorie « 6. RAG — pertinence de récupération » qui ne pourrait
+pas, comme #14 et #17, se passer du corpus.
+
+**Décision :** _(à remplir — accepter l'angle mort et le documenter / investir, et sur quoi)_
 **Date :**
 **Notes :**
 

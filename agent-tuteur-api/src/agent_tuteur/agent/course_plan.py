@@ -216,6 +216,11 @@ _TOPIC_STOPWORDS = frozenset(
         "explique expliquer expliques moi nous presente presenter enseigne enseigner "
         "apprends apprendre initie initier fais faire donne donner cours chapitre "
         "lecon veux voudrais aimerais comprendre reviser reviser etudier revoir "
+        # Un cours peut désormais s'ouvrir sur une incompréhension déclarée
+        # (« Je ne comprends pas les dérivées », cas QA #14). Sans ces mots ici,
+        # le sujet cité au modèle — et qu'il peut répéter à l'élève — devenait
+        # « comprends pas dérivées ».
+        "comprends comprend compris rien pas ne pige flou "
         "est quoi ce que qui les le la des du de un une aux au sur pour dans avec "
         "par en et ou mais plus tout tous toute toutes mon ma mes ton ta tes stp "
         "svp merci peux peut tu je il elle on nous vous ils elles"

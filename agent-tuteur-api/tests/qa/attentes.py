@@ -191,6 +191,38 @@ def _cas_32_derivee_livree(resultat, cas) -> None:
     assert resultat.trace["hint_level"] == 4
 
 
+# --- Cas 16 — Série du *document* attribuée à l'élève -------------------------
+def _cas_16_contexte_invente(resultat, cas) -> None:
+    """« Différence entre forme algébrique, trigonométrique et exponentielle ? »
+    (Ahmed Souleymane).
+
+    Règle non-négociable n°3. L'hallucination était **fournie par nous** : le
+    bloc de documentation attribuait chaque extrait par son nom de fichier
+    (« Lecon_01_Nombres_Complexes_TS2S4.md »), et le modèle y lisait la série de
+    l'élève. Le nom de fichier ne part plus au modèle ; l'attribution client,
+    elle, le conserve.
+    """
+    assertions.assert_aucune_identite_de_document_au_modele(resultat)
+
+
+# --- Cas 17 — Étude de fonction remplacée par un contenu étranger -------------
+def _cas_17_etude_hors_sujet(resultat, cas) -> None:
+    """« Fais-moi l'étude de fonction de ln(x) » (Tony SARRE).
+
+    Doublon du #9 au prompt près (cf. D4), mais l'attente diffère : le #9
+    reprochait une relance socratique, le #17 un contenu sans rapport. Ce qui
+    est vérifié est donc que la matière de la réponse est l'étude **calculée**,
+    et non les extraits remontés — qui parlent d'intégrales sur les deux
+    embedders.
+    """
+    etude = resultat.trace["etude_fonction"]
+    assert etude is not None, "aucune étude de fonction établie"
+    assert etude["expression"] == "log(x)"
+    assert etude["derivee"] == "1/x"
+    assert resultat.trace["hint_level"] == 4
+    assert resultat.trace["calcul_non_verifie"] is False
+
+
 # --- Cas 38 et 41 — Salutation reçue comme un exercice ------------------------
 def _cas_salutation(resultat, cas) -> None:
     """« Bonsoir » (Rafiatou) et « Salut » (Pontiane).
@@ -223,7 +255,16 @@ ATTENTES: dict[int, Attente] = {
     11: _cas_resultat_attendu,
     12: _cas_12_definition_fondatrice,
     13: _cas_resultat_attendu,
+    # 14 — routage corrigé (le tour ouvre un cours et avoue le hors-couverture),
+    # mais la seconde moitié du reproche (« trois prompts avant une information
+    # utile ») est un jugement de prose : verdict à D2. Reste en xfail, comme le
+    # cas non clos qu'il est. Le mécanisme est protégé par ``test_qa_14_*``.
     15: _cas_15_affirmation_fausse,
+    16: _cas_16_contexte_invente,
+    17: _cas_17_etude_hors_sujet,
+    # 19 et 21 — détection comblée et testée (``test_qa_19_21_decouragement``),
+    # mais le verdict reste bloqué : le routage du #19 attend D5 (point 1), la
+    # variété de prose du #21 attend D2. Même patron que le cas #5 ci-dessus.
     20: _cas_20_blocage_declare,
     32: _cas_32_derivee_livree,
     38: _cas_salutation,
