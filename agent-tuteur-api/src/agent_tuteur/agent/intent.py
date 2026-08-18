@@ -73,6 +73,73 @@ _COURSE_START = re.compile(
     re.IGNORECASE,
 )
 
+#: Incompréhension déclarée **suivie d'un déterminant** : « je ne comprends pas
+#: LES dérivées », « j'ai rien compris AUX intégrales ». Le déterminant est exigé,
+#: et c'est lui qui fait tout le travail : « je ne comprends pas » tout court, ou
+#: « je ne comprends pas pourquoi », ne nomme rien et reste une difficulté sur
+#: l'exercice en cours (cas QA #20).
+_INCOMPREHENSION_DECLAREE = re.compile(
+    r"\b(?:"
+    r"je\s+(?:ne\s+)?comprends?\s+(?:pas|rien)"
+    r"|j['e]\s*(?:n['e]\s*)?ai\s+(?:pas|rien)\s+compris"
+    r"|j['e]\s*(?:y\s+)?pige\s+rien"
+    r"|c['e]est\s+flou\s+pour\s+moi"
+    r")"
+    # Le déterminant, sous ses deux formes : pleine (« les dérivées ») ou élidée
+    # (« l'intégration »), éventuellement précédée de la préposition.
+    r"(?:"
+    r"\s+(?:aux?|les|la|des|du|(?:[àa]|de|dans)\s+la)\s+"
+    r"|\s+(?:le)\s+"
+    r"|\s+(?:(?:[àa]|de|dans)\s+)?l['e]\s*"
+    r")",
+    re.IGNORECASE,
+)
+
+#: Ce qui, juste après cette tournure, désigne le **matériel du tour en cours**
+#: et non une notion du programme : « je ne comprends pas la question », « …
+#: l'énoncé », « … la correction ». Le défaut sûr du module est ``EXERCICE``, et
+#: cette liste est ce qui l'applique — en cas de doute sur un mot, ne pas le
+#: retirer d'ici : le laisser, c'est rester sur le comportement historique.
+_MATERIEL_DU_TOUR = re.compile(
+    r"^(?:question|[ée]nonc[ée]|exercice|probl[èe]me|[ée]tape|consigne|correction|"
+    r"r[ée]ponse|solution|calcul|op[ée]ration|r[ée]sultat|explication|d[ée]monstration|"
+    r"exemple|phrase|texte|ligne|partie|sujet|truc|machin|passage|indice|"
+    r"remarque|chose|derni[èe]re|premi[èe]re)\b",
+    re.IGNORECASE,
+)
+
+
+def declare_ne_pas_comprendre_une_notion(question: str) -> bool:
+    """Vrai si l'élève déclare ne pas comprendre une **notion nommée**.
+
+    « Je ne comprends pas les dérivées » est une demande d'explication, au même
+    titre que « Je veux comprendre les dérivées » — que ``_COURSE_START``
+    reconnaît déjà. Les deux phrases disent la même chose ; seule la seconde
+    ouvrait un cours, et cette asymétrie est le cas QA #14 : la première partait
+    en posture socratique, dont le niveau 1 prescrit de « rappeler la règle SANS
+    l'appliquer », sur cinq extraits d'un chapitre étranger — d'où la
+    reformulation à vide que rapporte la testeuse.
+
+    Le mode cours répond mieux **et** dit la vérité : ``course_planner`` y lie le
+    chapitre à la demande de l'élève par recoupement de titre
+    (``resolve_chapitre``), et sur « dérivées » — absentes des chapitres indexés
+    — la liaison échoue, ce qui injecte l'avertissement de couverture au lieu de
+    laisser enseigner les nombres complexes à sa place.
+
+    Deux bornes, toutes deux nécessaires :
+
+    * une **notion doit être nommée** (le déterminant l'atteste). Sans elle, on
+      reste sur l'exercice en cours, ce qu'exige le cas #20 ;
+    * ce qui est nommé ne doit pas être le matériel du tour (« la question »,
+      « l'énoncé », « la correction »).
+    """
+    correspondance = _INCOMPREHENSION_DECLAREE.search(question)
+    if correspondance is None:
+        return False
+    reste = question[correspondance.end() :].lstrip(" '’")
+    return bool(reste) and _MATERIEL_DU_TOUR.match(reste) is None
+
+
 # --- Navigation à l'intérieur d'un cours en cours ----------------------------
 _NAV_NEXT = re.compile(
     r"\b(?:continue[rz]?|suite|section\s+suivante|au?\s+suivant|"
@@ -259,6 +326,12 @@ def _detect_navigation(question: str, *, in_course: bool) -> Navigation | None:
     if _COURSE_START.search(question):
         return Navigation.START
     if not in_course:
+        # Une incompréhension déclarée n'ouvre un cours que **hors** cours. En
+        # plein cours, « je n'ai pas compris le module » est une sous-question
+        # sur la section courante, pas une demande de repartir de zéro : c'est
+        # la continuité que gèrent déjà les branches ci-dessous.
+        if declare_ne_pas_comprendre_une_notion(question):
+            return Navigation.START
         return None
     if _NAV_NEXT.search(question):
         return Navigation.NEXT

@@ -102,6 +102,15 @@ class Settings(BaseSettings):
     rag_seuil_pertinence: Annotated[float | None, BeforeValidator(_vide_vaut_absent)] = Field(
         default=None, ge=-1.0, le=1.0
     )
+    #: Fraction du top-k devant se porter sur un même chapitre pour que la
+    #: question soit jugée dans le périmètre du corpus (cas QA #5). Vide = celle
+    #: de l'embedder, qui est le cas normal — c'est de sa qualité sémantique que
+    #: la règle dépend, pas d'une préférence d'application. Ce réglage existe
+    #: pour resserrer ou desserrer le périmètre en exploitation sans redéployer,
+    #: une fois la mesure refaite sur l'index réel.
+    rag_consensus_chapitre: Annotated[float | None, BeforeValidator(_vide_vaut_absent)] = Field(
+        default=None, gt=0.0, le=1.0
+    )
 
 
 @lru_cache

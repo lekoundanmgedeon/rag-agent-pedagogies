@@ -51,6 +51,20 @@ class MotifDetresse(str, Enum):
 #: le harcèlement ? » est une question sur une notion, pas une confidence.
 _PREMIERE_PERSONNE = re.compile(r"(?:\bje\b|\bj'|\bme\b|\bm'|\bmoi\b|\bmon\b|\bma\b|\bmes\b)")
 
+#: Élision tapée sans apostrophe : « j ai envie de pleurer », « je n ai pas d
+#: amis ». Mesuré sur ce module, c'était le trou de rappel le plus large — il ne
+#: ratait pas un motif exotique mais le **marqueur de première personne**
+#: lui-même, donc *toute* confidence saisie ainsi, quelle que soit sa gravité.
+#: Restreint à une consonne élidable isolée suivie d'une voyelle, ce qui ne
+#: touche aucun mot français plein.
+_ELISION_SANS_APOSTROPHE = re.compile(r"\b([cdjlmnst]) (?=[aeiouyh])")
+
+#: Intensifieur intercalé, toléré au milieu d'un motif : « je me sens **tout**
+#: seul », « je me sens **vraiment** mal ». Liste fermée à dessein — un « \w+ »
+#: générique ferait entrer « je vais **avoir du** mal », c'est-à-dire la
+#: difficulté scolaire ordinaire, dans le disjoncteur de sécurité.
+_INTENSIFIEUR = r"(?:tout|toute|tres|si|vraiment|trop|super|hyper|tellement)\s+"
+
 #: Motifs par nature, évalués dans l'ordre de gravité décroissante. Le texte est
 #: comparé **sans accents et en minuscules** : les motifs sont donc écrits sans
 #: accent, ce qui les rend aussi robustes aux saisies non accentuées des élèves.
@@ -70,7 +84,8 @@ _MOTIFS: tuple[tuple[MotifDetresse, tuple[str, ...]], ...] = (
             r"se\s+moqu\w*\s+de\s+moi", r"on\s+se\s+moque\s+de\s+moi",
             r"me\s+fais\s+(?:frapper|taper|battre|insulter|humilier)",
             r"me\s+(?:frappent|tapent|battent|insultent|humilient|rejettent)",
-            r"victime\s+de", r"bouc\s+emissaire", r"intimid\w+\s+(?:a|au|en)\s+",
+            r"victime\s+de", r"bouc\s+emissaire", r"souffre.?douleur",
+            r"intimid\w+\s+(?:a|au|en)\s+",
             r"me\s+tape\s+dessus", r"racket",
         ),
     ),
@@ -78,8 +93,12 @@ _MOTIFS: tuple[tuple[MotifDetresse, tuple[str, ...]], ...] = (
         MotifDetresse.MAL_ETRE,
         (
             r"je\s+suis\s+(?:triste|deprim\w*|mal\s+dans\s+ma\s+peau)",
+            r"je\s+deprim\w*",               # « je déprime », sans « je suis »
             r"envie\s+de\s+pleurer", r"je\s+pleure\s+(?:tout|tous|souvent|sans)",
-            r"plus\s+gout\s+a\s+rien", r"je\s+(?:vais|me\s+sens)\s+(?:tres\s+)?mal\b",
+            r"plus\s+gout\s+a\s+rien",
+            # « mal » adverbe de manière — « je vais mal placer la virgule » —
+            # n'est pas « je vais mal ». L'infinitif qui suit trahit le premier.
+            rf"je\s+(?:vais|me\s+sens)\s+(?:{_INTENSIFIEUR})?mal\b(?!\s+\w+(?:er|ir|re)\b)",
             r"je\s+n'?ai\s+plus\s+envie\s+de\s+rien", r"je\s+souffre\b",
         ),
     ),
@@ -87,7 +106,7 @@ _MOTIFS: tuple[tuple[MotifDetresse, tuple[str, ...]], ...] = (
         MotifDetresse.ISOLEMENT,
         (
             r"aucun\s+ami", r"pas\s+d'?amis?\b", r"personne\s+ne\s+(?:veut\s+)?me\s+parle",
-            r"toujours\s+(?:tout\s+)?seul", r"je\s+me\s+sens\s+seul",
+            rf"toujours\s+(?:{_INTENSIFIEUR})?seul", rf"je\s+me\s+sens\s+(?:{_INTENSIFIEUR})?seul",
             r"personne\s+ne\s+m'?aime", r"tout\s+le\s+monde\s+m'?ignore",
         ),
     ),
@@ -125,6 +144,7 @@ def detecter_detresse(question: str) -> SignalDetresse:
     Renvoie le premier motif reconnu par ordre de gravité décroissante.
     """
     plat = strip_accents(question.replace("’", "'")).lower()
+    plat = _ELISION_SANS_APOSTROPHE.sub(r"\1'", plat)
     if not _PREMIERE_PERSONNE.search(plat):
         return SignalDetresse()
     for nature, motifs in _COMPILES:
