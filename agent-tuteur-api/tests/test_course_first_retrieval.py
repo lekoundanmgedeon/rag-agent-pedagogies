@@ -60,6 +60,11 @@ class _EmbedderFactice:
     #: valeurs choisies pour illustrer un classement, pas une similarité.
     seuil_pertinence = None
 
+    #: Aucune règle de périmètre non plus, et pour la même raison : les chapitres
+    #: de ces chunks sont fabriqués pour illustrer une partition, pas un
+    #: consensus. Le vote y déciderait sur des métadonnées de décor.
+    consensus_chapitre = None
+
     def embed_query(self, query):
         return [0.0]
 

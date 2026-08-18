@@ -203,6 +203,11 @@ class AgentResult:
     retrieved: list[ScoredChunk]
     trace_id: str = ""
     node_trace: list[dict] = field(default_factory=list)
+    #: Prompt réellement assemblé pour ce tour. Symétrique de ``Prepared``, qui
+    #: le portait déjà : c'est du texte produit par le code, donc la seule
+    #: matière assérable d'un tour complet — la prose du modèle, elle, ne l'est
+    #: pas. Vide sur un tour court-circuité (mise en sécurité).
+    final_prompt: str = ""
     #: Produits des nœuds terminaux (graphe complet uniquement).
     verification: dict | None = None
     #: Quiz validé, présent uniquement pour un tour d'intention « quiz ».
@@ -428,9 +433,11 @@ class TutorAgent:
             "repetitions": signal.repetitions,
             "markers": signal.markers,
             "blocage_declare": signal.blocage_declare,
+            "decouragement": signal.decouragement,
             "node_trace": [
                 {"node": "detect_frustration", "score": signal.score,
-                 "blocage_declare": signal.blocage_declare}
+                 "blocage_declare": signal.blocage_declare,
+                 "decouragement": signal.decouragement}
             ],
         }
 
@@ -620,6 +627,10 @@ class TutorAgent:
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
             "blocage_declare": varier_approche,
+            # Exposé dans la trace pour que le signal du cas #19 soit lisible
+            # là où il sera exploité (routage ou modulation de ton, D5 point 1)
+            # plutôt que noyé dans le score agrégé.
+            "decouragement": bool(state.get("decouragement")),
             "etude_fonction": etude,
             "complexe": complexe,
             "tool_used": state.get("tool_used"),
@@ -844,6 +855,10 @@ class TutorAgent:
                 "chapitre_confirmed": cs.get("chapitre_confirmed", True),
                 "plan": plan_titles(),
             },
+            # Présent aussi en mode exercice : la clé manquait ici, si bien
+            # qu'aucun appelant — trace, journal, test — ne pouvait savoir qu'un
+            # tour de cours était parti sans documentation.
+            "hors_perimetre": bool(state.get("hors_perimetre")),
             "sources": _sources_payload(retrieved),
             "scores": [sc.score for sc in retrieved],
         }
@@ -1292,6 +1307,7 @@ class TutorAgent:
             retrieved=result.get("retrieved", []),
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
+            final_prompt=result.get("final_prompt", ""),
             verification=result.get("verification"),
             quiz=result.get("quiz"),
             mastery=result.get("mastery"),

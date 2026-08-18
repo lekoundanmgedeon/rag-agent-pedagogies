@@ -214,6 +214,29 @@ def assert_serie_dans_le_cadre(prepared, attendue: str) -> None:
     )
 
 
+def assert_aucune_identite_de_document_au_modele(resultat) -> None:
+    """Aucun nom de fichier du corpus n'a été envoyé au modèle (cas QA #16).
+
+    Ces noms encodent la série (« Lecon_01_Nombres_Complexes_TS2S4.md ») ; servis
+    dans le bloc de documentation, ils y sont indiscernables d'un fait sur
+    l'élève, et c'est là que la série S2/S4 rapportée par le testeur a été lue.
+    Règle non-négociable n°3.
+
+    L'assertion échoue aussi quand rien n'a été servi : sans extrait, elle ne
+    prouverait rien tout en restant verte.
+    """
+    fichiers = {
+        sc.chunk.metadata.source_document
+        for sc in resultat.retrieved
+        if sc.chunk.metadata.source_document
+    }
+    assert fichiers, "aucun extrait servi : l'absence de fuite ne prouverait rien"
+    for fichier in fichiers:
+        assert fichier not in resultat.final_prompt, (
+            f"nom de fichier du corpus envoyé au modèle : {fichier}"
+        )
+
+
 def assert_catalogue_honnete(prepared, chapitres_indexes: set[str]) -> None:
     """Le prompt annonce exactement les chapitres réellement indexés.
 

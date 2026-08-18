@@ -77,6 +77,12 @@ class AgentState(TypedDict, total=False):
     #: de ``repetitions``, qui est observé par comparaison des questions
     #: récentes : ici c'est l'élève qui l'énonce (cas QA #20).
     blocage_declare: bool
+    #: L'élève met en cause sa valeur ou l'utilité de l'effort (« je suis nul en
+    #: maths, ça sert à rien d'essayer ») plutôt que la difficulté d'une notion
+    #: (cas QA #19). Détecté par ``frustration.py`` et porté jusqu'à la trace ;
+    #: ce qu'il faut en faire — disjoncteur ou modulation de ton — relève de la
+    #: décision D5, encore ouverte sur ce point.
+    decouragement: bool
     hint_level: int
     hint_label: str
     hint_reason: str

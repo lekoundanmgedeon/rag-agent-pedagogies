@@ -55,6 +55,26 @@ class BaseEmbedder(ABC):
     #: backends à ce jour — cf. les mesures ci-dessous et `qa/qa_status.json` #5.
     seuil_pertinence: float | None = None
 
+    #: Fraction du top-k qui doit se porter sur un **même chapitre** pour que la
+    #: question soit jugée dans le périmètre du corpus (cas QA #5).
+    #:
+    #: Mesuré sur les 12 leçons (216 chunks, 35 questions couvertes contre 18
+    #: étrangères), aucun score scalaire — ni le cosinus dense, ni le poids
+    #: lexical — ne sépare les deux nuages : toutes les marges sont négatives.
+    #: Ce qui sépare est un **consensus**, pas une grandeur : une question
+    #: couverte concentre son top-k sur un chapitre, une question étrangère
+    #: l'éparpille faute d'avoir un foyer dans le corpus.
+    #:
+    #: L'avantage sur un seuil scalaire n'est pas qu'accidentel : la règle ne
+    #: dépend d'aucune échelle, donc ni du backend, ni d'un ``dense_score`` que
+    #: le store doit renseigner. Elle dépend en revanche de la **qualité
+    #: sémantique** de l'embedder — d'où sa déclaration ici, backend par
+    #: backend, et non en réglage d'application.
+    #:
+    #: ``None`` = « pas de périmètre décidable sur cet espace » : le retriever
+    #: sert alors ce qu'il trouve, comme avant.
+    consensus_chapitre: float | None = None
+
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[Embedding]: ...
 
@@ -89,6 +109,14 @@ class LightEmbedder(BaseEmbedder):
     #: seuil ici reviendrait à l'ajuster aux prompts des testeurs, ce que
     #: CLAUDE.md interdit explicitement (cas QA #5).
     seuil_pertinence = None
+
+    #: Pas de périmètre décidable non plus, et mesuré de même. Le vote par
+    #: chapitre, qui donne 5,7 % de faux rejets sous BGE-M3, en donne **40 %**
+    #: ici au même réglage (0,8) : deux questions couvertes sur cinq seraient
+    #: déclarées hors programme. Le consensus de chapitre suppose une proximité
+    #: de sens ; un hachage de n-grammes n'en produit pas, il éparpille les
+    #: résultats d'une question couverte comme ceux d'une question étrangère.
+    consensus_chapitre = None
 
     def _dense(self, tokens: list[str]) -> np.ndarray:
         """Hashing trick : chaque feature indexe une dimension avec un signe.
@@ -136,11 +164,28 @@ class BGEM3Embedder(BaseEmbedder):
     rejeter l'autre vit dans une fenêtre de 0,015 — soit un seuil ajusté au
     prompt d'un testeur, ce que CLAUDE.md interdit.
 
-    Le **score lexical** du même modèle sépare, lui : 0,1402 pour ce prompt
-    contre 0,2105 pour la question couverte la plus faible. Le poser en seuil
-    suppose d'abord de rappeler ce score depuis Qdrant, comme cela a été fait
-    pour ``dense_score``. Cf. `qa/qa_status.json` #5.
+    Le score **lexical** avait un temps paru séparer (0,1402 contre 0,2105).
+    Remesuré sur un jeu élargi — 35 questions couvertes contre 18 étrangères,
+    sur les 12 leçons — il ne sépare pas davantage : marge −0,024. La première
+    mesure portait sur trop peu de points, ce que CLAUDE.md avertissait.
+
+    Le périmètre est donc décidé par ``consensus_chapitre`` et non par un
+    seuil scalaire. Cf. `qa/qa_status.json` #5.
     """
+
+    #: Mesuré sur les 12 leçons (216 chunks) : à 0,8 — soit 4 résultats sur 5
+    #: portés par un même chapitre — 5,7 % de faux rejets sur 35 questions
+    #: couvertes et 16,7 % de faux services sur 18 questions étrangères. Aucun
+    #: plancher de cosinus ajouté à ce vote n'améliore le compromis : jusqu'à
+    #: 0,45 il ne retire rien, et à 0,50 il coûte plus de faux rejets qu'il
+    #: n'évite de faux services.
+    #:
+    #: Les trois fixtures qui arbitrent tombent du bon côté : le prompt exact du
+    #: cas #5 est servi (les suites SONT indexées — le défaut rapporté venait
+    #: d'un index incomplet), et les fixtures positives #54/#55, sur les
+    #: dérivées, sortent hors périmètre, ce que la décision D6 attend pour
+    #: divulguer sans refuser.
+    consensus_chapitre = 0.8
 
     def __init__(self, model_name: str = "BAAI/bge-m3") -> None:
         try:
