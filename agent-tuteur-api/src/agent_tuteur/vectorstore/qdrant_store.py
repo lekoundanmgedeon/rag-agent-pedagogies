@@ -255,7 +255,13 @@ class QdrantVectorStore(BaseVectorStore):  # pragma: no cover - nécessite un se
             collection_name=self._collection,
             query=query.dense.tolist(),
             using=self.DENSE,
-            filter=filtre,
+            # `query_filter` et non `filter` : au niveau de `query_points`, le
+            # client Qdrant nomme ainsi le filtre (seul `Prefetch` expose un
+            # champ `filter`). Un mauvais nom part dans `**kwargs`, où le client
+            # l'intercepte par une assertion — le rappel du cosinus explosait
+            # alors sur toute question filtrée par le curriculum, et le flux SSE
+            # du chat se coupait sans jamais émettre `done`.
+            query_filter=filtre,
             limit=len(point_ids),
             with_payload=False,
         )

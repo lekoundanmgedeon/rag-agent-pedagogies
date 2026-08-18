@@ -17,6 +17,7 @@ relève d'un test d'intégration sur la pile réelle.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -150,4 +151,30 @@ def test_le_filtre_curriculaire_est_conserve_sur_la_seconde_requete(filtres):
 
     store.search(_requete(), top_k=5, filters=filtres)
 
-    assert store._client.appels[1]["filter"] is not None
+    assert store._client.appels[1]["query_filter"] is not None
+
+
+def test_les_appels_respectent_la_signature_du_vrai_client():
+    """Garde-fou : le client factice accepte ``**kwargs``, le vrai non.
+
+    ``query_points`` nomme son filtre ``query_filter`` ; un ``filter`` y part
+    dans ``**kwargs``, que le client réel refuse par une assertion. Les tests
+    ci-dessus ne pouvaient pas le voir — leur double est plus permissif que le
+    vrai client. Résultat en production : toute recherche filtrée levait, le
+    nœud ``retrieve_context`` échouait, et le flux SSE du chat se coupait sans
+    jamais émettre ``done`` — l'élève n'avait qu'un chargement sans fin.
+
+    On confronte donc les appels réellement émis à la signature du vrai client.
+    """
+    qdrant_client = pytest.importorskip("qdrant_client")
+
+    fusion = _Reponse([_Point(id=3, score=0.03, payload=_payload("a"))])
+    store = _store([fusion, _Reponse([_Point(id=3, score=0.4)])])
+    store.search(_requete(), top_k=5, filters={"serie": ["S2"]})
+
+    attendus = set(
+        inspect.signature(qdrant_client.QdrantClient.query_points).parameters
+    ) - {"self", "kwargs"}
+    for appel in store._client.appels:
+        inconnus = set(appel) - attendus
+        assert not inconnus, f"arguments inconnus de query_points : {sorted(inconnus)}"
