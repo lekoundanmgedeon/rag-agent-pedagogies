@@ -39,6 +39,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
 from dataclasses import dataclass, field
 
 from langgraph.graph import END, START, StateGraph
@@ -270,7 +271,7 @@ class TutorAgent:
 
     # ------------------------------------------------- branche sécurité (n°1)
     @_timed_node("triage_securite")
-    async def _n_triage_securite(self, state: AgentState) -> dict:
+    async def _n_triage_securite(self, state: AgentState, msg: Any = None) -> dict:
         """Premier nœud du graphe : l'élève va-t-il bien ?
 
         Placé **avant** ``detect_intent`` pour que rien — ni la détection
@@ -288,7 +289,7 @@ class TutorAgent:
         }
 
     @_timed_node("reponse_securite")
-    async def _n_reponse_securite(self, state: AgentState) -> dict:
+    async def _n_reponse_securite(self, state: AgentState, msg: Any = None) -> dict:
         """Réponse de mise en sécurité — écrite par le code, pas par le modèle.
 
         La trace produite porte les mêmes clés qu'un tour ordinaire : la route
@@ -333,7 +334,7 @@ class TutorAgent:
 
     # ------------------------------------------------------------------ nœuds
     @_timed_node("profil_eleve")
-    async def _n_profil_eleve(self, state: AgentState) -> dict:
+    async def _n_profil_eleve(self, state: AgentState, msg: Any = None) -> dict:
         """Résout la série applicable au tour — cas QA #8.
 
         Placé **avant** ``detect_intent``, donc en amont du retrieval et de
@@ -373,7 +374,7 @@ class TutorAgent:
         }
 
     @_timed_node("detect_intent")
-    async def _n_detect_intent(self, state: AgentState) -> dict:
+    async def _n_detect_intent(self, state: AgentState, msg: Any = None) -> dict:
         in_course = bool(state.get("course_state"))
         decision = classify_intent(state["question"], in_course=in_course)
         nav = decision.navigation.value if decision.navigation else None
@@ -384,7 +385,7 @@ class TutorAgent:
         }
 
     @_timed_node("retrieve_context")
-    async def _n_retrieve(self, state: AgentState) -> dict:
+    async def _n_retrieve(self, state: AgentState, msg: Any = None) -> dict:
         query = _condense_retrieval_query(state["question"], state.get("conversation_history", []))
         context = state.get("curriculum_context", {})
 
@@ -426,7 +427,7 @@ class TutorAgent:
         }
 
     @_timed_node("detect_frustration")
-    async def _n_frustration(self, state: AgentState) -> dict:
+    async def _n_frustration(self, state: AgentState, msg: Any = None) -> dict:
         session = state.get("session") or SessionState()
         signal = detect_frustration(state["question"], session)
         session.add(state["question"])  # mémoire de session (éphémère)
@@ -459,7 +460,7 @@ class TutorAgent:
         }
 
     @_timed_node("route_tool")
-    async def _n_route_tool(self, state: AgentState) -> dict:
+    async def _n_route_tool(self, state: AgentState, msg: Any = None) -> dict:
         """Calcul symbolique via le registre MCP, ou repli direct.
 
         Si un registre MCP est disponible (``self._tool_registry``), les outils
@@ -588,7 +589,7 @@ class TutorAgent:
         }
 
     @_timed_node("guardrail")
-    async def _n_guardrail(self, state: AgentState) -> dict:
+    async def _n_guardrail(self, state: AgentState, msg: Any = None) -> dict:
         question = state["question"]
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
@@ -748,7 +749,7 @@ class TutorAgent:
 
     # ------------------------------------------------------------ branche cours
     @_timed_node("course_planner")
-    async def _n_course_planner(self, state: AgentState) -> dict:
+    async def _n_course_planner(self, state: AgentState, msg: Any = None) -> dict:
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
         nav_raw = state.get("intent_nav")
@@ -894,7 +895,7 @@ class TutorAgent:
     # --- Branche quiz (posture d'évaluation) --------------------------------
 
     @_timed_node("quiz_planner")
-    async def _n_quiz_planner(self, state: AgentState) -> dict:
+    async def _n_quiz_planner(self, state: AgentState, msg: Any = None) -> dict:
         """Détermine sur quoi interroger l'élève et sous quelle forme.
 
         La compétence est déduite du cadre curriculaire et des extraits
