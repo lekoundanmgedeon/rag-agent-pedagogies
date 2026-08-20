@@ -86,30 +86,41 @@ def main() -> int:
     except Exception:
         existing = set()
 
+    pending = [path for path in files if path.name not in existing]
     uploaded = 0
-    for path in files:
-        if path.name in existing:
-            continue
+    batches = [pending[start : start + 5] for start in range(0, len(pending), 5)]
+    while batches:
+        batch = batches.pop(0)
+        files_payload = [
+            ("files", (path.name, path.read_bytes(), _content_type(path)))
+            for path in batch
+        ]
         for attempt in range(12):
             try:
                 resp = httpx.post(
                     f"{API}/api/documents",
                     headers=headers,
-                    files={"files": (path.name, path.read_bytes(), _content_type(path))},
-                    timeout=120,
+                    files=files_payload,
+                    timeout=300,
                 )
                 if resp.status_code == 429:
                     retry_after = float(resp.headers.get("Retry-After", "7"))
                     print(f"  ~ Limitation de débit, attente {retry_after:.0f}s...", file=sys.stderr)
                     time.sleep(max(retry_after, 1))
                     continue
+                if resp.status_code == 413 and len(batch) > 1:
+                    midpoint = max(len(batch) // 2, 1)
+                    batches[0:0] = [batch[:midpoint], batch[midpoint:]]
+                    print(f"  ~ Lot trop volumineux, découpage de {len(batch)} fichier(s).", file=sys.stderr)
+                    break
                 resp.raise_for_status()
-                uploaded += 1
-                existing.add(path.name)
-                print(f"  + {path.name}")
+                uploaded += len(batch)
+                existing.update(path.name for path in batch)
+                for path in batch:
+                    print(f"  + {path.name}")
                 break
             except Exception as exc:
-                print(f"  ! {path.name} : {exc}", file=sys.stderr)
+                print(f"  ! Lot {[path.name for path in batch]} : {exc}", file=sys.stderr)
                 break
 
     print(f"Corpus : {uploaded} document(s) téléversé(s), {len(existing)} déjà présent(s).")

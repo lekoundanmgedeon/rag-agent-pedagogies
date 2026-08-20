@@ -123,6 +123,15 @@ class AgentState(TypedDict, total=False):
     final_prompt: str
     trace: dict[str, Any]
 
+    # --- Agent Validation ---
+    draft_answer: str | None
+    validation_feedback: str | None
+    repair_attempts: int
+    #: Résultat complet de la dernière passe de validation : verdict (PASS/REPAIR/REVIEW/FAIL),
+    #: score, erreurs détectées, critères validés, recommandations de correction.
+    #: ``None`` avant le premier appel au nœud ``verify_response``.
+    validation_result: dict | None
+
     # --- Produit du nœud f ---
     answer: str
 

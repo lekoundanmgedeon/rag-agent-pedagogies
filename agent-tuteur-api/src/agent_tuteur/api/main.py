@@ -37,7 +37,7 @@ from agent_tuteur.api.routes import (
 )
 from agent_tuteur.api.routes.documents import verify_tenant_consistency
 from agent_tuteur.config.settings import get_settings
-from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
+from agent_tuteur.factory import build_llm_cours, build_llm_exercice, build_rag_stack, build_tool_registry, ingest_corpus
 from agent_tuteur.observability import get_logger, log_event, setup_logging
 from agent_tuteur.persistence.db import dispose_engine, init_engine, session_scope
 from agent_tuteur.persistence.repositories import DocumentRepository
@@ -66,8 +66,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # (vide à chaque redémarrage). Sans effet sur un backend Qdrant persistant.
         ingest_corpus(rag_stack.indexer, CORPUS_DIR)
 
-    llm = build_llm(settings)
-    agent = TutorAgent(rag_stack.retriever, llm, top_k=settings.retrieval_top_k)
+    llm_cours = build_llm_cours(settings)
+    llm_exercice = build_llm_exercice(settings)
+    tool_registry = build_tool_registry()
+
+    # --- Connexion MCP Math ---
+    import sys
+    from agent_tuteur.mcp.client import McpClient
+    
+    # On lance les serveurs MCP via la commande python courante
+    math_mcp = McpClient(
+        command=sys.executable,
+        args=["-m", "agent_tuteur.mcp_servers.math_server"]
+    )
+    rag_mcp = McpClient(
+        command=sys.executable,
+        args=["-m", "agent_tuteur.mcp_servers.rag_server"]
+    )
+    try:
+        await math_mcp.connect()
+        await math_mcp.register_tools(tool_registry)
+        _logger.info("Serveur MCP Math connecté.")
+        
+        await rag_mcp.connect()
+        await rag_mcp.register_tools(tool_registry)
+        _logger.info("Serveur MCP RAG connecté.")
+    except Exception as e:
+        _logger.error(f"Échec de connexion aux serveurs MCP : {e}")
+
+    agent = TutorAgent(
+        rag_stack.retriever,
+        llm_cours=llm_cours,
+        llm_exercice=llm_exercice,
+        top_k=settings.retrieval_top_k,
+        tool_registry=tool_registry,
+    )
 
     app.state.indexer = rag_stack.indexer
     app.state.retriever = rag_stack.retriever
@@ -85,6 +118,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.arq_pool is not None:
         await app.state.arq_pool.aclose()
     await dispose_engine()
+
+    try:
+        await math_mcp.disconnect()
+        await rag_mcp.disconnect()
+    except Exception:
+        pass
 
 
 async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:

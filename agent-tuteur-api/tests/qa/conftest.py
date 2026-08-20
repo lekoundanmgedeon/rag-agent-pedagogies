@@ -23,11 +23,14 @@ from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.ports import InMemoryAuditLog, InMemoryStudentMemory
-from agent_tuteur.factory import build_llm
+# Specific LLM factories for cours and exercice pipelines
+from agent_tuteur.factory import build_llm_cours, build_llm_exercice
 from agent_tuteur.ingestion.pipeline import ingest_and_index
 from agent_tuteur.vectorstore.embeddings import build_embedder
 from agent_tuteur.vectorstore.indexer import Indexer
 from agent_tuteur.vectorstore.retriever import HybridRetriever
+# MCP tool registry used by TutorAgent
+from agent_tuteur.mcp.tools import build_tool_registry
 from agent_tuteur.vectorstore.store import build_vector_store
 
 from .cas import CORPUS_QA
@@ -67,13 +70,21 @@ def pile_qa() -> PileQA:
 
 @pytest.fixture
 def agent_qa(pile_qa: PileQA) -> TutorAgent:
-    """Agent hors-ligne monté sur l'index de la démo."""
+    """Agent hors-ligne monté sur l'index de la démo.
+
+    Uses MockLLM for both cours and exercice pipelines and provides the
+    tool registry required by TutorAgent.__init__.
+    """
+    llm_cours = MockLLM()
+    llm_exercice = MockLLM()
     return TutorAgent(
         pile_qa.retriever,
-        MockLLM(),
+        llm_cours=llm_cours,
+        llm_exercice=llm_exercice,
         memory=InMemoryStudentMemory(),
         audit=InMemoryAuditLog(),
         top_k=5,
+        tool_registry=build_tool_registry(),
     )
 
 

@@ -21,6 +21,7 @@ from agent_tuteur.agent.ports import (
 )
 from agent_tuteur.config.settings import Settings, get_settings
 from agent_tuteur.ingestion.pipeline import ingest_and_index
+from agent_tuteur.mcp.tools import build_tool_registry
 from agent_tuteur.vectorstore.embeddings import build_embedder
 from agent_tuteur.vectorstore.indexer import Indexer
 from agent_tuteur.vectorstore.retriever import HybridRetriever
@@ -62,10 +63,11 @@ def build_rag_stack(settings: Settings | None = None) -> RagStack:
     return RagStack(indexer=indexer, retriever=retriever)
 
 
-def build_llm(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
+def build_llm_cours(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
     settings = settings or get_settings()
+    # Le backend cible pour le cours est GPT-5.5 (Gemini par défaut pour l'instant)
     return build_router(
-        backend=settings.llm_backend,
+        backend="gemini", # On force Gemini
         chain=settings.llm_chain,
         mistral_api_key=settings.mistral_api_key,
         mistral_model=settings.mistral_model,
@@ -76,26 +78,64 @@ def build_llm(settings: Settings | None = None, *, probe_ollama: bool = True) ->
         probe_ollama=probe_ollama,
     )
 
+def build_llm_exercice(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
+    settings = settings or get_settings()
+    # Le backend cible pour exercice est Mistral
+    return build_router(
+        backend="mistral", # On force Mistral
+        chain=settings.llm_chain,
+        mistral_api_key=settings.mistral_api_key,
+        mistral_model=settings.mistral_model,
+        gemini_api_key=settings.gemini_api_key,
+        gemini_model=settings.gemini_model,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        probe_ollama=probe_ollama,
+    )
 
 def build_agent(
     *,
     settings: Settings | None = None,
     retriever: HybridRetriever | None = None,
-    llm: BaseLLM | None = None,
+    llm_cours: BaseLLM | None = None,
+    llm_exercice: BaseLLM | None = None,
     memory: StudentMemoryPort | None = None,
     audit: AuditLogPort | None = None,
     probe_ollama: bool = True,
 ) -> TutorAgent:
     settings = settings or get_settings()
     retriever = retriever or build_rag_stack(settings).retriever
-    llm = llm or build_llm(settings, probe_ollama=probe_ollama)
+    llm_cours = llm_cours or build_llm_cours(settings, probe_ollama=probe_ollama)
+    llm_exercice = llm_exercice or build_llm_exercice(settings, probe_ollama=probe_ollama)
+    registry = build_tool_registry()
+
     return TutorAgent(
         retriever,
-        llm,
+        llm_cours=llm_cours,
+        llm_exercice=llm_exercice,
         memory=memory if memory is not None else InMemoryStudentMemory(),
         audit=audit if audit is not None else InMemoryAuditLog(),
         top_k=settings.retrieval_top_k,
+        tool_registry=registry,
     )
+
+def build_llm(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
+    """Factory for tests (layer B) returning the appropriate LLM.
+
+    Chooses le LLM selon ``settings.llm_backend`` :
+    - ``gemini`` → ``build_llm_cours`` (GPT‑5.5)
+    - ``mistral`` → ``build_llm_exercice`` (Mistral)
+    - autre valeur → ``MockLLM`` (fallback safe).
+    """
+    settings = settings or get_settings()
+    backend = settings.llm_backend
+    if backend == "gemini":
+        return build_llm_cours(settings, probe_ollama=probe_ollama)
+    if backend == "mistral":
+        return build_llm_exercice(settings, probe_ollama=probe_ollama)
+    from agent_tuteur.agent.llm.mock import MockLLM
+    return MockLLM()
+
 
 
 def ingest_corpus(indexer: Indexer, corpus_dir: str | Path) -> int:
