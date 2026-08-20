@@ -71,4 +71,7 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 aiosqlite==0.22.1
 greenlet==3.5.3
+<<<<<<< HEAD
 mcp==1.2.0
+=======
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8

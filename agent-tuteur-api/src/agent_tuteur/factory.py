@@ -67,7 +67,11 @@ def build_llm_cours(settings: Settings | None = None, *, probe_ollama: bool = Tr
     settings = settings or get_settings()
     # Le backend cible pour le cours est GPT-5.5 (Gemini par défaut pour l'instant)
     return build_router(
+<<<<<<< HEAD
         backend="gemini", # On force Gemini
+=======
+        backend=settings.llm_backend,
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         chain=settings.llm_chain,
         mistral_api_key=settings.mistral_api_key,
         mistral_model=settings.mistral_model,

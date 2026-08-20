@@ -118,7 +118,10 @@ services:
     build: ../agent-tuteur-api
     environment:
       DATABASE_URL: postgresql+asyncpg://tuteur_app:tuteur_app_password@postgres:5432/tuteur
+<<<<<<< HEAD
       PYTHONPATH: /app:/app/src
+=======
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
     command:
       - python
       - scripts/create_user.py
@@ -140,13 +143,19 @@ services:
   # Attend que l'API soit prête ; ne bloque jamais le démarrage de la stack.
   seedcorpus:
     build: ../agent-tuteur-api
+<<<<<<< HEAD
     volumes:
       - ../lessons:/app/lessons:ro
+=======
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
     environment:
       API_BASE_URL: http://api:8000
       SEED_ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@tuteur.sn}
       SEED_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+<<<<<<< HEAD
       CORPUS_DIR: /app/lessons
+=======
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
     command: ["python", "scripts/seed_corpus.py"]
     depends_on:
       createadmin:

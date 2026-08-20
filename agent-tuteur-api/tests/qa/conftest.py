@@ -23,14 +23,21 @@ from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.ports import InMemoryAuditLog, InMemoryStudentMemory
+<<<<<<< HEAD
 # Specific LLM factories for cours and exercice pipelines
 from agent_tuteur.factory import build_llm_cours, build_llm_exercice
+=======
+from agent_tuteur.factory import build_llm
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 from agent_tuteur.ingestion.pipeline import ingest_and_index
 from agent_tuteur.vectorstore.embeddings import build_embedder
 from agent_tuteur.vectorstore.indexer import Indexer
 from agent_tuteur.vectorstore.retriever import HybridRetriever
+<<<<<<< HEAD
 # MCP tool registry used by TutorAgent
 from agent_tuteur.mcp.tools import build_tool_registry
+=======
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 from agent_tuteur.vectorstore.store import build_vector_store
 
 from .cas import CORPUS_QA
@@ -70,6 +77,7 @@ def pile_qa() -> PileQA:
 
 @pytest.fixture
 def agent_qa(pile_qa: PileQA) -> TutorAgent:
+<<<<<<< HEAD
     """Agent hors-ligne monté sur l'index de la démo.
 
     Uses MockLLM for both cours and exercice pipelines and provides the
@@ -85,6 +93,15 @@ def agent_qa(pile_qa: PileQA) -> TutorAgent:
         audit=InMemoryAuditLog(),
         top_k=5,
         tool_registry=build_tool_registry(),
+=======
+    """Agent hors-ligne monté sur l'index de la démo."""
+    return TutorAgent(
+        pile_qa.retriever,
+        MockLLM(),
+        memory=InMemoryStudentMemory(),
+        audit=InMemoryAuditLog(),
+        top_k=5,
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
     )
 
 

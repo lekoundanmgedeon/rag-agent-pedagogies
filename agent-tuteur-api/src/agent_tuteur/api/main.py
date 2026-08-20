@@ -37,7 +37,11 @@ from agent_tuteur.api.routes import (
 )
 from agent_tuteur.api.routes.documents import verify_tenant_consistency
 from agent_tuteur.config.settings import get_settings
+<<<<<<< HEAD
 from agent_tuteur.factory import build_llm_cours, build_llm_exercice, build_rag_stack, build_tool_registry, ingest_corpus
+=======
+from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
+>>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 from agent_tuteur.observability import get_logger, log_event, setup_logging
 from agent_tuteur.persistence.db import dispose_engine, init_engine, session_scope
 from agent_tuteur.persistence.repositories import DocumentRepository
@@ -124,6 +128,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await rag_mcp.disconnect()
     except Exception:
         pass
+
+
+async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:
+    """Vérifie au démarrage que les documents ``indexed`` du tenant par défaut
+    ont bien des chunks dans le vectorstore actuel (détecte les orphelins créés
+    par un changement de VECTOR_BACKEND ou un redémarrage entre deux sessions).
+    Best-effort : ne doit jamais empêcher l'API de démarrer. Portée volontairement
+    limitée au tenant par défaut (pas de scan multi-tenant au démarrage, coûteux
+    et redondant avec ``POST /api/documents/verify-all`` disponible à la demande
+    pour tout tenant).
+    """
+    try:
+        async with session_scope(default_tenant) as session:
+            repo = DocumentRepository(session)
+            result = await verify_tenant_consistency(repo, indexer, default_tenant)
+        if result.orphaned:
+            log_event(
+                _logger, "consistency:startup_check_found_orphans", log_level=30,
+                tenant_id=default_tenant, checked=result.checked,
+                orphaned_count=len(result.orphaned),
+                orphaned_files=[o.filename for o in result.orphaned],
+            )
+    except Exception as exc:
+        log_event(_logger, "consistency:startup_check_failed", log_level=30, error=str(exc))
 
 
 async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:
