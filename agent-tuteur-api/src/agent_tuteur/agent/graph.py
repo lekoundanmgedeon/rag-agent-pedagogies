@@ -445,7 +445,7 @@ class TutorAgent:
         }
 
     @_timed_node("diagnose_hint_level")
-    async def _n_hint(self, state: AgentState) -> dict:
+    async def _n_hint(self, state: AgentState, msg: Any = None) -> dict:
         decision = diagnose_hint_level(
             state["question"],
             state.get("frustration_score", 0.0),
@@ -675,7 +675,7 @@ class TutorAgent:
 
     # ------------------------------------------------------------- branche méta
     @_timed_node("guardrail_meta")
-    async def _n_guardrail_meta(self, state: AgentState) -> dict:
+    async def _n_guardrail_meta(self, state: AgentState, msg: Any = None) -> dict:
         """Tour méta : on répond sur la couverture du service, sans chercher.
 
         Le nœud est branché **avant** ``retrieve_context`` : sur « quel est mon
@@ -712,7 +712,7 @@ class TutorAgent:
         }
 
     @_timed_node("guardrail_accueil")
-    async def _n_guardrail_accueil(self, state: AgentState) -> dict:
+    async def _n_guardrail_accueil(self, state: AgentState, msg: Any = None) -> dict:
         """Salutation seule : on accueille, sans rien chercher (cas #38, #41).
 
         Branché au même endroit que ``guardrail_meta``, avant la recherche, et
@@ -833,7 +833,7 @@ class TutorAgent:
         return [*de_la_section, *autres], servies
 
     @_timed_node("guardrail_course")
-    async def _n_guardrail_course(self, state: AgentState) -> dict:
+    async def _n_guardrail_course(self, state: AgentState, msg: Any = None) -> dict:
         question = state["question"]
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
@@ -915,7 +915,7 @@ class TutorAgent:
         }
 
     @_timed_node("guardrail_quiz")
-    async def _n_guardrail_quiz(self, state: AgentState) -> dict:
+    async def _n_guardrail_quiz(self, state: AgentState, msg: Any = None) -> dict:
         question = state["question"]
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
@@ -957,7 +957,7 @@ class TutorAgent:
         }
 
     @_timed_node("compose_response")
-    async def _n_compose(self, state: AgentState) -> dict:
+    async def _n_compose(self, state: AgentState, msg: Any = None) -> dict:
         prompt = state["final_prompt"]
         feedback = state.get("validation_feedback")
         if feedback:
@@ -976,7 +976,7 @@ class TutorAgent:
     # --- Nœuds terminaux (graphe complet uniquement) ------------------------
 
     @_timed_node("verify_response")
-    async def _n_verify(self, state: AgentState) -> dict:
+    async def _n_verify(self, state: AgentState, msg: Any = None) -> dict:
         """Agent Validation — contrôle qualité à deux couches sur la réponse produite.
 
         Deux choses distinctes s'y passent :
@@ -1070,7 +1070,7 @@ class TutorAgent:
         return mise_a_jour
 
     @_timed_node("persist_progression")
-    async def _n_persist_progression(self, state: AgentState) -> dict:
+    async def _n_persist_progression(self, state: AgentState, msg: Any = None) -> dict:
         """Met à jour la maîtrise quand le tour porte un résultat mesurable.
 
         Un tour de chat ordinaire ne prouve rien : ce n'est pas parce qu'un

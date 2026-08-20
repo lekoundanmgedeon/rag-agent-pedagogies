@@ -97,6 +97,8 @@ def verifier_coherence_mathematique(
     """
     problemes: list[str] = []
     texte = _sans_accents(reponse)
+    texte_norm = texte.replace('×', '*').replace('÷', '/').replace('−', '-')
+    texte = texte_norm
     competence_normalisee = _sans_accents(competence or "")
 
     porte_sur_plusieurs_variables = any(
@@ -117,7 +119,7 @@ def verifier_coherence_mathematique(
         # Normalise les opérateurs Unicode dans la chaîne attendue
         attendu_norm = attendu.replace('×', '*').replace('÷', '/').replace('−', '-')
         attendu_norm_alt = attendu_norm.replace("*", "")
-        if attendu_norm and attendu_norm not in texte and (attendu_norm_alt and attendu_norm_alt not in texte):
+        if attendu_norm and attendu_norm not in texte_norm and (attendu_norm_alt and attendu_norm_alt not in texte_norm):
             problemes.append(
                 f"Le résultat calculé exactement ({attendu}) n'apparaît pas dans la "
                 "réponse : le modèle a probablement refait le calcul lui-même."
@@ -166,7 +168,8 @@ def verifier_coherence_etude_fonction(
 
     problemes: list[str] = []
     texte = _sans_accents(reponse)
-
+    texte_norm = texte.replace('×', '*').replace('÷', '/').replace('−', '-')
+    texte = texte_norm
     # Contrôle 1 : la dérivée calculée doit apparaître
     derivee = etude.get("derivee")
     if derivee:
