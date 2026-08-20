@@ -26,3 +26,4 @@ agent-tuteur-api/logs/
 !.claude/README.md
 
 
+lessons/cours/*.pdf
