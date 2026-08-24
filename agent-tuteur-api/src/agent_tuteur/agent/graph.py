@@ -39,11 +39,9 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-<<<<<<< HEAD
 from typing import Any
-=======
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 from dataclasses import dataclass, field
+
 
 from langgraph.graph import END, START, StateGraph
 
@@ -89,12 +87,8 @@ from agent_tuteur.agent.quiz import (
 )
 from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
 from agent_tuteur.agent.state import AgentState
-<<<<<<< HEAD
 from agent_tuteur.agent.verify import verifier_coherence_mathematique, verifier_pedagogie
 from agent_tuteur.agent.validation_agent import ValidationAgent, Verdict
-=======
-from agent_tuteur.agent.verify import verifier_coherence_mathematique
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.tools.affirmation import verifier_affirmation
@@ -243,6 +237,7 @@ class TutorAgent:
         llm_cours: BaseLLM,
         llm_exercice: BaseLLM,
         *,
+        llm_juge: BaseLLM | None = None,
         memory: StudentMemoryPort | None = None,
         audit: AuditLogPort | None = None,
         mastery: MasteryPort | None = None,
@@ -252,15 +247,15 @@ class TutorAgent:
         self._retriever = retriever
         self._llm_cours = llm_cours
         self._llm_exercice = llm_exercice
+        self._llm_juge = llm_juge or llm_cours
         self._memory = memory
         self._audit = audit
         self._mastery = mastery
         self._top_k = top_k
         self._tool_registry = tool_registry
         # Agent Validation partagé (sans état propre, réutilisable entre requêtes).
-        # On préfère llm_cours (GPT-5.5) comme juge : ses capacités d'analyse sont
-        # supérieures à Mistral pour juger la qualité pédagogique.
-        self._validator = ValidationAgent(llm_juge=llm_cours)
+        # Utilise un juge indépendant (llm_juge) pour éviter le biais d'auto-préférence.
+        self._validator = ValidationAgent(llm_juge=self._llm_juge)
         self._prep_graph = self._build_graph()
         self._full_graph = self._prep_graph
 
@@ -283,20 +278,11 @@ class TutorAgent:
 
     @property
     def last_llm_used(self) -> str | None:
-<<<<<<< HEAD
         return getattr(self._llm_exercice, "last_used", None) or self._llm_exercice.name
 
     # ------------------------------------------------- branche sécurité (n°1)
     @_timed_node("triage_securite")
     async def _n_triage_securite(self, state: AgentState, msg: Any = None) -> dict:
-=======
-        """Fournisseur LLM ayant effectivement servi le dernier appel."""
-        return getattr(self._llm, "last_used", None) or self._llm.name
-
-    # ------------------------------------------------- branche sécurité (n°1)
-    @_timed_node("triage_securite")
-    async def _n_triage_securite(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Premier nœud du graphe : l'élève va-t-il bien ?
 
         Placé **avant** ``detect_intent`` pour que rien — ni la détection
@@ -314,11 +300,7 @@ class TutorAgent:
         }
 
     @_timed_node("reponse_securite")
-<<<<<<< HEAD
     async def _n_reponse_securite(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_reponse_securite(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Réponse de mise en sécurité — écrite par le code, pas par le modèle.
 
         La trace produite porte les mêmes clés qu'un tour ordinaire : la route
@@ -363,11 +345,7 @@ class TutorAgent:
 
     # ------------------------------------------------------------------ nœuds
     @_timed_node("profil_eleve")
-<<<<<<< HEAD
     async def _n_profil_eleve(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_profil_eleve(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Résout la série applicable au tour — cas QA #8.
 
         Placé **avant** ``detect_intent``, donc en amont du retrieval et de
@@ -407,11 +385,7 @@ class TutorAgent:
         }
 
     @_timed_node("detect_intent")
-<<<<<<< HEAD
     async def _n_detect_intent(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_detect_intent(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         in_course = bool(state.get("course_state"))
         decision = classify_intent(state["question"], in_course=in_course)
         nav = decision.navigation.value if decision.navigation else None
@@ -422,11 +396,7 @@ class TutorAgent:
         }
 
     @_timed_node("retrieve_context")
-<<<<<<< HEAD
     async def _n_retrieve(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_retrieve(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         query = _condense_retrieval_query(state["question"], state.get("conversation_history", []))
         context = state.get("curriculum_context", {})
 
@@ -468,11 +438,7 @@ class TutorAgent:
         }
 
     @_timed_node("detect_frustration")
-<<<<<<< HEAD
     async def _n_frustration(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_frustration(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         session = state.get("session") or SessionState()
         signal = detect_frustration(state["question"], session)
         session.add(state["question"])  # mémoire de session (éphémère)
@@ -490,11 +456,7 @@ class TutorAgent:
         }
 
     @_timed_node("diagnose_hint_level")
-<<<<<<< HEAD
     async def _n_hint(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_hint(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         decision = diagnose_hint_level(
             state["question"],
             state.get("frustration_score", 0.0),
@@ -509,34 +471,18 @@ class TutorAgent:
         }
 
     @_timed_node("route_tool")
-<<<<<<< HEAD
     async def _n_route_tool(self, state: AgentState, msg: Any = None) -> dict:
         """Calcul symbolique via le registre MCP, ou repli direct.
 
         Si un registre MCP est disponible (``self._tool_registry``), les outils
         sont invoqués via le protocole MCP. Sinon, les fonctions Python
         existantes sont appelées directement (rétrocompatibilité totale).
-=======
-    async def _n_route_tool(self, state: AgentState) -> dict:
-        """Calcul symbolique, ou aveu explicite qu'il n'a pas pu être fait.
-
-        L'ancien comportement repliait *silencieusement* sur le LLM en cas
-        d'échec : l'élève recevait alors un calcul produit par le modèle, sans
-        que rien ne l'ait vérifié. La règle non-négociable n°2 l'interdit —
-        quand l'outil ne peut pas garantir le résultat d'une demande de calcul
-        concrète, on le signale (``calcul_non_verifie``) et le prompt interdit
-        d'annoncer un résultat.
-
-        Le silence reste la bonne réponse pour une question *conceptuelle*
-        (« comment dériver un quotient ? ») : il n'y a aucun résultat à vérifier.
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """
         question = state["question"]
         tool_used: str | None = None
         tool_result: str | None = None
         tool_result_brut: str | None = None
         calcul_non_verifie = False
-<<<<<<< HEAD
 
         # --- Calcul symbolique via le registre MCP ----------------------------
         # Le registre MCP est le seul point d'entrée vers les outils.
@@ -566,32 +512,6 @@ class TutorAgent:
         verdict = verifier_affirmation(question)
         affirmation = None
         if verdict is not None:
-=======
-        if looks_like_calculation(question):
-            try:
-                res = compute(question)
-                tool_used = "sympy_calculator"
-                tool_result = f"{res.expression} → {res.result}"
-                tool_result_brut = res.result
-            except CalculationError:
-                calcul_non_verifie = demande_un_calcul_concret(question)
-
-        # Trajet inverse de la vérification ci-dessus : ce n'est plus ce que
-        # l'agent s'apprête à dire qu'on contrôle, mais ce que l'élève vient
-        # d'affirmer (cas QA #15). Indépendant de ``looks_like_calculation`` :
-        # « la dérivée de ln(x) c'est bien 1/x² non ? » est une demande de
-        # confirmation, pas une demande de calcul.
-        verdict = verifier_affirmation(question)
-        affirmation = None
-        if verdict is not None:
-            # Le contenu mathématique du tour A été vérifié symboliquement, même
-            # si ``compute`` a renoncé : la phrase n'est pas une demande de
-            # calcul, c'est une demande de confirmation. Laisser
-            # ``calcul_non_verifie`` à vrai mettrait dans le prompt deux
-            # consignes contradictoires — « n'annonce aucun résultat » et
-            # « donne le résultat correct » — et la première ferait taire la
-            # correction que le cas #15 exige précisément.
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
             calcul_non_verifie = False
             affirmation = {
                 "operation": verdict.operation,
@@ -605,7 +525,6 @@ class TutorAgent:
                     _logger, "affirmation:erreur_eleve", trace_id=state.get("trace_id"),
                     operation=verdict.operation, affirme=verdict.affirme, attendu=verdict.attendu,
                 )
-<<<<<<< HEAD
 
         # --- Étude de fonction via le registre MCP ----------------------------
         etude_fonction = None
@@ -661,45 +580,6 @@ class TutorAgent:
                     "argument": analyse.argument,
                 }
                 calcul_non_verifie = False
-=======
-        # Troisième usage du calcul symbolique dans ce nœud, après la
-        # vérification d'un calcul demandé et celle d'une affirmation de
-        # l'élève : établir une étude de fonction complète. Le corpus ne peut
-        # pas la fournir (aucune leçon indexée sur l'étude des fonctions), et la
-        # laisser au modèle violerait la règle n°2 — elle est donc calculée.
-        etude = etudier_la_demande(question)
-        etude_fonction = None
-        if etude is not None:
-            etude_fonction = {
-                "expression": etude.expression,
-                "domaine": etude.domaine,
-                "derivee": etude.derivee,
-                "limites": [list(couple) for couple in etude.limites],
-                "variations": [list(couple) for couple in etude.variations],
-            }
-            # Même raison qu'au verdict d'affirmation ci-dessus : le contenu
-            # mathématique du tour A été vérifié. Garder l'avertissement
-            # armé interdirait d'annoncer l'étude qu'on vient d'établir.
-            calcul_non_verifie = False
-
-        # Quatrième usage du calcul symbolique de ce nœud. Sans lui, l'exercice
-        # le plus basique du chapitre le mieux couvert (« z = 3 + 4i ») armait
-        # calcul_non_verifie : `i` n'étant pas l'unité imaginaire, `compute`
-        # échouait et le prompt interdisait d'annoncer le moindre résultat.
-        analyse = analyser_complexe_demande(question)
-        complexe = None
-        if analyse is not None:
-            complexe = {
-                "nom": analyse.nom,
-                "forme": analyse.forme,
-                "partie_reelle": analyse.partie_reelle,
-                "partie_imaginaire": analyse.partie_imaginaire,
-                "conjugue": analyse.conjugue,
-                "module": analyse.module,
-                "argument": analyse.argument,
-            }
-            calcul_non_verifie = False
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 
         return {
             "tool_used": tool_used,
@@ -714,21 +594,13 @@ class TutorAgent:
                  "calcul_non_verifie": calcul_non_verifie,
                  "etude_fonction": etude_fonction is not None,
                  "complexe": complexe is not None,
-<<<<<<< HEAD
                  "affirmation_correcte": None if affirmation is None else affirmation["correcte"],
                  "via_mcp": _registry is not None}
-=======
-                 "affirmation_correcte": None if affirmation is None else affirmation["correcte"]}
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
             ],
         }
 
     @_timed_node("guardrail")
-<<<<<<< HEAD
     async def _n_guardrail(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_guardrail(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         question = state["question"]
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
@@ -814,11 +686,7 @@ class TutorAgent:
 
     # ------------------------------------------------------------- branche méta
     @_timed_node("guardrail_meta")
-<<<<<<< HEAD
     async def _n_guardrail_meta(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_guardrail_meta(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Tour méta : on répond sur la couverture du service, sans chercher.
 
         Le nœud est branché **avant** ``retrieve_context`` : sur « quel est mon
@@ -855,11 +723,7 @@ class TutorAgent:
         }
 
     @_timed_node("guardrail_accueil")
-<<<<<<< HEAD
     async def _n_guardrail_accueil(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_guardrail_accueil(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Salutation seule : on accueille, sans rien chercher (cas #38, #41).
 
         Branché au même endroit que ``guardrail_meta``, avant la recherche, et
@@ -896,11 +760,7 @@ class TutorAgent:
 
     # ------------------------------------------------------------ branche cours
     @_timed_node("course_planner")
-<<<<<<< HEAD
     async def _n_course_planner(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_course_planner(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
         nav_raw = state.get("intent_nav")
@@ -984,11 +844,7 @@ class TutorAgent:
         return [*de_la_section, *autres], servies
 
     @_timed_node("guardrail_course")
-<<<<<<< HEAD
     async def _n_guardrail_course(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_guardrail_course(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         question = state["question"]
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
@@ -1050,11 +906,7 @@ class TutorAgent:
     # --- Branche quiz (posture d'évaluation) --------------------------------
 
     @_timed_node("quiz_planner")
-<<<<<<< HEAD
     async def _n_quiz_planner(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_quiz_planner(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Détermine sur quoi interroger l'élève et sous quelle forme.
 
         La compétence est déduite du cadre curriculaire et des extraits
@@ -1074,11 +926,7 @@ class TutorAgent:
         }
 
     @_timed_node("guardrail_quiz")
-<<<<<<< HEAD
     async def _n_guardrail_quiz(self, state: AgentState, msg: Any = None) -> dict:
-=======
-    async def _n_guardrail_quiz(self, state: AgentState) -> dict:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         question = state["question"]
         ctx = state.get("curriculum_context", {})
         retrieved = state.get("retrieved", [])
@@ -1120,7 +968,6 @@ class TutorAgent:
         }
 
     @_timed_node("compose_response")
-<<<<<<< HEAD
     async def _n_compose(self, state: AgentState, msg: Any = None) -> dict:
         prompt = state["final_prompt"]
         feedback = state.get("validation_feedback")
@@ -1266,12 +1113,6 @@ class TutorAgent:
                  "competence": competence, "mastery_score": maj["mastery_score"]}
             ],
         }
-=======
-    async def _n_compose(self, state: AgentState) -> dict:
-        answer = await self._llm.generate(state["final_prompt"], system=state.get("system_prompt"))
-        await self._write_memory(state)
-        return {"answer": answer, "node_trace": [{"node": "compose_response", "chars": len(answer)}]}
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 
     # --- Nœuds terminaux (graphe complet uniquement) ------------------------
 
@@ -1392,11 +1233,7 @@ class TutorAgent:
         )
 
     # ---------------------------------------------------------------- graphes
-<<<<<<< HEAD
     def _build_graph(self, *, include_compose: bool = False):
-=======
-    def _build_graph(self, *, include_compose: bool):
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         """Graphe commun aux deux postures, aiguillé après ``retrieve_context``.
 
         ``detect_intent`` classe le tour ; la recherche RAG est partagée ; puis
@@ -1463,7 +1300,6 @@ class TutorAgent:
         g.add_edge("course_planner", "guardrail_course")
         g.add_edge("quiz_planner", "guardrail_quiz")
 
-<<<<<<< HEAD
         g.add_node("compose_response", self._n_compose)
         g.add_node("verify_response", self._n_verify)
         g.add_node("persist_progression", self._n_persist_progression)
@@ -1485,29 +1321,6 @@ class TutorAgent:
             }
         )
         g.add_edge("persist_progression", END)
-=======
-        if include_compose:
-            # Les deux nœuds terminaux ne vivent que dans le graphe complet :
-            # en streaming, la réponse est produite hors graphe, et ils sont
-            # appelés après épuisement du flux (cf. ``stream``).
-            g.add_node("compose_response", self._n_compose)
-            g.add_node("verify_response", self._n_verify)
-            g.add_node("persist_progression", self._n_persist_progression)
-            g.add_edge("guardrail", "compose_response")
-            g.add_edge("guardrail_course", "compose_response")
-            g.add_edge("guardrail_quiz", "compose_response")
-            g.add_edge("guardrail_meta", "compose_response")
-            g.add_edge("guardrail_accueil", "compose_response")
-            g.add_edge("compose_response", "verify_response")
-            g.add_edge("verify_response", "persist_progression")
-            g.add_edge("persist_progression", END)
-        else:
-            g.add_edge("guardrail", END)
-            g.add_edge("guardrail_course", END)
-            g.add_edge("guardrail_quiz", END)
-            g.add_edge("guardrail_meta", END)
-            g.add_edge("guardrail_accueil", END)
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         return g.compile()
 
     # --------------------------------------------------------- API publique
@@ -1568,11 +1381,7 @@ class TutorAgent:
             memory=memory or self._memory,
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
-<<<<<<< HEAD
             reponse_directe=reponse,
-=======
-            reponse_directe=result.get("reponse_directe"),
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         )
 
     async def stream(self, prepared: Prepared) -> AsyncIterator[str]:
@@ -1588,35 +1397,23 @@ class TutorAgent:
         # doit pas être sollicité — c'est ce qui garantit qu'elle ne varie pas
         # d'un appel à l'autre et qu'aucune ressource d'aide n'est inventée.
         if prepared.reponse_directe is not None:
-<<<<<<< HEAD
             if prepared.trace.get("securite"):
                 fournisseur = "securite"
             else:
                 fournisseur = self.last_llm_used or "cache"
 
-=======
-            fournisseur = "securite"
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
             for token in re.findall(r"\S+\s*", prepared.reponse_directe):
                 token_count += 1
                 yield token
         else:
-<<<<<<< HEAD
             intent = prepared.trace.get("intent", "exercice")
             llm = self._llm_cours if intent == "cours" else self._llm_exercice
             async for token in llm.generate_stream(
-=======
-            async for token in self._llm.generate_stream(
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
                 prepared.final_prompt, system=prepared.system_prompt
             ):
                 token_count += 1
                 yield token
-<<<<<<< HEAD
             fournisseur = llm.last_used or llm.name
-=======
-            fournisseur = self.last_llm_used
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
         duration_ms = round((time.perf_counter() - t0) * 1000, 2)
         prepared.generation = {
             "node": "compose_response",
@@ -1630,7 +1427,6 @@ class TutorAgent:
         )
 
     async def commit_memory(self, prepared: Prepared) -> None:
-<<<<<<< HEAD
         """Persiste le résultat notable (à appeler après un stream réussi).
         
         Note: la mémoire pédagogique est désormais écrite par le graphe lui-même 
@@ -1638,23 +1434,6 @@ class TutorAgent:
         Cette méthode est conservée pour rétrocompatibilité mais ne fait plus rien.
         """
         pass
-=======
-        """Persiste le résultat notable (à appeler après un stream réussi)."""
-        # Un tour de mise en sécurité n'apprend rien sur les compétences de
-        # l'élève : il est tracé dans l'audit, pas dans la mémoire pédagogique.
-        # (Le graphe complet fait de même : il contourne ``compose_response``,
-        # seul endroit où la mémoire est écrite sur le chemin non streamé.)
-        if prepared.trace.get("securite"):
-            return
-        await self._write_memory(
-            {
-                "question": prepared.question,
-                "session": prepared.session,
-                "trace": prepared.trace,
-            },
-            memory=prepared.memory,
-        )
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 
     async def respond(
         self,
@@ -1750,7 +1529,6 @@ def _route_by_intent(state: AgentState) -> str:
     return "exercice"
 
 
-<<<<<<< HEAD
 def _route_validation(state: AgentState) -> str:
     """Aiguillage conditionnel après verify_response.
 
@@ -1788,8 +1566,6 @@ def _route_validation(state: AgentState) -> str:
     return "repair"
 
 
-=======
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
     """Liste d'attribution des sources RAG (identique aux deux branches).
 

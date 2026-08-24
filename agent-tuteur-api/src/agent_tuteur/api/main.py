@@ -37,11 +37,7 @@ from agent_tuteur.api.routes import (
 )
 from agent_tuteur.api.routes.documents import verify_tenant_consistency
 from agent_tuteur.config.settings import get_settings
-<<<<<<< HEAD
-from agent_tuteur.factory import build_llm_cours, build_llm_exercice, build_rag_stack, build_tool_registry, ingest_corpus
-=======
-from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
+from agent_tuteur.factory import build_llm_cours, build_llm_exercice, build_llm_juge, build_rag_stack, build_tool_registry, ingest_corpus
 from agent_tuteur.observability import get_logger, log_event, setup_logging
 from agent_tuteur.persistence.db import dispose_engine, init_engine, session_scope
 from agent_tuteur.persistence.repositories import DocumentRepository
@@ -49,10 +45,10 @@ from agent_tuteur.persistence.repositories import DocumentRepository
 setup_logging("api")
 _logger = get_logger("agent_tuteur.api.main")
 
-CORPUS_DIR = Path(__file__).resolve().parents[3] / "corpus"
+CORPUS_DIR = Path(__file__).resolve().parents[4] / "lessons"
 
 
-def _handle_rate_limit(request, exc):
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
     from fastapi.responses import JSONResponse
 
     return JSONResponse(status_code=429, content={"detail": "Trop de requêtes, réessayez plus tard."})
@@ -72,6 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     llm_cours = build_llm_cours(settings)
     llm_exercice = build_llm_exercice(settings)
+    llm_juge = build_llm_juge(settings)
     tool_registry = build_tool_registry()
 
     # --- Connexion MCP Math ---
@@ -102,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         rag_stack.retriever,
         llm_cours=llm_cours,
         llm_exercice=llm_exercice,
+        llm_juge=llm_juge,
         top_k=settings.retrieval_top_k,
         tool_registry=tool_registry,
     )
@@ -237,9 +235,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _handle_rate_limit)
-    app.add_middleware(SlowAPIMiddleware)
+    # app.state.limiter = limiter
+    # app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    # app.add_middleware(SlowAPIMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

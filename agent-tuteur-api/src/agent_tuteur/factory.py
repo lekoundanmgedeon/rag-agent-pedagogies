@@ -65,33 +65,51 @@ def build_rag_stack(settings: Settings | None = None) -> RagStack:
 
 def build_llm_cours(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
     settings = settings or get_settings()
-    # Le backend cible pour le cours est GPT-5.5 (Gemini par défaut pour l'instant)
+    # Le backend cible pour le cours est GPT-5.5 (OpenAI)
     return build_router(
-<<<<<<< HEAD
-        backend="gemini", # On force Gemini
-=======
-        backend=settings.llm_backend,
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
+        backend="openai", # On force OpenAI pour le cours
         chain=settings.llm_chain,
         mistral_api_key=settings.mistral_api_key,
         mistral_model=settings.mistral_model,
         gemini_api_key=settings.gemini_api_key,
         gemini_model=settings.gemini_model,
+        openai_api_key=settings.openai_api_key,
+        openai_model=settings.openai_model,
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         probe_ollama=probe_ollama,
     )
 
+
 def build_llm_exercice(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
     settings = settings or get_settings()
     # Le backend cible pour exercice est Mistral
     return build_router(
-        backend="mistral", # On force Mistral
+        backend="mistral", # On force Mistral pour les exercices et quiz
         chain=settings.llm_chain,
         mistral_api_key=settings.mistral_api_key,
         mistral_model=settings.mistral_model,
         gemini_api_key=settings.gemini_api_key,
         gemini_model=settings.gemini_model,
+        openai_api_key=settings.openai_api_key,
+        openai_model=settings.openai_model,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        probe_ollama=probe_ollama,
+    )
+
+def build_llm_juge(settings: Settings | None = None, *, probe_ollama: bool = True) -> BaseLLM:
+    settings = settings or get_settings()
+    # Le backend cible pour le juge est Gemini (pour eviter le biais d'auto-preference)
+    return build_router(
+        backend="gemini", # On force Gemini pour le juge
+        chain=settings.llm_chain,
+        mistral_api_key=settings.mistral_api_key,
+        mistral_model=settings.mistral_model,
+        gemini_api_key=settings.gemini_api_key,
+        gemini_model=settings.llm_juge_model,
+        openai_api_key=settings.openai_api_key,
+        openai_model=settings.openai_model,
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         probe_ollama=probe_ollama,
@@ -103,6 +121,7 @@ def build_agent(
     retriever: HybridRetriever | None = None,
     llm_cours: BaseLLM | None = None,
     llm_exercice: BaseLLM | None = None,
+    llm_juge: BaseLLM | None = None,
     memory: StudentMemoryPort | None = None,
     audit: AuditLogPort | None = None,
     probe_ollama: bool = True,
@@ -111,12 +130,14 @@ def build_agent(
     retriever = retriever or build_rag_stack(settings).retriever
     llm_cours = llm_cours or build_llm_cours(settings, probe_ollama=probe_ollama)
     llm_exercice = llm_exercice or build_llm_exercice(settings, probe_ollama=probe_ollama)
+    llm_juge = llm_juge or build_llm_juge(settings, probe_ollama=probe_ollama)
     registry = build_tool_registry()
 
     return TutorAgent(
         retriever,
         llm_cours=llm_cours,
         llm_exercice=llm_exercice,
+        llm_juge=llm_juge,
         memory=memory if memory is not None else InMemoryStudentMemory(),
         audit=audit if audit is not None else InMemoryAuditLog(),
         top_k=settings.retrieval_top_k,

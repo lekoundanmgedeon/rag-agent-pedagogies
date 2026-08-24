@@ -1,13 +1,7 @@
-<<<<<<< HEAD
 """Ingestion des documents via l'API (upload authentifié) — amorçage démo.
 
 Téléverse chaque fichier de ``corpus/`` ou du dossier configuré par
 ``CORPUS_DIR`` par ``POST /api/documents``, exactement
-=======
-"""Ingestion du corpus d'exemple via l'API (upload authentifié) — amorçage démo.
-
-Téléverse chaque fichier de ``corpus/`` par ``POST /api/documents``, exactement
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 comme le ferait un administrateur depuis l'interface : cela crée à la fois les
 entrées ``Document`` (visibles dans l'espace admin) **et** les vecteurs
 (recherche/chat), en passant par la vraie pipeline d'ingestion (frontmatter,
@@ -33,7 +27,6 @@ import httpx
 API = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 EMAIL = os.environ.get("SEED_ADMIN_EMAIL", "admin@tuteur.sn")
 PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "changeme123")
-<<<<<<< HEAD
 CORPUS = Path(os.environ.get("CORPUS_DIR", Path(__file__).resolve().parents[1] / "corpus"))
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".markdown"}
 
@@ -47,9 +40,6 @@ def _content_type(path: Path) -> str:
         ".md": "text/markdown",
         ".markdown": "text/markdown",
     }[path.suffix.lower()]
-=======
-CORPUS = Path(__file__).resolve().parents[1] / "corpus"
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 
 
 def _wait_api(timeout: float = 120.0) -> bool:
@@ -67,14 +57,10 @@ def _wait_api(timeout: float = 120.0) -> bool:
 
 
 def main() -> int:
-<<<<<<< HEAD
     files = sorted(
         path for path in CORPUS.rglob("*")
         if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
     ) if CORPUS.exists() else []
-=======
-    files = sorted(CORPUS.glob("*.md")) if CORPUS.exists() else []
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
     if not files:
         print(f"Aucun corpus à ingérer ({CORPUS}).")
         return 0
@@ -100,7 +86,6 @@ def main() -> int:
     except Exception:
         existing = set()
 
-<<<<<<< HEAD
     pending = [path for path in files if path.name not in existing]
     uploaded = 0
     batches = [pending[start : start + 5] for start in range(0, len(pending), 5)]
@@ -137,24 +122,6 @@ def main() -> int:
             except Exception as exc:
                 print(f"  ! Lot {[path.name for path in batch]} : {exc}", file=sys.stderr)
                 break
-=======
-    uploaded = 0
-    for path in files:
-        if path.name in existing:
-            continue
-        try:
-            resp = httpx.post(
-                f"{API}/api/documents",
-                headers=headers,
-                files={"files": (path.name, path.read_bytes(), "text/markdown")},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            uploaded += 1
-            print(f"  + {path.name}")
-        except Exception as exc:
-            print(f"  ! {path.name} : {exc}", file=sys.stderr)
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 
     print(f"Corpus : {uploaded} document(s) téléversé(s), {len(existing)} déjà présent(s).")
     return 0

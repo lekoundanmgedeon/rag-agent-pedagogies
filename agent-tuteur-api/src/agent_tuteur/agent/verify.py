@@ -18,7 +18,6 @@ est-il présent ? ».
 
 Ce module est du **calcul pur** : aucun appel au modèle de langage, aucune
 latence, aucun coût.
-<<<<<<< HEAD
 
 **Fonctions exposées (utilisées par ``validation_agent.ValidationAgent``) :**
 
@@ -26,8 +25,6 @@ latence, aucun coût.
 - ``verifier_coherence_etude_fonction`` — cohérence étude SymPy vs réponse du LLM
 - ``verifier_coherence_exercice``       — détection heuristique de solution complète non autorisée
 - ``verifier_pedagogie``               — juge LLM basique (conservé pour rétrocompatibilité)
-=======
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
 """
 
 from __future__ import annotations
@@ -100,11 +97,8 @@ def verifier_coherence_mathematique(
     """
     problemes: list[str] = []
     texte = _sans_accents(reponse)
-<<<<<<< HEAD
     texte_norm = texte.replace('×', '*').replace('÷', '/').replace('−', '-')
     texte = texte_norm
-=======
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
     competence_normalisee = _sans_accents(competence or "")
 
     porte_sur_plusieurs_variables = any(
@@ -119,24 +113,26 @@ def verifier_coherence_mathematique(
                 )
                 break
 
+    # 3. Contrôle du format KaTeX (déterministe)
+    if "\\(" in reponse or "\\[" in reponse:
+        problemes.append(
+            "Format mathématique incorrect : utilisation de \\( ou \\[ au lieu des "
+            "délimiteurs KaTeX autorisés ($ et $$)."
+        )
+
     if resultat_calcule:
         attendu = str(resultat_calcule).strip()
-<<<<<<< HEAD
         attendu_alt = attendu.replace("*", "")
         # Normalise les opérateurs Unicode dans la chaîne attendue
         attendu_norm = attendu.replace('×', '*').replace('÷', '/').replace('−', '-')
         attendu_norm_alt = attendu_norm.replace("*", "")
         if attendu_norm and attendu_norm not in texte_norm and (attendu_norm_alt and attendu_norm_alt not in texte_norm):
-=======
-        if attendu and attendu not in reponse:
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8
             problemes.append(
                 f"Le résultat calculé exactement ({attendu}) n'apparaît pas dans la "
                 "réponse : le modèle a probablement refait le calcul lui-même."
             )
 
     return RapportVerification(problemes=problemes)
-<<<<<<< HEAD
 
 
 # ---------------------------------------------------------------------------
@@ -331,5 +327,3 @@ async def verifier_pedagogie(
         pass
         
     return RapportVerification()
-=======
->>>>>>> 12555b75fe53161ddcede17d5663bb2b1f1155a8

@@ -1,3 +1,4 @@
+
 """Agent Validation — service commun de contrôle du contenu généré.
 
 Branché après ``compose_response`` dans le graphe LangGraph, il contrôle les
@@ -165,21 +166,19 @@ CRITÈRES D'ÉVALUATION
 2. coherence_question       : La réponse répond-elle bien à la question posée ?
 3. conformite_programme     : La réponse respecte-t-elle le niveau Terminale S1 / programme sénégalais
                               (pas de notions universitaires hors-programme) ?
-4. fidelite_rag             : La réponse s'appuie-t-elle sur les sources fournies sans inventer
-                              des faits absents des sources ?
-5. clarte_explication       : L'explication est-elle claire et adaptée au niveau de l'élève ?
+4. fidelite_rag             : La réponse s'appuie-t-elle sur les sources fournies, ou sur des connaissances générales correctes si les sources sont incomplètes/absentes ?
+5. qualite_generale         : La structure, la syntaxe et la clarté sont-elles excellentes et adaptées au niveau de l'élève ? Les formules mathématiques utilisent-elles un rendu KaTeX correct ($...$ et $$...$$) ?
 6. absence_hallucination    : La réponse ne contient-elle pas de formules, théorèmes ou résultats
-                              non vérifiables ou inventés ?
+                              non vérifiables ou faussement inventés ?
 7. respect_niveau_indice    : Si intent="exercice" et hint_level < 4, le tuteur guide-t-il
                               plutôt que de donner la solution complète ?
 
 RÈGLE DE VERDICT
 ================
 - Si tous les critères sont true → "PASS"
-- Si 1–2 critères mineurs sont false (clarte, coherence_question) → "REPAIR"
+- Si 1–2 critères mineurs sont false (qualite_generale, coherence_question) → "REPAIR"
 - Si exactitude_pedagogique OU absence_hallucination est false → "REPAIR" (grave)
 - Si respect_niveau_indice est false → "REPAIR" (règle pédagogique violée)
-- Si fidelite_rag est false ET aucune source n'était fournie → "REVIEW" (ambigu)
 - Si conformite_programme est false ET la notion est clairement hors-programme → "FAIL"
 - En cas de doute sur la gravité → "REVIEW"
 
@@ -191,7 +190,7 @@ FORMAT DE RÉPONSE (JSON strict, sans texte autour)
     "coherence_question":      {{"ok": true/false, "note": "..."}},
     "conformite_programme":    {{"ok": true/false, "note": "..."}},
     "fidelite_rag":            {{"ok": true/false, "note": "..."}},
-    "clarte_explication":      {{"ok": true/false, "note": "..."}},
+    "qualite_generale":        {{"ok": true/false, "note": "..."}},
     "absence_hallucination":   {{"ok": true/false, "note": "..."}},
     "respect_niveau_indice":   {{"ok": true/false, "note": "..."}}
   }},
