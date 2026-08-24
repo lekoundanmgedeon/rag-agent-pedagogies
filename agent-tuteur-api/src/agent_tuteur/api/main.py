@@ -37,7 +37,7 @@ from agent_tuteur.api.routes import (
 )
 from agent_tuteur.api.routes.documents import verify_tenant_consistency
 from agent_tuteur.config.settings import get_settings
-from agent_tuteur.factory import build_llm, build_rag_stack, ingest_corpus
+from agent_tuteur.factory import build_llm_cours, build_llm_exercice, build_llm_juge, build_rag_stack, build_tool_registry, ingest_corpus
 from agent_tuteur.observability import get_logger, log_event, setup_logging
 from agent_tuteur.persistence.db import dispose_engine, init_engine, session_scope
 from agent_tuteur.persistence.repositories import DocumentRepository
@@ -45,10 +45,10 @@ from agent_tuteur.persistence.repositories import DocumentRepository
 setup_logging("api")
 _logger = get_logger("agent_tuteur.api.main")
 
-CORPUS_DIR = Path(__file__).resolve().parents[3] / "corpus"
+CORPUS_DIR = Path(__file__).resolve().parents[4] / "lessons"
 
 
-def _handle_rate_limit(request, exc):
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
     from fastapi.responses import JSONResponse
 
     return JSONResponse(status_code=429, content={"detail": "Trop de requêtes, réessayez plus tard."})
@@ -66,8 +66,43 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # (vide à chaque redémarrage). Sans effet sur un backend Qdrant persistant.
         ingest_corpus(rag_stack.indexer, CORPUS_DIR)
 
-    llm = build_llm(settings)
-    agent = TutorAgent(rag_stack.retriever, llm, top_k=settings.retrieval_top_k)
+    llm_cours = build_llm_cours(settings)
+    llm_exercice = build_llm_exercice(settings)
+    llm_juge = build_llm_juge(settings)
+    tool_registry = build_tool_registry()
+
+    # --- Connexion MCP Math ---
+    import sys
+    from agent_tuteur.mcp.client import McpClient
+    
+    # On lance les serveurs MCP via la commande python courante
+    math_mcp = McpClient(
+        command=sys.executable,
+        args=["-m", "agent_tuteur.mcp_servers.math_server"]
+    )
+    rag_mcp = McpClient(
+        command=sys.executable,
+        args=["-m", "agent_tuteur.mcp_servers.rag_server"]
+    )
+    try:
+        await math_mcp.connect()
+        await math_mcp.register_tools(tool_registry)
+        _logger.info("Serveur MCP Math connecté.")
+        
+        await rag_mcp.connect()
+        await rag_mcp.register_tools(tool_registry)
+        _logger.info("Serveur MCP RAG connecté.")
+    except Exception as e:
+        _logger.error(f"Échec de connexion aux serveurs MCP : {e}")
+
+    agent = TutorAgent(
+        rag_stack.retriever,
+        llm_cours=llm_cours,
+        llm_exercice=llm_exercice,
+        llm_juge=llm_juge,
+        top_k=settings.retrieval_top_k,
+        tool_registry=tool_registry,
+    )
 
     app.state.indexer = rag_stack.indexer
     app.state.retriever = rag_stack.retriever
@@ -85,6 +120,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.arq_pool is not None:
         await app.state.arq_pool.aclose()
     await dispose_engine()
+
+    try:
+        await math_mcp.disconnect()
+        await rag_mcp.disconnect()
+    except Exception:
+        pass
+
+
+async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:
+    """Vérifie au démarrage que les documents ``indexed`` du tenant par défaut
+    ont bien des chunks dans le vectorstore actuel (détecte les orphelins créés
+    par un changement de VECTOR_BACKEND ou un redémarrage entre deux sessions).
+    Best-effort : ne doit jamais empêcher l'API de démarrer. Portée volontairement
+    limitée au tenant par défaut (pas de scan multi-tenant au démarrage, coûteux
+    et redondant avec ``POST /api/documents/verify-all`` disponible à la demande
+    pour tout tenant).
+    """
+    try:
+        async with session_scope(default_tenant) as session:
+            repo = DocumentRepository(session)
+            result = await verify_tenant_consistency(repo, indexer, default_tenant)
+        if result.orphaned:
+            log_event(
+                _logger, "consistency:startup_check_found_orphans", log_level=30,
+                tenant_id=default_tenant, checked=result.checked,
+                orphaned_count=len(result.orphaned),
+                orphaned_files=[o.filename for o in result.orphaned],
+            )
+    except Exception as exc:
+        log_event(_logger, "consistency:startup_check_failed", log_level=30, error=str(exc))
 
 
 async def _check_consistency_best_effort(indexer, default_tenant: str) -> None:
@@ -170,9 +235,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _handle_rate_limit)
-    app.add_middleware(SlowAPIMiddleware)
+    # app.state.limiter = limiter
+    # app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    # app.add_middleware(SlowAPIMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

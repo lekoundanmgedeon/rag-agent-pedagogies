@@ -30,7 +30,7 @@ from agent_tuteur.agent.llm.gemini import GeminiLLM
 from agent_tuteur.agent.llm.mistral import MistralLLM
 from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.llm.ollama import OllamaLLM
-
+from agent_tuteur.agent.llm.openai import OpenAILLM
 
 class FallbackRouter(BaseLLM):
     name = "fallback"
@@ -83,25 +83,18 @@ def build_router(
     mistral_model: str = "mistral-small-latest",
     gemini_api_key: str = "",
     gemini_model: str = "gemini-2.5-flash",
+    openai_api_key: str = "",
+    openai_model: str = "gpt-5.5",
     ollama_base_url: str = "http://localhost:11434",
     ollama_model: str = "qwen3:8b",
     probe_ollama: bool = True,
 ) -> FallbackRouter:
-    """Construit la chaîne de fallback selon la configuration et la disponibilité.
-
-    ``chain`` (ex. ``"gemini,mistral,mock"``) impose l'ordre et l'emporte sur
-    ``backend``. Un nom inconnu y est ignoré plutôt que de faire échouer le
-    démarrage : une faute de frappe dans un ``.env`` ne doit pas empêcher le
-    service de répondre.
-
-    ``available()`` reste synchrone (probe de démarrage), donc cette fabrique
-    peut être appelée telle quelle depuis le lifespan FastAPI (hors event loop
-    critique) sans nécessiter d'``await``.
-    """
+    """Construit la chaîne de fallback selon la configuration et la disponibilité."""
     mock = MockLLM()
     fournisseurs: dict[str, BaseLLM] = {
         "mistral": MistralLLM(mistral_api_key, mistral_model),
         "gemini": GeminiLLM(gemini_api_key, gemini_model),
+        "openai": OpenAILLM(openai_api_key, openai_model),
         "ollama": OllamaLLM(ollama_base_url, ollama_model),
         "mock": mock,
     }

@@ -5,16 +5,27 @@ from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.agent.guardrails import PromptInjectionError
 from agent_tuteur.agent.llm.mock import MockLLM
 from agent_tuteur.agent.ports import InMemoryAuditLog, InMemoryStudentMemory
+from agent_tuteur.mcp.tools import build_tool_registry
 
 
 @pytest.fixture
-def agent(rag_stack):
+def agent(rag_stack) -> TutorAgent:
+    """Create a TutorAgent for e2e tests using MockLLM for both pipelines.
+
+    The TutorAgent constructor now requires `llm_cours`, `llm_exercice`
+    and a `tool_registry`. We provide MockLLM for both and register the
+    minimal tool set.
+    """
+    llm_cours = MockLLM()
+    llm_exercice = MockLLM()
     return TutorAgent(
         rag_stack.retriever,
-        MockLLM(),
+        llm_cours=llm_cours,
+        llm_exercice=llm_exercice,
         memory=InMemoryStudentMemory(),
         audit=InMemoryAuditLog(),
         top_k=5,
+        tool_registry=build_tool_registry(),
     )
 
 

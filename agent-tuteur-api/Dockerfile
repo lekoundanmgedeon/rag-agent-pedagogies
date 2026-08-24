@@ -31,7 +31,7 @@ COPY scripts ./scripts
 
 RUN pip install --no-cache-dir -e .
 
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app:/app/src
 
 EXPOSE 8000
 

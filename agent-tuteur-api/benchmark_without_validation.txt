@@ -1,0 +1,10 @@
+Starting benchmark: 100 requests, concurrency 10
+
+--- RESULTS ---
+Total time: 30.33s
+Throughput: 3.30 req/s
+Success rate: 100/100 (100.0%)
+Error rate: 0/100 (0.0%)
+Latency: Avg=2.88s, p50=1.80s, p95=9.49s
+Tutor API (avg): CPU 0.0%, Mem 205.1 MB
+Nuru API (avg): CPU 0.0%, Mem 182.2 MB

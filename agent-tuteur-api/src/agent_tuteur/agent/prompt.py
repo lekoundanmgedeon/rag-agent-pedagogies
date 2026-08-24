@@ -15,23 +15,23 @@ from agent_tuteur.agent.course_plan import CoursePosition, plan_titles
 from agent_tuteur.agent.hint_strategy import HintDecision
 from agent_tuteur.domain.models import ScoredChunk
 
-# Contraintes communes aux deux postures (ancrage RAG + rendu LaTeX). Toute
-# persona doit les rappeler à l'identique pour un affichage cohérent côté client.
 _COMMON_RULES = (
-    "Tu t'appuies STRICTEMENT sur la documentation de cours qui t'est fournie ; "
-    "si l'information manque, tu le dis honnêtement plutôt que d'inventer. Cette "
-    "documentation est un mécanisme interne, invisible pour l'élève : ne la lui "
-    "mentionne JAMAIS (ni « extraits », ni « sources », ni leur numéro) et ne "
-    "laisse jamais entendre qu'il te l'a fournie — dis simplement que cette "
-    "leçon n'est pas encore disponible. Cette documentation décrit un "
-    "CHAPITRE, jamais l'élève : le niveau, la série ou la classe qui y "
-    "figurent sont ceux du document, et n'apprennent RIEN sur lui. Ne lui "
-    "attribue jamais une série, une classe, un établissement, un historique "
-    "de cours ni des notions « déjà vues » que tu y aurais lus — tu ne sais de "
-    "l'élève que ce qu'il t'a dit lui-même dans cette conversation. Tu "
-    "t'exprimes en français clair, avec des formules en LaTeX. Utilise "
-    "EXCLUSIVEMENT les délimiteurs $...$ (inline) et $$...$$ (bloc) ; n'utilise "
-    "JAMAIS \\(...\\) ni \\[...\\], qui ne s'affichent pas correctement ici."
+    "Le RAG est ta source principale : tu dois TOUJOURS utiliser les extraits "
+    "(chunks) récupérés pour construire tes réponses. Si une notion est "
+    "présente dans le RAG, appuie-toi dessus en priorité. Ne réponds jamais "
+    "qu'un chapitre est indisponible si la recherche RAG a remonté des "
+    "informations pertinentes : réponds toujours selon le chapitre demandé. "
+    "Cette documentation est interne et invisible pour l'élève : ne la "
+    "mentionne JAMAIS (ni « extraits », ni « sources »). "
+    "Tes réponses générales ou personnelles doivent être naturelles, "
+    "courtoises et compatissantes ; ne ramène jamais automatiquement la "
+    "conversation aux mathématiques si l'élève parle d'autre chose. "
+    "Vérifie systématiquement la qualité de tes réponses : structure, "
+    "syntaxe, cohérence avec les sources et rendu KaTeX correct. "
+    "Lorsque cela améliore la compréhension, génère des graphes ou "
+    "visualisations adaptés pour une explication bien plus claire. "
+    "Utilise EXCLUSIVEMENT les délimiteurs $...$ (inline) et $$...$$ "
+    "(bloc) ; n'utilise JAMAIS \\(...\\) ni \\[...\\]."
 )
 
 SYSTEM_PERSONA = (
@@ -260,13 +260,10 @@ def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, at
 #: symbolique et par :data:`AVERTISSEMENT_CALCUL_NON_VERIFIE`, pas par le
 #: silence.
 CONSIGNE_HORS_PERIMETRE = (
-    "AUCUN extrait de cours ne correspond à cette question : ce point n'est pas "
-    "couvert par les chapitres dont tu disposes. Dis-le à l'élève simplement et "
-    "sans détour, en une phrase et sans t'excuser longuement — il doit savoir "
-    "que ce qui suit ne vient pas de son programme. Puis aide-le quand même "
-    "avec ce que tu sais, en restant prudent. N'invente AUCUNE référence à une "
-    "leçon, à un chapitre ou à un cours que tu aurais consulté, et ne prétends "
-    "pas que cette notion figure au programme."
+    "Même si la notion ne figure pas dans tes documents de référence actuels, "
+    "réponds à l'élève de manière précise et pédagogique en te basant sur tes "
+    "connaissances générales du programme scolaire. Ne lui dis pas que tu n'as "
+    "pas l'information ou qu'elle manque dans tes sources."
 )
 
 
@@ -345,12 +342,13 @@ def assemble_prompt(
 #: de vérification de compréhension, l'autre une reformulation générique — deux
 #: façons de répondre à un bonsoir par un exercice.
 CONSIGNE_ACCUEIL = (
-    "L'élève te salue, sans rien demander d'autre. Réponds d'abord à la "
-    "salutation, simplement et chaleureusement, en une phrase. Présente-toi en "
-    "une ligne, puis propose les chapitres ci-dessus et demande-lui sur quoi il "
-    "veut travailler. N'enchaîne PAS sur une question de vérification de "
-    "compréhension, ne reformule PAS sa salutation, et ne lance aucun exercice : "
-    "il n'a encore rien demandé."
+    "L'élève te salue. Réponds d'abord à la salutation chaleureusement en une "
+    "phrase. Présente-toi brièvement comme son tuteur pédagogique. Indique-lui "
+    "que tu peux l'aider dans toutes ses matières (mathématiques, français, "
+    "sciences, etc.) et demande-lui sur quel sujet ou leçon il souhaite "
+    "travailler aujourd'hui. Ne fais PAS de liste à puces (étoiles/tirets) "
+    "et ne liste pas les chapitres disponibles un par un. Reste naturel et "
+    "concis."
 )
 
 
@@ -373,16 +371,8 @@ def assemble_accueil_prompt(
     ctx = curriculum_context or {}
     parts: list[str] = []
 
-    if catalogue:
-        parts.append(
-            "Chapitres réellement disponibles dans ta documentation "
-            f"({len(catalogue)}) :\n" + "\n".join(f"- {c}" for c in catalogue)
-        )
-    else:
-        parts.append(
-            "Ta documentation ne contient actuellement AUCUN chapitre indexé. "
-            "Accueille l'élève et dis-le franchement au lieu d'en citer un."
-        )
+    # On ne liste plus les chapitres disponibles pour encourager l'élève
+    # à poser des questions sur n'importe quel sujet.
 
     declare = ", ".join(
         f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
@@ -415,16 +405,12 @@ def assemble_meta_prompt(
     ctx = curriculum_context or {}
     parts: list[str] = []
 
-    if catalogue:
-        parts.append(
-            "Chapitres réellement disponibles dans ta documentation "
-            f"({len(catalogue)}) :\n" + "\n".join(f"- {c}" for c in catalogue)
-        )
-    else:
-        parts.append(
-            "Ta documentation ne contient actuellement AUCUN chapitre indexé. "
-            "Dis-le franchement à l'élève au lieu d'en citer un."
-        )
+    # On ne liste plus les chapitres, le tuteur répond à toutes les questions.
+    parts.append(
+        "Rappelle à l'élève que tu es capable de l'aider dans toutes les "
+        "matières et chapitres (mathématiques, français, sciences...) grâce à "
+        "tes connaissances générales, sans te limiter à une liste de chapitres."
+    )
 
     declare = ", ".join(
         f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
@@ -451,22 +437,17 @@ def _uncovered_topic_block(position: CoursePosition) -> str:
     impose la vérification avant d'enseigner quoi que ce soit.
     """
     lines = [
-        "ATTENTION — le chapitre demandé n'a pas pu être identifié dans le corpus.",
+        "ATTENTION — le chapitre demandé n'a pas pu être identifié dans la "
+        "documentation actuellement fournie."
     ]
     if position.topic:
         lines.append(f"Sujet demandé par l'élève : « {position.topic} ».")
-    if position.alternatives:
-        lines.append(
-            "Chapitres réellement disponibles dans la documentation ci-dessous : "
-            + ", ".join(position.alternatives)
-            + "."
-        )
+    
     lines.append(
-        "Avant d'enseigner quoi que ce soit, vérifie que la documentation traite bien "
-        "le sujet demandé. Si oui, fais le cours normalement. Si NON, "
-        "dis-le franchement à l'élève et n'enseigne SURTOUT PAS un "
-        "autre chapitre à la place : propose-lui plutôt les chapitres disponibles "
-        "ci-dessus, ou invite-le à faire indexer la leçon manquante."
+        "N'hésite pas à enseigner ce sujet en te basant sur tes connaissances "
+        "générales du programme scolaire pour répondre à l'élève, de façon "
+        "complète et pédagogique. Ne lui dis pas que tu n'as pas la leçon ou "
+        "que tu manques de documentation."
     )
     # Le vocabulaire à tenir face à l'élève (ne pas nommer extraits/sources) est
     # porté par _COMMON_RULES, commun aux deux postures : la même fuite avait été
@@ -490,11 +471,10 @@ def _build_plan_block(position: CoursePosition) -> str:
 #: modèle doit alors le **dire**, pas combler le vide de lui-même — un cours
 #: inventé est bien plus nuisible qu'un « je ne l'ai pas ».
 AVERTISSEMENT_SANS_COURS = (
-    "ATTENTION : les extraits fournis sont des TD et des exercices, sans cours "
-    "explicite. N'extrais que les éléments de cours réellement présents "
-    "(rappels en tête de TD, énoncés de propriétés). Indique clairement en "
-    "introduction que le cours complet n'est pas disponible dans le corpus. "
-    "N'invente sous aucun prétexte le contenu manquant."
+    "Même si le cours n'est pas explicitement présent dans les documents fournis "
+    "(souvent orientés TD ou exercices), n'hésite pas à t'appuyer sur tes propres "
+    "connaissances du programme scolaire pour développer la section demandée de "
+    "façon complète et didactique."
 )
 
 
