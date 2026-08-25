@@ -89,6 +89,11 @@ async def test_prepare_exposes_node_by_node_orchestration_trace(agent):
         # prompt, et les deux doivent voir la même valeur.
         "profil_eleve",
         "detect_intent",
+        # « soutien_eleve » s'intercale entre l'intention et l'aiguillage : le
+        # découragement est un état de l'élève, pas une propriété du sujet, et
+        # les trois branches de contenu doivent pouvoir le porter (cas QA
+        # #19/#21). Sur un tour ordinaire il ne produit rien.
+        "soutien_eleve",
         "retrieve_context",
         "detect_frustration",
         "diagnose_hint_level",

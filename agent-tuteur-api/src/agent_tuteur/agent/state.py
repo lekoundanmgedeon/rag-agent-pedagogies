@@ -81,8 +81,18 @@ class AgentState(TypedDict, total=False):
     #: maths, ça sert à rien d'essayer ») plutôt que la difficulté d'une notion
     #: (cas QA #19). Détecté par ``frustration.py`` et porté jusqu'à la trace ;
     #: ce qu'il faut en faire — disjoncteur ou modulation de ton — relève de la
-    #: décision D5, encore ouverte sur ce point.
+    #: décision D5, tranchée le 2026-08-24 : ouverture de soutien puis reprise
+    #: du cours (cf. ``soutien``, ci-dessous).
     decouragement: bool
+    #: Ouverture de soutien due à ce tour ({"signal", "variante", "texte"}), ou
+    #: ``None`` pour un tour ordinaire. Produite par ``soutien.py``, donc écrite
+    #: par le code et non échantillonnée : c'est ce qui permet de la faire
+    #: varier selon le signal et d'un tour à l'autre (cas QA #19 et #21).
+    soutien: dict | None
+    #: Le texte de cette ouverture, isolé parce qu'il est consommé ailleurs que
+    #: la trace : ``compose_response`` le met en tête de la réponse, et
+    #: ``stream()`` l'émet avant le premier token du modèle.
+    preambule_soutien: str | None
     hint_level: int
     hint_label: str
     hint_reason: str

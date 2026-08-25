@@ -69,15 +69,33 @@ toujours vide) :
 >
 > Je reste là pour les mathématiques quand tu en auras envie.
 
-**Décision :** _(à remplir — Validé / Refusé avec raison / Ajustement requis)_
-**Date :**
-**Notes :**
+**Décision :** **Validé.**
+**Date :** 2026-08-13, confirmée par un rejeu humain le 2026-08-24.
+**Notes :** le cas a été retesté et validé par le porteur du projet le
+2026-08-24 ; il passe de `corrigé` à **`vérifié`** dans `qa_status.json`. La
+validation humaine exigée par la Definition of Done du périmètre « Sécurité,
+bien-être & garde-fous » est donc acquise, sur la version issue de la seconde
+passe (rappel élargi, faux positif « je vais mal placer la virgule » refermé).
 
 ---
 
 ## D2 — Méthode de verdict sur la prose (Couche B)
 
-**Statut : Ouverte**
+**Statut : Ouverte — mais elle ne bloque plus le sprint Haute (2026-08-24)**
+
+**ARBITRAGE DU 2026-08-24 : ne pas trancher maintenant.** Décision humaine : les
+cas Haute restants sont fermés sur des verdicts de **couche A**, et D2 reste
+ouverte pour ce qu'elle seule peut protéger — les 10 fixtures positives de
+`COUCHE_B_SEULEMENT`. Ce qui a rendu ce report possible n'est pas un
+assouplissement du verdict mais un choix de **conception** : sur les cas #19 et
+#21, le texte de soutien est écrit par le code (`agent/soutien.py`) au lieu
+d'être demandé au modèle. Un texte écrit par le code peut être choisi, tracé et
+assérée ; la prose échantillonnée, non. La leçon vaut au-delà de ces deux cas :
+quand une exigence porte sur *ce qui doit être dit* plutôt que sur *comment*,
+la sortir de la génération la rend vérifiable sans juge.
+
+Reste donc à D2, inchangé : les 10 fixtures positives non couvertes, et tout
+futur cas dont l'exigence porte réellement sur la qualité de la prose générée.
 
 **Contexte.** La Couche A ne peut juger que des décisions de pipeline (routage,
 seuils, appels), jamais la prose elle-même — un vrai modèle ne répond jamais deux fois
@@ -95,13 +113,18 @@ cette méthode n'est pas choisie.
 - Reste à trancher dans la proposition : fournisseur LLM (la démo tourne Mistral),
   clé/budget associés, et le contenu exact de la grille de jugement.
 
-**Ce qui reste bloqué tant que non tranchée.** L'écriture de `attentes_couche_b.py`,
-la protection réelle des 10 fixtures positives non couvertes, et tout cas Haute classé
-"nécessite le point (i)" par Claude Code.
+**Ce qui reste bloqué tant que non tranchée.** L'écriture de `attentes_couche_b.py`
+et la protection réelle des 10 fixtures positives non couvertes. ~~et tout cas Haute
+classé "nécessite le point (i)"~~ — **plus vrai depuis le 2026-08-24** : les cas #14,
+#19 et #21 sont clos sans elle (cf. l'arbitrage en tête d'entrée).
 
-**Décision :** _(à remplir — Accepter tel quel / Accepter avec modifications, lesquelles / Rejeter, autre approche)_
-**Date :**
-**Notes :**
+**Décision :** **Reporter.** Ni acceptée ni rejetée : la proposition hybride reste
+sur la table, sans être mise en œuvre pour l'instant.
+**Date :** 2026-08-24
+**Notes :** aucun coût engagé (pas de clé, pas de budget de juge), et les tests du
+sprint Haute restent **bloquants en pré-merge** au lieu de dépendre d'un nightly.
+Le jour où D2 sera reprise, le premier périmètre à couvrir reste les 10 fixtures
+positives — c'est là que l'absence de verdict coûte réellement quelque chose.
 
 ---
 
@@ -192,7 +215,26 @@ hors-périmètre sur un tour où le RAG remontait un indice sans rapport : il re
 
 ## D4 — Répartition du sprint Haute priorité
 
-**Statut : Ouverte — en attente du retour de Claude Code**
+**Statut : ACTÉE le 2026-08-24 — classification acceptée, sprint Haute terminé**
+
+**CLÔTURE (2026-08-24).** Les 14 cas Haute sont traités : 13 `corrigé`, 1
+`ne_sera_pas_corrigé` (#18, renvoyé au processus de contenu). Les trois derniers
+— #14, #19, #21 — ont été fermés une fois D5 (point 1) tranchée et D2 reportée.
+
+Ce que cette clôture confirme de la classification, et ce qu'elle corrige :
+
+- la correction du 2026-08-16 sur le **#14** (« n'hérite pas du cas #5 ») tient :
+  le cas se règle par le routage, pas par le périmètre ;
+- le **#19** et le **#21** étaient classés « suspendus à D2 » : c'était vrai de
+  la méthode de verdict, pas de la nature du problème. Sortir le texte de soutien
+  de la génération a supprimé la dépendance plutôt que de la satisfaire ;
+- une mesure ajoutée au passage, qui manquait au tableau : sur le corpus **de
+  production** (12 leçons), « Je ne comprends pas les dérivées » ouvre le vrai
+  chapitre (« Fonction dérivée et équation de la tangente », section
+  Introduction, `chapitre_confirmed=true`). Le tableau ci-dessous a été établi
+  sur le corpus figé à deux chapitres, où les dérivées sont absentes — les deux
+  comportements sont corrects, mais ils ne sont pas les mêmes, et un verdict
+  écrit sur le second seul serait tombé le jour où le corpus figé s'élargit.
 
 **Contexte.** Demande envoyée : classer les 14 cas Haute en "vérifiable en Couche A
 dès maintenant" (décision de pipeline ou réponse extractible) vs "nécessite D2
@@ -246,15 +288,64 @@ rejoués et verts dans le harnais générique) ; **#14, #19 et #21 `en_cours`** 
 le mécanisme est livré et testé pour chacun, seul le verdict manque, et il
 manque pour une raison nommée (D2 pour #14 et #21, D5 point 1 pour #19).
 
-**Décision :** _(à remplir — accepter la classification ainsi corrigée, ou la corriger encore)_
-**Date :**
-**Notes :**
+**Décision :** **Accepter la classification ainsi corrigée.**
+**Date :** 2026-08-24
+**Notes :** le sprint 2 est clos ; la suite est le sprint 3 (priorité Moyenne),
+plus le cas critique **#5**, qui reste `en_cours` pour une raison qui lui est
+propre (l'interaction avec le cas #12, et D7).
 
 ---
 
 ## D5 — Le cas #19 relève-t-il de la sécurité ou du ton pédagogique ?
 
-**Statut : TRANCHÉE EN PARTIE le 2026-08-13 — combler la détection d'abord**
+**Statut : ACTÉE — point 1 tranché le 2026-08-24, l'entrée est close**
+
+**DÉCISION DU 2026-08-24 (point 1, le routage) : ouverture de soutien écrite par
+le code, puis reprise du tour pédagogique.** Ni disjoncteur, ni simple consigne
+de prompt.
+
+*Ce que le reclassement en sécurité aurait coûté*, et pourquoi il est écarté : le
+message de mise en sécurité du cas #7 tire sa force d'être rare. Le servir à
+chaque « je suis nul en maths » — le message qu'un élève envoie *en travaillant*
+— l'userait, et laisserait en prime l'élève sans l'aide qu'il est venu chercher.
+Le #19 **reste** en catégorie « 8. Ton pédagogique & adaptation », sa Definition
+of Done ordinaire s'applique, et un test tient explicitement la frontière : le
+prompt du #19 ne doit pas déclencher `triage_securite`.
+
+*Ce que la modulation de ton seule n'aurait pas donné* : rien de vérifiable. La
+prose du modèle n'est pas jugeable en couche A, et c'est ce qui laissait ces cas
+ouverts en attendant D2.
+
+**Incarnation.** `agent/soutien.py` (deux registres — dévalorisation de soi et
+abandon annoncé —, trois variantes chacun, rotation par session), nœud
+`soutien_eleve` intercalé entre `detect_intent` et l'aiguillage,
+`prompt.CONSIGNE_SOUTIEN_DEJA_ADRESSE` pour que le modèle n'ajoute pas un second
+préambule, et `preambule_soutien` porté jusqu'au chemin **streamé** — sans quoi
+le correctif serait vert dans les tests et absent de la démo.
+
+**Point 2 (le sort du #21) : joint au #19, et clos avec lui.** Sa demande de
+« variété » est satisfaite structurellement — deux signaux distincts servent deux
+textes distincts, et deux découragements dans la même session n'en servent pas
+deux fois le même. Elle ne dépend donc plus de D2.
+
+**Point 3 (déterministe ou généré) : déterministe**, pour la raison ci-dessus.
+
+**Un défaut trouvé en sondant, qui n'était dans aucun ticket :** « je laisse
+tomber » fait trois tokens, tombait donc sous la règle « question courte/vague →
+niveau 0 », dont la consigne est *« reformule la question de l'élève »*. Un élève
+qui annonce qu'il abandonne se voyait demander de reformuler son abandon —
+c'était le défaut du #14 tombant sur le message du #21. `diagnose_hint_level`
+reçoit désormais `signal_de_soutien`, sur le modèle de `calcul_trivial` : court
+n'est pas flou.
+
+**Décision :** **Reclasser ? Non — maintenir en ton pédagogique, et y joindre le #21.**
+**Date :** 2026-08-24
+
+---
+
+### Historique du point 1 (avant sa clôture)
+
+**Statut antérieur : TRANCHÉE EN PARTIE le 2026-08-13 — combler la détection d'abord**
 
 **Décision (2026-08-13) : combler le trou de détection avant de trancher le
 routage.** Le découragement doit produire un signal dans `frustration.py` — c'est
@@ -340,8 +431,7 @@ selon la réponse, c'est soit un correctif de routage en Couche A livrable tout 
 suite, soit un cas de prose qui attend D2. Le cas #21 est dans la même attente par
 ricochet.
 
-**Décision :** _(à remplir — Reclasser en sécurité / Maintenir en ton pédagogique / Reclasser et y joindre le #21)_
-**Date :**
+*(Champ de décision d'origine — renseigné en tête d'entrée le 2026-08-24.)*
 **Notes :**
 
 ---

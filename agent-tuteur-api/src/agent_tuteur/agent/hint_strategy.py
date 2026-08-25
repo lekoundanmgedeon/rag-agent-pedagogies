@@ -1,7 +1,8 @@
 """Stratégie d'indice graduée 0→4 (posture socratique).
 
 Politique de transition (seuils) :
-* niveau de base **1** ; **0** si la question est très courte/vague (< 4 tokens) ;
+* niveau de base **1** ; **0** si la question est très courte/vague (< 4 tokens),
+  sauf calcul trivial ou signal de soutien, qui sont courts sans être flous ;
 * **+1** si répétitions ≥ 2 ; **+1** si frustration ≥ 0.5 (cumulables) ;
 * demande explicite de correction → **saut direct au niveau 4** ;
 * niveau borné à ``[0, 4]``.
@@ -121,6 +122,7 @@ def diagnose_hint_level(
     repetitions: int = 0,
     *,
     calcul_trivial: bool = False,
+    signal_de_soutien: bool = False,
 ) -> HintDecision:
     """Décide du niveau d'indice selon la politique de transition.
 
@@ -129,6 +131,15 @@ def diagnose_hint_level(
     retourne contre l'élève. Une expression numérique nue est courte *et*
     parfaitement précise — c'est le cas QA #10, où la brièveté avait été lue
     comme du flou.
+
+    ``signal_de_soutien`` désarme la même règle pour la même raison, sur l'autre
+    bout du spectre : « je laisse tomber » fait trois tokens, donc tombait au
+    niveau 0, dont la consigne est « reformule la question de l'élève sans
+    apporter AUCUNE information ». C'est le défaut du cas #14 appliqué au
+    message du cas #21 — sauf qu'ici la phrase n'a rien d'ambigu : elle est
+    courte parce qu'elle est nette. Le niveau reste ensuite gouverné par la
+    graduation ordinaire, frustration comprise ; on ne fait que refuser de lire
+    un abandon comme du flou.
     """
     if calcul_trivial:
         return HintDecision(
@@ -147,7 +158,7 @@ def diagnose_hint_level(
 
     reasons: list[str] = []
     level = BASE_LEVEL
-    if len(tokenize(question)) < SHORT_QUESTION_TOKENS:
+    if len(tokenize(question)) < SHORT_QUESTION_TOKENS and not signal_de_soutien:
         level = 0
         reasons.append("question courte/vague")
     if repetitions >= REPETITION_ESCALATION:

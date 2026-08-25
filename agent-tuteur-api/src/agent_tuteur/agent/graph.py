@@ -67,6 +67,7 @@ from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
 from agent_tuteur.agent.profil import detecter_serie, serie_effective
 from agent_tuteur.agent.prompt import (
+    CONSIGNE_SOUTIEN_DEJA_ADRESSE,
     SYSTEM_PERSONA_QUIZ,
     assemble_accueil_prompt,
     assemble_course_prompt,
@@ -84,6 +85,7 @@ from agent_tuteur.agent.quiz import (
     contient_du_factice,
 )
 from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
+from agent_tuteur.agent.soutien import ouverture_pour
 from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
@@ -130,6 +132,19 @@ _MODERATION_OVERRIDE = (
     "scolaire. Décline avec bienveillance, n'entre pas dans le détail, et invite "
     "l'élève à en parler à un adulte de confiance ou à son enseignant."
 )
+
+
+def _prefixer_consigne_de_soutien(user_prompt: str, state: AgentState) -> str:
+    """Prévient le modèle qu'une ouverture de soutien a déjà été servie.
+
+    Même patron que ``_MODERATION_OVERRIDE`` : une consigne en tête du prompt,
+    posée après l'assemblage. Sans elle, le modèle ouvre à son tour sur de
+    l'encouragement et l'élève reçoit deux préambules avant la moindre aide —
+    le reproche du cas #19, déplacé d'un cran plutôt que corrigé.
+    """
+    if not state.get("soutien"):
+        return user_prompt
+    return f"{CONSIGNE_SOUTIEN_DEJA_ADRESSE}\n\n{user_prompt}"
 
 
 def _timed_node(name: str) -> Callable:
@@ -184,6 +199,10 @@ class Prepared:
     #: Réponse déjà écrite par le graphe (mise en sécurité). Quand elle est
     #: présente, ``stream()`` la restitue sans appeler le modèle.
     reponse_directe: str | None = None
+    #: Ouverture de soutien à émettre **avant** la génération (cas #19/#21).
+    #: À la différence de ``reponse_directe``, elle ne remplace pas le tour :
+    #: le modèle est bien appelé ensuite, et prévenu par sa consigne.
+    preambule_soutien: str | None = None
 
     @property
     def hint_level(self) -> int:
@@ -381,6 +400,53 @@ class TutorAgent:
             "node_trace": [{"node": "detect_intent", "intent": decision.intent.value, "nav": nav}],
         }
 
+    @_timed_node("soutien_eleve")
+    async def _n_soutien(self, state: AgentState) -> dict:
+        """L'élève se décourage : on dédramatise, puis le tour continue.
+
+        **Placement.** Juste après ``detect_intent``, donc avant l'aiguillage
+        vers les branches et avant toute recherche. Deux raisons, et la première
+        est structurelle : le découragement est un état de l'**élève**, pas une
+        propriété du sujet — le brancher sur la seule branche exercice (là où
+        vit ``detect_frustration``) l'aurait rendu muet dès que l'élève se
+        décourage pendant un cours, c'est-à-dire au moment où c'est le plus
+        probable. La seconde est que l'intention est alors connue, ce qui permet
+        d'exclure le seul tour où une ouverture serait nuisible.
+
+        **Pourquoi le quiz est exclu.** La réponse d'un tour quiz n'est pas de la
+        prose adressée à l'élève mais un JSON relu par ``analyser_reponse_quiz``.
+        Y préfixer un paragraphe rendrait le quiz illisible, donc inutilisable —
+        l'inverse du service rendu. Un élève découragé qui demande explicitement
+        à être interrogé reçoit son quiz ; le soutien viendra au tour suivant.
+
+        Le tour de détresse (``reponse_securite``) ne passe jamais ici : il sort
+        du graphe avant, et son texte doit rester seul (règle n°1).
+        """
+        if state.get("intent") == Intent.QUIZ.value:
+            return {"soutien": None, "preambule_soutien": None}
+        session = state.get("session") or SessionState()
+        ouverture = ouverture_pour(state["question"], session.ouvertures_soutien)
+        if ouverture is None:
+            return {
+                "soutien": None,
+                "preambule_soutien": None,
+                "node_trace": [{"node": "soutien_eleve", "signal": None}],
+            }
+        # Mémoire de session, éphémère : c'est elle qui garantit que la prochaine
+        # ouverture ne sera pas la même (cas #21).
+        session.ouvertures_soutien.append(ouverture.variante)
+        return {
+            "soutien": ouverture.as_trace(),
+            "preambule_soutien": ouverture.texte,
+            "node_trace": [
+                {
+                    "node": "soutien_eleve",
+                    "signal": ouverture.signal.value,
+                    "variante": ouverture.variante,
+                }
+            ],
+        }
+
     @_timed_node("retrieve_context")
     async def _n_retrieve(self, state: AgentState) -> dict:
         query = _condense_retrieval_query(state["question"], state.get("conversation_history", []))
@@ -448,6 +514,10 @@ class TutorAgent:
             state.get("frustration_score", 0.0),
             state.get("repetitions", 0),
             calcul_trivial=est_un_calcul_trivial(state["question"]),
+            # Un élève qui annonce qu'il abandonne écrit court, mais pas flou :
+            # sans cela « je laisse tomber » recevait la consigne de niveau 0,
+            # « reformule la question de l'élève » (cas #21 croisé au #14).
+            signal_de_soutien=bool(state.get("soutien")),
         )
         return {
             "hint_level": decision.level,
@@ -618,6 +688,7 @@ class TutorAgent:
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
+        user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
 
         competence = _competence_from_context(ctx, retrieved)
         trace = {
@@ -631,6 +702,10 @@ class TutorAgent:
             # là où il sera exploité (routage ou modulation de ton, D5 point 1)
             # plutôt que noyé dans le score agrégé.
             "decouragement": bool(state.get("decouragement")),
+            # Ce que le découragement a effectivement produit (D5, point 1) :
+            # l'ouverture servie, ou None. Le signal seul ne disait pas si
+            # quelque chose en avait été fait.
+            "soutien": state.get("soutien"),
             "etude_fonction": etude,
             "complexe": complexe,
             "tool_used": state.get("tool_used"),
@@ -667,9 +742,11 @@ class TutorAgent:
         system, user_prompt = assemble_meta_prompt(
             state["question"], catalogue, ctx, state.get("conversation_history", [])
         )
+        user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
         trace = {
             "trace_id": state.get("trace_id"),
             "securite": None,
+            "soutien": state.get("soutien"),
             "hint_level": None,
             "hint_label": "Orientation",
             "hint_reason": "question sur le service",
@@ -703,9 +780,11 @@ class TutorAgent:
         ctx = state.get("curriculum_context", {})
         catalogue = self._retriever.catalogue(ctx)
         system, user_prompt = assemble_accueil_prompt(state["question"], catalogue, ctx)
+        user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
         trace = {
             "trace_id": state.get("trace_id"),
             "securite": None,
+            "soutien": state.get("soutien"),
             "hint_level": None,
             "hint_label": "Accueil",
             "hint_reason": "salutation seule",
@@ -833,10 +912,12 @@ class TutorAgent:
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
+        user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
 
         competence = _competence_from_context(ctx, retrieved)
         trace = {
             "trace_id": state.get("trace_id"),
+            "soutien": state.get("soutien"),
             # Pas de niveau d'indice en mode cours : on conserve les clés du
             # contrat (meta/logs/frontend) avec des valeurs adaptées.
             "hint_level": None,
@@ -938,6 +1019,13 @@ class TutorAgent:
     @_timed_node("compose_response")
     async def _n_compose(self, state: AgentState) -> dict:
         answer = await self._llm.generate(state["final_prompt"], system=state.get("system_prompt"))
+        # L'ouverture de soutien passe devant la génération — c'est ce que veut
+        # dire « dédramatiser AVANT de reprendre le cours » (cas #19). Le
+        # pendant streamé est dans ``stream()`` : les deux chemins doivent
+        # produire la même réponse, sans quoi la démo et les tests divergent.
+        preambule = state.get("preambule_soutien")
+        if preambule:
+            answer = f"{preambule}\n\n{answer}"
         await self._write_memory(state)
         return {"answer": answer, "node_trace": [{"node": "compose_response", "chars": len(answer)}]}
 
@@ -1074,6 +1162,10 @@ class TutorAgent:
         g.add_node("reponse_securite", self._n_reponse_securite)
         g.add_node("profil_eleve", self._n_profil_eleve)
         g.add_node("detect_intent", self._n_detect_intent)
+        # Ouverture de soutien : après l'intention, avant l'aiguillage — le
+        # découragement est un état de l'élève, pas une propriété du sujet, et
+        # les trois branches de contenu doivent pouvoir le porter (cas #19/#21).
+        g.add_node("soutien_eleve", self._n_soutien)
         g.add_node("retrieve_context", self._n_retrieve)
         # Branche exercice (posture socratique) — inchangée.
         g.add_node("detect_frustration", self._n_frustration)
@@ -1103,8 +1195,9 @@ class TutorAgent:
         g.add_edge("reponse_securite", END)
         # Une question méta est détournée AVANT la recherche : c'est le
         # retrieval lui-même qui produisait la réponse hors-sujet (cas #2/#3/#4).
+        g.add_edge("detect_intent", "soutien_eleve")
         g.add_conditional_edges(
-            "detect_intent",
+            "soutien_eleve",
             _route_meta_ou_contenu,
             {
                 "meta": "guardrail_meta",
@@ -1205,6 +1298,7 @@ class TutorAgent:
             trace_id=trace_id,
             node_trace=result.get("node_trace", []),
             reponse_directe=result.get("reponse_directe"),
+            preambule_soutien=result.get("preambule_soutien"),
         )
 
     async def stream(self, prepared: Prepared) -> AsyncIterator[str]:
@@ -1225,6 +1319,15 @@ class TutorAgent:
                 token_count += 1
                 yield token
         else:
+            # Pendant streamé de ``_n_compose`` : l'ouverture de soutien part
+            # avant le premier token du modèle. Elle est découpée comme la
+            # réponse de mise en sécurité, pour que le client voie du texte
+            # arriver au même rythme et non un bloc suivi d'une pause.
+            if prepared.preambule_soutien:
+                for token in re.findall(r"\S+\s*", prepared.preambule_soutien):
+                    token_count += 1
+                    yield token
+                yield "\n\n"
             async for token in self._llm.generate_stream(
                 prepared.final_prompt, system=prepared.system_prompt
             ):

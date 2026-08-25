@@ -25,6 +25,7 @@ async def test_course_request_routes_to_didactic_branch(agent):
         "triage_securite",  # disjoncteur de détresse en tête de graphe (cas QA #7)
         "profil_eleve",     # série résolue avant la recherche (cas QA #8)
         "detect_intent",
+        "soutien_eleve",   # ouverture de soutien éventuelle (cas QA #19/#21)
         "retrieve_context",
         "course_planner",
         "guardrail_course",

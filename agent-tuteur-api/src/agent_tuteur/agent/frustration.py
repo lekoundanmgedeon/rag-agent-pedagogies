@@ -86,6 +86,11 @@ class SessionState:
     #: Écrite par le nœud ``profil_eleve``, elle prime sur la série du profil
     #: pour tout le reste de la session (règle non-négociable n°5).
     serie: str | None = None
+    #: Clés des ouvertures de soutien déjà servies dans la session, dans
+    #: l'ordre. Éphémère comme le reste : ce n'est pas un fait pédagogique à
+    #: persister, seulement de quoi ne pas resservir le même paragraphe au tour
+    #: suivant — le reproche exact du cas QA #21.
+    ouvertures_soutien: list[str] = field(default_factory=list)
 
     def add(self, question: str) -> None:
         self.recent_questions.append(question)

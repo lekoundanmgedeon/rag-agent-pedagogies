@@ -237,6 +237,69 @@ def _cas_salutation(resultat, cas) -> None:
     assert resultat.trace["hint_label"] == "Accueil"
 
 
+# --- Cas 14 — Reformulation à vide avant toute aide --------------------------
+def _cas_14_reformulation(resultat, cas) -> None:
+    """« Je ne comprends pas les dérivées » (Pontiane).
+
+    Ce que la couche A peut juger, et c'est le cœur du reproche : le tour ouvre
+    un cours au lieu de partir en exercice (l'asymétrie de routage corrigée dans
+    ``intent.py``), aucune consigne de reformulation n'est émise, et le premier
+    tour porte déjà quelque chose d'utile. « Trois prompts avant une information
+    utile » reste, lui, un jugement de prose — hors de portée d'un ``MockLLM``
+    qui renvoie une constante.
+
+    **Le verdict est volontairement indépendant du corpus.** Mesuré : sur les 12
+    leçons de production, le tour ouvre le vrai chapitre (« Fonction dérivée et
+    équation de la tangente », section Introduction) ; sur le corpus figé du
+    harnais, qui ne porte que deux chapitres, les dérivées sont absentes et le
+    tour émet l'aveu de non-couverture. Les deux sont des réponses utiles au
+    premier tour ; exiger l'une des deux ferait échouer ce cas le jour où le
+    corpus figé s'élargit, c'est-à-dire punir une amélioration.
+    """
+    from agent_tuteur.agent.hint_strategy import HINT_INSTRUCTIONS
+
+    assertions.assert_intention(resultat, "cours")
+    assert HINT_INSTRUCTIONS[0] not in resultat.final_prompt
+    cours = resultat.trace["course"]
+    assert cours is not None, "le tour n'a pas ouvert de cours"
+    if cours["chapitre_confirmed"]:
+        # Chapitre couvert : l'élève reçoit une section, pas une question.
+        assert cours["section_title"], "cours ouvert sans section à enseigner"
+        assert resultat.retrieved, "cours confirmé mais servi sans documentation"
+    else:
+        # Chapitre absent du corpus : l'aveu, et l'interdiction d'y substituer
+        # un autre chapitre — c'est ce que faisait l'agent observé par Pontiane.
+        assert "le chapitre demandé n'a pas pu être identifié" in resultat.final_prompt
+        assert "n'enseigne SURTOUT PAS un autre chapitre à la place" in resultat.final_prompt
+
+
+# --- Cas 19 et 21 — Découragement et abandon ---------------------------------
+# Décision D5 (point 1), tranchée le 2026-08-24 : ouverture de soutien écrite par
+# le code, puis reprise du tour pédagogique. Les deux moitiés comptent — une
+# ouverture sans suite serait un disjoncteur, une suite sans ouverture serait le
+# « paragraphe de cours recollé » que le testeur a vu.
+def _cas_19_decouragement(resultat, cas) -> None:
+    """« Je suis nul en maths, ça sert à rien d'essayer » (Tony SARRE)."""
+    assertions.assert_aucun_court_circuit_securite(resultat)
+    assertions.assert_ouverture_de_soutien(resultat, signal="decouragement")
+    assertions.assert_le_tour_pedagogique_continue(resultat)
+
+
+def _cas_21_abandon(resultat, cas) -> None:
+    """« C'est trop dur, je laisse tomber » (Tony SARRE).
+
+    Le registre attendu est *abandon*, et pas *découragement* : c'est cette
+    distinction-là qui répond au reproche (« réponse quasi identique »), les
+    deux signaux servant des textes différents. L'escalade d'indice est vérifiée
+    en plus — l'élève qui annonce qu'il arrête ne doit pas recevoir le même
+    niveau que celui qui pose une question ordinaire.
+    """
+    assertions.assert_aucun_court_circuit_securite(resultat)
+    assertions.assert_ouverture_de_soutien(resultat, signal="abandon")
+    assertions.assert_le_tour_pedagogique_continue(resultat)
+    assert resultat.trace["hint_level"] > 1
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
@@ -255,17 +318,13 @@ ATTENTES: dict[int, Attente] = {
     11: _cas_resultat_attendu,
     12: _cas_12_definition_fondatrice,
     13: _cas_resultat_attendu,
-    # 14 — routage corrigé (le tour ouvre un cours et avoue le hors-couverture),
-    # mais la seconde moitié du reproche (« trois prompts avant une information
-    # utile ») est un jugement de prose : verdict à D2. Reste en xfail, comme le
-    # cas non clos qu'il est. Le mécanisme est protégé par ``test_qa_14_*``.
+    14: _cas_14_reformulation,
     15: _cas_15_affirmation_fausse,
     16: _cas_16_contexte_invente,
     17: _cas_17_etude_hors_sujet,
-    # 19 et 21 — détection comblée et testée (``test_qa_19_21_decouragement``),
-    # mais le verdict reste bloqué : le routage du #19 attend D5 (point 1), la
-    # variété de prose du #21 attend D2. Même patron que le cas #5 ci-dessus.
+    19: _cas_19_decouragement,
     20: _cas_20_blocage_declare,
+    21: _cas_21_abandon,
     32: _cas_32_derivee_livree,
     38: _cas_salutation,
     41: _cas_salutation,

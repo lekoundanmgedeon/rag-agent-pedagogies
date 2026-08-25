@@ -161,6 +161,22 @@ CONSIGNE_VARIATION_APPROCHE = (
 )
 
 
+#: Injectée quand une ouverture de soutien a été servie en tête de réponse
+#: (cas QA #19/#21, décision D5 point 1). Le modèle ne voit pas ce texte-là : il
+#: est écrit par ``soutien.py`` et affiché avant sa propre réponse. Sans cette
+#: consigne, il ouvre à son tour par une formule d'encouragement — l'élève reçoit
+#: alors deux préambules l'un sur l'autre et toujours pas d'aide, c'est-à-dire le
+#: reproche du cas #19 déplacé d'un cran.
+CONSIGNE_SOUTIEN_DEJA_ADRESSE = (
+    "ATTENTION : l'élève vient d'exprimer du découragement, et une ouverture de "
+    "soutien lui a DÉJÀ été adressée — elle sera affichée juste au-dessus de ta "
+    "réponse. Ne l'ouvre donc PAS par une formule d'encouragement, ne la répète "
+    "pas et ne la reformule pas : enchaîne directement sur l'aide concrète, en "
+    "proposant un premier pas volontairement petit et faisable tout de suite. "
+    "Pas de discours sur la motivation, pas de promesse de réussite."
+)
+
+
 def consigne_etude_de_fonction(etude: dict) -> str:
     """Consigne d'étude de fonction, adossée aux résultats SymPy (cas QA #9).
 

@@ -144,6 +144,46 @@ def assert_pas_de_retrieval(resultat) -> None:
     assert resultat.trace["scores"] == []
 
 
+def assert_ouverture_de_soutien(resultat, signal: str) -> None:
+    """Le tour s'ouvre sur une ouverture de soutien du registre attendu.
+
+    Assertion **textuelle assumée**, et c'est ce qui rend les cas #19 et #21
+    jugeables sans attendre D2 : cette ouverture est écrite par ``soutien.py``,
+    pas échantillonnée par le modèle. On vérifie donc trois choses distinctes —
+    le signal reconnu, la variante servie (tracée pour que la suivante puisse
+    être différente), et le fait que le texte arrive bien **en tête** de la
+    réponse, avant la reprise pédagogique.
+    """
+    soutien = resultat.trace.get("soutien")
+    assert soutien is not None, "aucune ouverture de soutien sur un message de découragement"
+    assert soutien["signal"] == signal, (
+        f"registre attendu {signal!r}, obtenu {soutien['signal']!r}"
+    )
+    assert resultat.answer.startswith(soutien["texte"]), (
+        "l'ouverture de soutien ne précède pas la réponse : "
+        f"{resultat.answer[:120]!r}"
+    )
+    entree = next((e for e in resultat.node_trace if e["node"] == "soutien_eleve"), None)
+    assert entree is not None, "le nœud soutien_eleve n'a pas été traversé"
+    assert entree["variante"] == soutien["variante"]
+
+
+def assert_le_tour_pedagogique_continue(resultat) -> None:
+    """L'ouverture n'a pas remplacé le tour — décision D5 : « puis on reprend ».
+
+    C'est la borne haute du correctif, et elle compte autant que l'ouverture
+    elle-même : un disjoncteur complet (comme le cas #7) laisserait l'élève sans
+    aide et userait le message de mise en sécurité en le servant à chaque
+    découragement scolaire.
+    """
+    noeuds = _noeuds(resultat)
+    assert "reponse_securite" not in noeuds, "un découragement scolaire a été traité en détresse"
+    assert "compose_response" in noeuds, "le modèle n'a pas été sollicité après l'ouverture"
+    soutien = resultat.trace.get("soutien") or {}
+    reste = resultat.answer[len(soutien.get("texte", "")):].strip()
+    assert reste, "la réponse se réduit à l'ouverture de soutien"
+
+
 def assert_llm_reel(agent, resultat) -> None:
     """Garde-fou d'entrée de la couche B : la prose vient d'un vrai fournisseur.
 
