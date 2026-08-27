@@ -13,6 +13,11 @@ from __future__ import annotations
 
 from agent_tuteur.agent.course_plan import CoursePosition, plan_titles
 from agent_tuteur.agent.hint_strategy import HintDecision
+from agent_tuteur.agent.memoire_session import (
+    MAX_CARACTERES_PAR_MESSAGE,
+    MAX_MESSAGES_RECENTS,
+    MemoireSession,
+)
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.ingestion.normalize import delimiteurs_latex
 
@@ -136,8 +141,6 @@ SYSTEM_PERSONA_META = (
 )
 
 _MAX_EXCERPT = 600
-#: Nombre de messages (élève + tuteur confondus) réinjectés dans le prompt.
-_MAX_HISTORY_MESSAGES = 6
 
 _SPEAKER_LABELS = {"user": "Élève", "assistant": "Tuteur"}
 
@@ -172,21 +175,63 @@ def build_context_block(retrieved: list[ScoredChunk]) -> str:
     return "\n\n".join(lines)
 
 
-def build_history_block(history: list[dict[str, str]] | None) -> str | None:
+def build_history_block(history: list[dict] | None) -> str | None:
     """Formate les derniers tours de la conversation, ou ``None`` s'il n'y en a pas.
 
     Sans ce rappel, une relance courte de l'élève ("un autre indice ?") arrive
     seule dans le prompt : le LLM ne sait plus de quel énoncé il est question
     et improvise hors-sujet. On réinjecte donc le fil récent pour ancrer la
     réponse dans l'exercice réellement discuté.
+
+    Deux réglages, et ils vont ensemble. La fenêtre est passée de 6 à
+    :data:`MAX_MESSAGES_RECENTS` messages : six n'en couvrait que trois, et un
+    élève qui travaille un exercice en dépasse trois avant d'avoir posé sa vraie
+    question. Pour que cet élargissement ne gonfle pas le prompt, chaque message
+    est tronqué à :data:`MAX_CARACTERES_PAR_MESSAGE` — une section de cours fait
+    plusieurs milliers de caractères, dont seul le début sert à se souvenir de
+    quoi on parlait. Ce qui sort de la fenêtre n'est plus perdu pour autant :
+    :func:`build_memoire_block` en garde l'essentiel.
     """
     if not history:
         return None
-    recent = history[-_MAX_HISTORY_MESSAGES:]
-    lines = [
-        f"{_SPEAKER_LABELS.get(m['role'], m['role'])} : {m['content'].strip()}" for m in recent
-    ]
-    return "\n".join(lines)
+    lignes: list[str] = []
+    for message in history[-MAX_MESSAGES_RECENTS:]:
+        contenu = (message.get("content") or "").strip()
+        if len(contenu) > MAX_CARACTERES_PAR_MESSAGE:
+            contenu = contenu[:MAX_CARACTERES_PAR_MESSAGE].rstrip() + " […]"
+        lignes.append(f"{_SPEAKER_LABELS.get(message.get('role'), message.get('role'))} : {contenu}")
+    return "\n".join(lignes)
+
+
+def build_memoire_block(memoire: MemoireSession) -> str | None:
+    """Ce que l'agent sait déjà de CETTE conversation, ou ``None`` s'il ne sait rien.
+
+    Le bloc est court et factuel à dessein : il porte des éléments établis par
+    le code (une phrase de l'élève, une décision de pipeline tracée), jamais une
+    interprétation. C'est ce qui permet de le maintenir sous la règle
+    non-négociable n°3 tout en donnant enfin une mémoire au fil de discussion —
+    les deux exigences se contredisaient tant que « se souvenir » voulait dire
+    « laisser le modèle deviner ».
+    """
+    if memoire.est_vide:
+        return None
+    lignes = ["Mémoire de cette conversation (établie à partir de ce qui s'y est dit) :"]
+    if memoire.prenom:
+        lignes.append(f"- L'élève s'appelle {memoire.prenom} (il te l'a dit lui-même).")
+    if memoire.chapitres:
+        lignes.append("- Chapitres déjà travaillés ensemble : " + ", ".join(memoire.chapitres) + ".")
+    if memoire.tours:
+        lignes.append(f"- Nombre de tours déjà échangés : {memoire.tours}.")
+    if memoire.dernier_exercice:
+        enonce = memoire.dernier_exercice.strip()
+        if len(enonce) > MAX_CARACTERES_PAR_MESSAGE:
+            enonce = enonce[:MAX_CARACTERES_PAR_MESSAGE].rstrip() + " […]"
+        lignes.append(f"- Dernier exercice que tu lui as proposé :\n{enonce}")
+    lignes.append(
+        "N'ajoute RIEN à cette mémoire : tu ne sais de l'élève que ce qui figure "
+        "ci-dessus et dans l'historique."
+    )
+    return "\n".join(lignes)
 
 
 #: Consigne ajoutée quand l'élève demande un calcul que l'outil symbolique n'a
@@ -234,6 +279,26 @@ CONSIGNE_SIMPLIFICATION = (
     "mots du quotidien, une seule idée à la fois, et n'introduis AUCUNE notion "
     "nouvelle ni vocabulaire technique supplémentaire. Termine par une question "
     "simple qui vérifie ce point précis."
+)
+
+
+#: Injectée quand l'élève demande la **même** réponse dans une autre
+#: présentation (cas QA #34). Le testeur le dit précisément : le résultat de
+#: l'intégrale était correct, et c'est en redemandant un autre format que
+#: l'agent a déraillé. La cause est structurelle : sans la réponse précédente
+#: sous les yeux, le modèle la **reconstruit de mémoire** au lieu de la
+#: reformater — et une reconstruction, c'est un nouveau calcul, donc un nouveau
+#: risque d'erreur. On lui redonne donc le texte à reformater, et on lui
+#: interdit d'y toucher au fond.
+CONSIGNE_REFORMATAGE = (
+    "ATTENTION : l'élève ne demande pas une nouvelle réponse, il demande la "
+    "MÊME dans une autre présentation. Reprends le texte ci-dessus et "
+    "contente-toi de le remettre en forme : aucun résultat ne doit changer, "
+    "aucun calcul ne doit être refait, aucune étape ne doit être ajoutée ni "
+    "supprimée. Si un point te semble faux, ne le corrige pas en silence : "
+    "dis-le explicitement à l'élève. Si la présentation demandée ne convient "
+    "pas au contenu (un tableau pour une démonstration, par exemple), dis-le et "
+    "propose la forme la plus lisible."
 )
 
 
@@ -320,6 +385,58 @@ def consigne_complexe(analyse: dict) -> str:
     return "\n".join(lignes)
 
 
+def consigne_suite_recurrente(suite: dict) -> str:
+    """Consigne d'étude d'une suite récurrente, adossée à SymPy (cas QA #33).
+
+    Le testeur ne signalait pas d'erreur mais un **risque** : une démonstration
+    par récurrence est longue, et chacune de ses étapes est une occasion de se
+    tromper avec assurance. On ne peut pas vérifier le raisonnement du modèle ;
+    on peut lui donner les faits sur lesquels il doit tomber, et lui interdire
+    de les recalculer. Une démonstration qui conclurait autrement se
+    contredirait alors visiblement, sous les yeux de l'élève.
+
+    Les champs vides ne sont pas listés : hors récurrence affine, la monotonie
+    et la limite ne sont pas démontrées, et le prompt ne doit donc rien en dire
+    (règle non-négociable n°2).
+    """
+    lignes = [
+        "L'élève étudie une suite définie par récurrence. Les éléments suivants "
+        "sont établis par l'outil de calcul symbolique — ils sont vérifiés : "
+        "reprends-les tels quels, ne les recalcule pas.",
+        f"- Terme initial : {suite['terme_initial']}",
+        f"- Relation de récurrence : {suite['relation']}",
+        f"- Premiers termes : {', '.join(suite['premiers_termes'])}",
+    ]
+    if suite.get("forme_close"):
+        lignes.append(f"- Forme close (démontrée) : u(n) = {suite['forme_close']}")
+    if suite.get("monotonie"):
+        lignes.append(f"- Sens de variation : la suite est {suite['monotonie']}")
+    if suite.get("borne"):
+        lignes.append(f"- Borne : la suite est {suite['borne']}")
+    if suite.get("limite"):
+        lignes.append(f"- Limite : {suite['limite']}")
+
+    non_etablis = [
+        nom
+        for nom, cle in (("la monotonie", "monotonie"), ("la limite", "limite"))
+        if not suite.get(cle)
+    ]
+    if non_etablis:
+        lignes.append(
+            "ATTENTION : " + " et ".join(non_etablis) + " n'a PAS pu être établie "
+            "par l'outil. Ne l'affirme pas : explique la méthode qui permettrait "
+            "de l'obtenir et laisse l'élève la conduire."
+        )
+
+    lignes.append(
+        "Rédige la démonstration dans l'ordre attendu au Baccalauréat : "
+        "initialisation, hérédité, conclusion pour la récurrence ; puis le sens "
+        "de variation, la borne, et enfin la limite. Appuie chaque étape sur les "
+        "valeurs ci-dessus."
+    )
+    return "\n".join(lignes)
+
+
 def consigne_correction_affirmation(operation: str, sujet: str, affirme: str, attendu: str) -> str:
     """Consigne de correction d'une affirmation fausse de l'élève (cas QA #15).
 
@@ -374,8 +491,11 @@ def assemble_prompt(
     correction_affirmation: str | None = None,
     varier_approche: bool = False,
     simplifier: bool = False,
+    reformatage: str | None = None,
     etude_fonction: str | None = None,
     complexe: str | None = None,
+    suite_recurrente: str | None = None,
+    memoire: MemoireSession | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` assemblés.
 
@@ -399,6 +519,10 @@ def assemble_prompt(
     parts: list[str] = []
     if scope:
         parts.append(f"Cadre curriculaire : {scope}.")
+    # Avant l'historique : la mémoire porte ce qui est sorti de la fenêtre, elle
+    # doit donc être lue avant les tours qui y restent.
+    if memoire is not None and (bloc := build_memoire_block(memoire)):
+        parts.append(bloc)
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
@@ -411,6 +535,10 @@ def assemble_prompt(
     # Juste après le bloc d'extraits, dont elle explique le vide.
     if not retrieved:
         parts.append(CONSIGNE_HORS_PERIMETRE)
+        # Et, comme en mode cours, on rend la main plutôt que d'enchaîner de
+        # force (cas #40). Le tour qui doit avouer une lacune est exactement
+        # celui où l'élève a besoin de choisir la suite.
+        parts.append(CONSIGNE_LAISSER_LE_CHOIX)
     if tool_result:
         parts.append(f"Résultat vérifié par l'outil de calcul : {tool_result}")
     if calcul_non_verifie:
@@ -427,12 +555,19 @@ def assemble_prompt(
     # simplement »). Elles s'additionnent au lieu de se remplacer.
     if simplifier:
         parts.append(CONSIGNE_SIMPLIFICATION)
+    # La réponse à reformater est donnée AVANT sa consigne : le modèle doit voir
+    # le texte, puis ce qu'on lui demande d'en faire.
+    if reformatage:
+        parts.append(f"Ta réponse précédente, à remettre en forme :\n{reformatage}")
+        parts.append(CONSIGNE_REFORMATAGE)
     # Placée juste avant la consigne d'indice, qu'elle précise : l'étude est le
     # livrable, la graduation ne règle plus que le ton (cas QA #9).
     if etude_fonction:
         parts.append(etude_fonction)
     if complexe:
         parts.append(complexe)
+    if suite_recurrente:
+        parts.append(suite_recurrente)
     parts.append(
         f"Niveau d'indice : {hint.level} ({hint.label}).\nConsigne : {hint.instruction}"
     )
@@ -538,6 +673,7 @@ def assemble_meta_prompt(
     *,
     demande_ouverte: bool = False,
     utilite_discipline: bool = False,
+    memoire: MemoireSession | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` pour un tour **méta**.
 
@@ -572,6 +708,8 @@ def assemble_meta_prompt(
             f"Cadre déclaré par l'élève (ne rien supposer au-delà) : {declare}."
         )
 
+    if memoire is not None and (bloc := build_memoire_block(memoire)):
+        parts.append(bloc)
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
@@ -652,6 +790,7 @@ def assemble_course_prompt(
     conversation_history: list[dict[str, str]] | None = None,
     *,
     has_course: bool = True,
+    memoire: MemoireSession | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` pour le **mode cours**.
 
@@ -679,6 +818,8 @@ def assemble_course_prompt(
         parts.append(_uncovered_topic_block(position))
     parts.append("Plan du cours (▶ = section à traiter maintenant) :\n" + _build_plan_block(position))
 
+    if memoire is not None and (bloc := build_memoire_block(memoire)):
+        parts.append(bloc)
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
@@ -774,6 +915,8 @@ def assemble_exercise_prompt(
     retrieved: list[ScoredChunk],
     curriculum_context: dict | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    *,
+    memoire: MemoireSession | None = None,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` pour un tour **d'entraînement**.
 
@@ -798,6 +941,10 @@ def assemble_exercise_prompt(
     if not entrainement.get("chapitre_confirmed"):
         parts.append(_bloc_exercice_hors_perimetre(entrainement))
 
+    # Sert notamment à ne pas reproposer l'énoncé déjà servi (« un autre
+    # exercice » n'a de sens que si l'on sait lequel a déjà été donné).
+    if memoire is not None and (bloc := build_memoire_block(memoire)):
+        parts.append(bloc)
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")

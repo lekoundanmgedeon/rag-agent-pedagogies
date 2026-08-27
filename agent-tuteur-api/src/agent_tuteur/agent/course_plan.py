@@ -240,6 +240,12 @@ _TOPIC_STOPWORDS = frozenset(
         # modèle devenait « Exercice suites numeriques », et le recoupement avec
         # le titre d'un chapitre partait avec un terme parasite.
         "exercice exercices exo exos entrainement entrainements propose proposer "
+        # Mots interrogatifs et de liaison : ils portent la question, jamais le
+        # sujet. Sans eux ici, « pourquoi ? » comptait « pourquoi » comme terme
+        # de sujet — et le contrôle de couverture des tours conceptuels
+        # (cas #29/#30) déclarait alors hors périmètre une simple relance.
+        "pourquoi comment quand ou où quel quelle quels quelles combien "
+        "signifie signification difference entre vient provient sert servent "
         "est quoi ce que qui les le la des du de un une aux au sur pour dans avec "
         "par en et ou mais plus tout tous toute toutes mon ma mes ton ta tes stp "
         "svp merci peux peut tu je il elle on nous vous ils elles"
@@ -341,6 +347,44 @@ def resolve_chapitre(question: str, candidates: Iterable[str | None]) -> Chapitr
                 return ChapitreBinding(candidate, True, tuple(unique))
 
     return ChapitreBinding(None, False, tuple(unique))
+
+
+#: Longueur du préfixe comparé quand deux termes ne sont pas identiques après
+#: dépouillement. « dériver » et « Dérivation » désignent le même chapitre sans
+#: partager de forme fléchie : sans ce rapprochement morphologique, la fixture
+#: positive #54 (« Comment dériver un quotient de fonctions ? ») serait déclarée
+#: hors périmètre alors que le chapitre « Dérivation » est indexé. Cinq
+#: caractères, mesuré : assez pour lier deriv/dérivation et integr/intégrale,
+#: trop court pour rapprocher des chapitres réellement distincts.
+_PREFIXE_MORPHOLOGIQUE = 5
+
+
+def _memes_racines(terme: str, autre: str) -> bool:
+    if terme == autre:
+        return True
+    court = min(len(terme), len(autre))
+    return court >= _PREFIXE_MORPHOLOGIQUE and terme[:court][:_PREFIXE_MORPHOLOGIQUE] == (
+        autre[:_PREFIXE_MORPHOLOGIQUE]
+    )
+
+
+def notion_couverte_par_le_catalogue(question: str, catalogue: Iterable[str]) -> bool:
+    """Vrai si la notion nommée par l'élève recoupe un chapitre indexé.
+
+    Réservé aux **tours conceptuels** (cf. ``intent.est_un_tour_conceptuel``) :
+    c'est la restriction que la décision D7 exigeait avant d'étendre la liaison
+    par titre hors du mode cours.
+
+    Le défaut de sûreté est « couverte » : sans terme de sujet exploitable, on
+    ne déclare rien. Mieux vaut servir des extraits imparfaits — le
+    comportement d'avant — que d'annoncer à tort à un élève que son chapitre
+    n'existe pas.
+    """
+    termes = [_stem(t) for t in topic_terms(question)]
+    if not termes:
+        return True
+    vocabulaire = {_stem(t) for titre in catalogue for t in tokenize(titre or "")}
+    return any(_memes_racines(terme, mot) for terme in termes for mot in vocabulaire)
 
 
 @dataclass

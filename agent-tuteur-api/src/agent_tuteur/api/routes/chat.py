@@ -121,7 +121,14 @@ async def _chat_stream_inner(
             conversation = await conv_repo.get(conversation_id, tenant_id)
         if conversation is not None:
             past_messages = await msg_repo.list_for_conversation(conversation.id, tenant_id)
-            history = [{"role": m.role, "content": m.content} for m in past_messages]
+            # La trace accompagne chaque message du tuteur : c'est elle qui
+            # porte le chapitre enseigné et l'exercice servi, donc la matière de
+            # la mémoire de session (cf. ``agent/memoire_session.py``). Le
+            # prompt, lui, n'en lit que ``role`` et ``content``.
+            history = [
+                {"role": m.role, "content": m.content, "trace": m.trace or {}}
+                for m in past_messages
+            ]
             course_state = _reconstruct_course_state(past_messages)
 
         session_state = SessionState(student_id=student_id, tenant_id=tenant_id)

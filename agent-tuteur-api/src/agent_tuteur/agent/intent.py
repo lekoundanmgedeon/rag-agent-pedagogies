@@ -420,6 +420,135 @@ _QUESTION_SUR_LA_DISCIPLINE = re.compile(
 )
 
 
+#: Demande de **récapitulatif de la session en cours** (cas QA #25). L'élève ne
+#: demande pas une notion : il demande ce qui vient de se passer entre lui et
+#: l'agent. La réponse est écrite par le code, comme l'inventaire des chapitres
+#: (#26) et pour la même raison — un récapitulatif doit être exact, et rien
+#: n'oblige à le faire reformuler à chaque fois.
+_DEMANDE_RESUME_SESSION = re.compile(
+    r"(?:"
+    # « résumé » (nom) autant que « résume » (verbe) : c'est le même geste, et
+    # le nom qui suit — session, conversation, questions — fait déjà le tri
+    # d'avec « résume ce chapitre », qui reste une demande de contenu.
+    r"\b(?:r[ée]sum[ée]s?|r[ée]capitule|r[ée]cap|bilan|synth[èe]se|fais\s+le\s+point)\b"
+    r"[^?.!]{0,40}?\b(?:session|conversation|[ée]change|discussion|tour|questions?|"
+    r"ce\s+qu[e']\s*on\s+a\s+(?:fait|vu|travaill[ée])|ce\s+que\s+j['’e]\s*ai\s+"
+    r"(?:demand[ée]|pos[ée]|vu|fait))\b"
+    r"|\b(?:qu[e']\s*est[\s-]?ce\s+qu[e']\s*on\s+a|ce\s+qu[e']\s*on\s+a)\s+"
+    r"(?:fait|vu|travaill[ée])\s+(?:aujourd['’]hui|ensemble|dans\s+cette\s+session)\b"
+    r"|\b(?:rappelle|redis)[\s-]?(?:moi)?\s+(?:toutes\s+)?(?:les|mes)\s+questions\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def demande_un_resume_de_session(question: str) -> bool:
+    """Vrai si l'élève demande le récapitulatif de la session en cours."""
+    return bool(_DEMANDE_RESUME_SESSION.search(question))
+
+
+#: L'élève demande à **envoyer un fichier** — capture d'écran, photo, PDF (cas
+#: QA #24). L'agent ne sait pas lire d'image ; le dire franchement vaut mieux
+#: que la réponse hors-sujet sur LaTeX qu'a reçue le testeur.
+_ENVOI_DE_FICHIER = re.compile(
+    r"(?:"
+    # Toutes les personnes du verbe, pas seulement l'infinitif : l'élève écrit
+    # « je te transmets », « je t'envoie », aussi souvent que « puis-je envoyer ».
+    r"\b(?:upload(?:er|e|es)?|t[ée]l[ée]charge(?:r|s)?|t[ée]l[ée]verse(?:r|s)?|"
+    r"envoy(?:er|é)|envoie[sz]?|transmet(?:s|tre|tez)|partage(?:r|s)?|"
+    r"joins|joindre|mets?|colle[rs]?|d[ée]pose(?:r|s)?|scanne(?:r|s)?|"
+    r"photographie[rs]?)\b"
+    r"[^?.!]{0,40}?"
+    r"\b(?:capture|photo|image|screenshot|scan|pdf|fichier|document|dessin|sch[ée]ma)\b"
+    r"|\b(?:capture\s+d['’]\s*[ée]cran|photo\s+de\s+mon\s+(?:exercice|[ée]nonc[ée]|cahier))\b"
+    r"|\btu\s+(?:peux|sais)\s+(?:lire|voir|analyser)\s+(?:une|des|ma|mes|cette)\s+"
+    r"(?:image|photo|capture|images|photos)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+#: Verbes impératifs de résolution : leur présence signe un **énoncé**, où
+#: l'élève apporte son propre matériel. Un énoncé ne nomme pas son chapitre
+#: (« z = 3 + 4i : partie réelle, module ? » ne contient pas « complexes »),
+#: donc aucun test de couverture ne doit s'y appliquer — c'est la voie que la
+#: décision D7 avait explicitement fermée, et elle reste fermée.
+_RESOLUTION_DEMANDEE = re.compile(
+    r"\b(?:calcule[rz]?|r[ée]sous|r[ée]soudre|resous|factorise[rz]?|d[ée]veloppe[rz]?|"
+    r"simplifie[rz]?|d[ée]montre[rz]?|d[ée]termine[rz]?|corrige[rz]?|v[ée]rifie[rz]?|"
+    r"trouve[rz]?|montre[rz]?\s+que|[ée]tudie[rz]?)\b",
+    re.IGNORECASE,
+)
+
+#: Tournures par lesquelles on interroge une **notion** plutôt qu'un énoncé :
+#: on demande ce qu'elle est, d'où elle vient, ce qui la distingue d'une autre.
+_TOUR_CONCEPTUEL = re.compile(
+    r"(?:"
+    r"\bpourquoi\b"
+    r"|\bd['’]o[ùu]\s+(?:[çc]a\s+)?(?:vient|sort|provient)\b"
+    r"|\bc['’]est\s+quoi\b"
+    r"|\bqu['’]est[\s-]?ce\s+que?\b"
+    r"|\bque\s+signifie\b"
+    r"|\bd[ée]finition\s+d[e']\b"
+    r"|\bdiff[ée]rence\s+entre\b"
+    r"|\bcomment\s+(?:[çc]a\s+)?(?:marche|fonctionne)\b"
+    r"|\b(?:donne|dis)[\s-]?(?:moi|nous)?\s+(?:les?|la|des)\s+\w+"
+    r"|\bcomment\s+\w+er\b"
+    r"|\bje\s+(?:ne\s+)?comprends?\s+(?:pas|rien)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def est_un_tour_conceptuel(question: str) -> bool:
+    """Vrai si l'élève interroge une **notion**, et non un énoncé qu'il apporte.
+
+    C'est le sous-classement d'intention que la décision D7 appelait de ses
+    vœux (« une liaison par titre restreinte aux tours conceptuels »). La borne
+    décisive est l'absence de verbe de résolution : dès que l'élève dit
+    « calcule », « résous » ou « démontre », il travaille sur SON matériel, que
+    le corpus n'a aucune raison de nommer — et lui déclarer un hors-périmètre
+    ferait échouer le cas #6 comme la fixture positive #55.
+    """
+    if _RESOLUTION_DEMANDEE.search(question):
+        return False
+    return bool(_TOUR_CONCEPTUEL.search(question))
+
+
+def demande_un_envoi_de_fichier(question: str) -> bool:
+    """Vrai si l'élève demande à envoyer une image, une photo ou un fichier."""
+    return bool(_ENVOI_DE_FICHIER.search(question))
+
+
+#: Demande de **remise en forme** d'une réponse déjà donnée (cas QA #34) : même
+#: contenu, autre présentation. À distinguer de la demande de simplification
+#: (#39), qui porte sur le registre et autorise à repartir de zéro : ici, tout
+#: écart de contenu est une régression, puisque la réponse précédente était juste.
+_DEMANDE_REFORMATAGE = re.compile(
+    r"(?:"
+    r"\b(?:mets?|remets?|pr[ée]sente|r[ée][ée]cris|r[ée]dige|affiche|montre)\b"
+    r"[^?.!]{0,30}?\b(?:sous\s+forme|en\s+forme|au\s+format|en\s+tableau|en\s+liste|"
+    r"en\s+puces|en\s+[ée]tapes|en\s+colonnes)\b"
+    r"|\b(?:sous|en)\s+forme\s+(?:de|d['’])\s*(?:tableau|liste|puces|fiche|sch[ée]ma|"
+    r"[ée]tapes|r[ée]sum[ée])\b"
+    r"|\b(?:en|sous)\s+(?:un\s+)?tableau\b"
+    r"|\bm[êe]me\s+(?:r[ée]ponse|chose)\b[^?.!]{0,20}?\b(?:autre|autrement|format)\b"
+    # « plus court » exige un verbe de rédaction ou la position initiale : sans
+    # cette borne, « le plus court chemin » — une expression de géométrie —
+    # aurait basculé un tour de contenu en remise en forme.
+    r"|\b(?:fais|r[ée]ponds|dis|[ée]cris|r[ée]dige)\b[^?.!]{0,15}?"
+    r"\bplus\s+(?:court|concis|bref|synth[ée]tique)\b"
+    r"|^\s*(?:plus\s+(?:court|concis|bref|synth[ée]tique)|c['’]est\s+trop\s+long)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def demande_un_reformatage(question: str) -> bool:
+    """Vrai si l'élève demande la même réponse dans une autre présentation."""
+    return bool(_DEMANDE_REFORMATAGE.search(question))
+
+
 def est_une_question_sur_la_discipline(question: str) -> bool:
     """Vrai si l'élève interroge l'utilité des mathématiques en général."""
     return bool(_QUESTION_SUR_LA_DISCIPLINE.search(question))
@@ -567,10 +696,20 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
     # chapitres as-tu ? » n'est pas demander un cours sur les chapitres. La
     # demande d'inventaire est distinguée ici parce que le nœud méta lui sert
     # une réponse déterministe (cas QA #26).
+    if demande_un_envoi_de_fichier(question):
+        return IntentDecision(Intent.META, "question sur l'envoi de fichiers", None)
+    if demande_un_resume_de_session(question):
+        return IntentDecision(Intent.META, "demande de récapitulatif de session", None)
     if demande_le_catalogue(question):
         return IntentDecision(Intent.META, "demande d'inventaire des chapitres", None)
     if _META_TOUJOURS.search(question):
         return IntentDecision(Intent.META, "question sur le service (programme, couverture)", None)
+
+    # Remise en forme d'une réponse déjà donnée (cas #34). Contrôlée avant le
+    # démarrage de cours, sinon « présente-le en liste » ouvrait un chapitre :
+    # l'élève ne demande pas un nouveau contenu, il demande le même autrement.
+    if demande_un_reformatage(question):
+        return IntentDecision(Intent.EXERCICE, "remise en forme de la réponse précédente", None)
 
     # Demande d'un énoncé à traiter — **hors cours seulement**. En plein cours,
     # « donne-moi un exercice » désigne la section « Exercices » du chapitre en

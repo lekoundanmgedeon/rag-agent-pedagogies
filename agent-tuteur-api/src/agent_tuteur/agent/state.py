@@ -32,7 +32,10 @@ class AgentState(TypedDict, total=False):
     trace_id: str
     #: Tours précédents de la conversation ([{"role": "user"|"assistant", "content": str}, ...]),
     #: chargés depuis la persistance par l'appelant (ex. chat.py) — vide pour un 1er tour.
-    conversation_history: list[dict[str, str]]
+    #: Les entrées « assistant » portent en plus leur ``trace``, quand
+    #: l'appelant peut la fournir : c'est elle qui dit quel chapitre a été
+    #: enseigné et quel exercice a été servi (cf. ``memoire_session``).
+    conversation_history: list[dict[str, Any]]
     #: État du cours reconstruit du dernier tour ({"chapitre", "section_index"}),
     #: ou None si le tour précédent n'était pas en mode cours. Alimente detect_intent
     #: (continuité de session) puis course_planner (progression).
@@ -54,6 +57,13 @@ class AgentState(TypedDict, total=False):
     #: est posée, ``compose_response`` est contourné et ``stream()`` la restitue
     #: telle quelle, sans jamais solliciter le LLM.
     reponse_directe: str | None
+
+    #: Mémoire de la conversation en cours (nœud ``memoire_session``) : prénom
+    #: donné par l'élève, chapitres déjà travaillés, dernier exercice servi.
+    #: Construite par le CODE à partir des messages et des traces déjà
+    #: persistés — jamais résumée par le modèle, donc jamais inventée
+    #: (règle non-négociable n°3).
+    memoire: Any
 
     # --- Intention (nœud detect_intent) ---
     intent: str  # "exercice" | "cours" | "quiz" | "meta" | "salutation" | "entrainement"
@@ -108,6 +118,11 @@ class AgentState(TypedDict, total=False):
     etude_fonction: dict | None
     #: Éléments vérifiés d'un nombre complexe défini par l'énoncé (cas QA #6).
     complexe: dict | None
+    #: Faits établis sur une suite récurrente (premiers termes, forme close,
+    #: monotonie, borne, limite), ou ``None`` (cas QA #33). Les champs non
+    #: démontrés y sont vides plutôt qu'approximés : le prompt n'affirme alors
+    #: rien à leur sujet (règle non-négociable n°2).
+    suite_recurrente: dict | None
     tool_used: str | None
     tool_result: str | None
     #: Le résultat seul (sans « expression → »), pour le contrôle de fidélité

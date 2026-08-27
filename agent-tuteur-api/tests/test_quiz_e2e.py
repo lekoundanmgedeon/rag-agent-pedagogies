@@ -98,6 +98,7 @@ async def test_le_quiz_emprunte_sa_propre_branche(agent):
     assert noeuds == [
         "triage_securite",  # disjoncteur de détresse en tête de graphe (cas QA #7)
         "profil_eleve",     # série résolue avant la recherche (cas QA #8)
+        "memoire_session",  # mémoire de la conversation en cours
         "detect_intent",
         "retrieve_context",
         "quiz_planner",

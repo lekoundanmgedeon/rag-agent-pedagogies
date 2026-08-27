@@ -45,6 +45,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent_tuteur.agent.course_plan import (
     CLE_SECTION_EXERCICES,
+    notion_couverte_par_le_catalogue,
     CoursePosition,
     Section,
     advance,
@@ -71,6 +72,10 @@ from agent_tuteur.agent.intent import (
     Navigation,
     classify_intent,
     demande_le_catalogue,
+    demande_un_envoi_de_fichier,
+    demande_un_reformatage,
+    demande_un_resume_de_session,
+    est_un_tour_conceptuel,
     est_une_demande_ouverte,
     est_une_question_sur_la_discipline,
 )
@@ -89,6 +94,7 @@ from agent_tuteur.agent.prompt import (
     consigne_complexe,
     consigne_correction_affirmation,
     consigne_etude_de_fonction,
+    consigne_suite_recurrente,
 )
 from agent_tuteur.agent.quiz import (
     Quiz,
@@ -96,7 +102,12 @@ from agent_tuteur.agent.quiz import (
     construire_prompt_quiz,
     contient_du_factice,
 )
-from agent_tuteur.agent.orientation import reponse_catalogue
+from agent_tuteur.agent.memoire_session import MemoireSession, construire as construire_memoire
+from agent_tuteur.agent.orientation import (
+    reponse_catalogue,
+    reponse_envoi_de_fichier,
+    reponse_resume_session,
+)
 from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
 from agent_tuteur.agent.soutien import ouverture_pour
 from agent_tuteur.agent.state import AgentState
@@ -107,6 +118,7 @@ from agent_tuteur.textutil import strip_accents
 from agent_tuteur.tools.affirmation import verifier_affirmation
 from agent_tuteur.tools.complexe import analyser_la_demande as analyser_complexe_demande
 from agent_tuteur.tools.etude_fonction import etudier_la_demande
+from agent_tuteur.tools.suite import analyser_la_demande as analyser_suite_recurrente
 from agent_tuteur.tools.calculator import (
     CalculationError,
     compute,
@@ -403,6 +415,29 @@ class TutorAgent:
             }],
         }
 
+    @_timed_node("memoire_session")
+    async def _n_memoire(self, state: AgentState) -> dict:
+        """Reconstruit ce que l'agent sait déjà de CETTE conversation.
+
+        Placé avant l'aiguillage : toutes les branches en ont besoin, et pour la
+        même raison — le fil de discussion n'appartient pas à une posture. Le
+        nœud ne coûte rien (aucun appel réseau, aucun modèle) : il relit les
+        messages déjà chargés par l'appelant et les traces des tours passés.
+        """
+        memoire = construire_memoire(state.get("conversation_history"))
+        return {
+            "memoire": memoire,
+            "node_trace": [
+                {
+                    "node": "memoire_session",
+                    "prenom_connu": memoire.prenom is not None,
+                    "chapitres": list(memoire.chapitres),
+                    "tours": memoire.tours,
+                    "exercice_en_cours": memoire.dernier_exercice is not None,
+                }
+            ],
+        }
+
     @_timed_node("detect_intent")
     async def _n_detect_intent(self, state: AgentState) -> dict:
         in_course = bool(state.get("course_state"))
@@ -488,6 +523,29 @@ class TutorAgent:
             }
 
         retrieved = self._retriever.retrieve(query, context, top_k=self._top_k)
+
+        # Contrôle de couverture des tours **conceptuels** (cas QA #29 et #30).
+        # C'est l'angle mort nommé par la décision D7 : le consensus de chapitre
+        # mesure l'accord du top-k, il est donc aveugle à un top-k unanime sur le
+        # mauvais chapitre — « les identités remarquables » remontait cinq
+        # extraits de calcul intégral, et l'agent y dérivait faute du moindre
+        # signal disant que la notion n'est pas couverte.
+        #
+        # La restriction aux tours conceptuels est ce qui rend la vérification
+        # sûre : dès que l'élève apporte son propre énoncé (« calcule… »,
+        # « z = 3 + 4i… »), aucun test de titre ne s'applique — c'est ce que D7
+        # avait mesuré et interdit, et qui reste interdit.
+        question = state["question"]
+        notion_hors_catalogue = bool(
+            retrieved
+            and est_un_tour_conceptuel(question)
+            and not notion_couverte_par_le_catalogue(question, self._retriever.catalogue(context))
+        )
+        if notion_hors_catalogue:
+            # Décision D6 : aucun extrait servi, aucune source affichée — puis le
+            # prompt avoue la lacune et aide quand même avec ce qu'il sait.
+            retrieved = []
+
         return {
             "retrieved": retrieved,
             # Le corpus n'a rien à dire sur cette question : soit aucun extrait
@@ -500,6 +558,11 @@ class TutorAgent:
                 "node": "retrieve_context",
                 "n_sources": len(retrieved),
                 "hors_perimetre": not retrieved,
+                # Distingue les deux façons de n'avoir rien à servir : la
+                # recherche n'a rien remonté, ou la notion demandée n'est dans
+                # aucun chapitre indexé. Le second cas est un verdict, pas un
+                # silence, et la trace doit pouvoir le dire.
+                "notion_hors_catalogue": notion_hors_catalogue,
             }],
         }
 
@@ -603,6 +666,24 @@ class TutorAgent:
         # l'élève : établir une étude de fonction complète. Le corpus ne peut
         # pas la fournir (aucune leçon indexée sur l'étude des fonctions), et la
         # laisser au modèle violerait la règle n°2 — elle est donc calculée.
+        # Quatrième usage du calcul symbolique dans ce nœud : établir les faits
+        # d'une suite récurrente (cas QA #33). Le testeur ne signalait pas
+        # d'erreur mais un risque — une démonstration longue peut en contenir
+        # une, invisible. On ne vérifie pas le raisonnement ; on fixe les
+        # valeurs sur lesquelles il doit tomber.
+        suite = analyser_suite_recurrente(question)
+        suite_recurrente = None
+        if suite is not None and suite.est_exploitable:
+            suite_recurrente = {
+                "terme_initial": suite.terme_initial,
+                "relation": suite.relation,
+                "premiers_termes": list(suite.premiers_termes),
+                "monotonie": suite.monotonie,
+                "borne": suite.borne,
+                "limite": suite.limite,
+                "forme_close": suite.forme_close,
+            }
+
         etude = etudier_la_demande(question)
         etude_fonction = None
         if etude is not None:
@@ -644,8 +725,10 @@ class TutorAgent:
             "affirmation_eleve": affirmation,
             "etude_fonction": etude_fonction,
             "complexe": complexe,
+            "suite_recurrente": suite_recurrente,
             "node_trace": [
                 {"node": "route_tool", "tool_used": tool_used,
+                 "suite_recurrente": suite_recurrente is not None,
                  "calcul_non_verifie": calcul_non_verifie,
                  "etude_fonction": etude_fonction is not None,
                  "complexe": complexe is not None,
@@ -683,6 +766,7 @@ class TutorAgent:
         )
         etude = state.get("etude_fonction")
         complexe = state.get("complexe")
+        suite = state.get("suite_recurrente")
         # Une étude de fonction est un livrable, pas un indice : la même
         # contradiction que pour les cas #11/#13 s'y appliquait, en plus large.
         if etude:
@@ -699,6 +783,15 @@ class TutorAgent:
             )
         varier_approche = bool(state.get("blocage_declare"))
         simplifier = bool(state.get("demande_simplification"))
+        # Remise en forme (cas #34) : la matière est la réponse précédente, tenue
+        # par la mémoire de session. Sans elle, le modèle reconstruirait ce
+        # qu'il croit avoir dit — et c'est cette reconstruction qui dérivait.
+        memoire = state.get("memoire") or MemoireSession()
+        reformatage = (
+            memoire.derniere_reponse
+            if demande_un_reformatage(question) and memoire.derniere_reponse
+            else None
+        )
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
@@ -706,8 +799,11 @@ class TutorAgent:
             correction_affirmation=correction,
             varier_approche=varier_approche,
             simplifier=simplifier,
+            reformatage=reformatage,
             etude_fonction=consigne_etude_de_fonction(etude) if etude else None,
             complexe=consigne_complexe(complexe) if complexe else None,
+            suite_recurrente=consigne_suite_recurrente(suite) if suite else None,
+            memoire=state.get("memoire"),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -725,6 +821,7 @@ class TutorAgent:
             # deux signaux appellent des consignes différentes, et la trace doit
             # dire lequel a joué (cas #20 contre cas #39).
             "demande_simplification": simplifier,
+            "reformatage": reformatage is not None,
             # Exposé dans la trace pour que le signal du cas #19 soit lisible
             # là où il sera exploité (routage ou modulation de ton, D5 point 1)
             # plutôt que noyé dans le score agrégé.
@@ -735,6 +832,7 @@ class TutorAgent:
             "soutien": state.get("soutien"),
             "etude_fonction": etude,
             "complexe": complexe,
+            "suite_recurrente": suite,
             "tool_used": state.get("tool_used"),
             "tool_result": state.get("tool_result"),
             "calcul_non_verifie": bool(state.get("calcul_non_verifie")),
@@ -771,13 +869,16 @@ class TutorAgent:
         # Une liste de chapitres doit être exacte et **identique** d'un tour à
         # l'autre ; la faire reformuler à chaque fois était la cause directe des
         # « réponses de qualité variable » rapportées par la testeuse.
-        inventaire = demande_le_catalogue(state["question"])
+        fichier = demande_un_envoi_de_fichier(state["question"])
+        recapitulatif = demande_un_resume_de_session(state["question"]) and not fichier
+        inventaire = demande_le_catalogue(state["question"]) and not recapitulatif
         ouverte = est_une_demande_ouverte(state["question"])
         utilite = est_une_question_sur_la_discipline(state["question"])
         system, user_prompt = assemble_meta_prompt(
             state["question"], catalogue, ctx, state.get("conversation_history", []),
             demande_ouverte=ouverte,
             utilite_discipline=utilite,
+            memoire=state.get("memoire"),
         )
         user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
         trace = {
@@ -787,7 +888,11 @@ class TutorAgent:
             "hint_level": None,
             "hint_label": "Orientation",
             "hint_reason": (
-                "demande d'inventaire des chapitres"
+                "question sur l'envoi de fichiers"
+                if fichier
+                else "demande de récapitulatif de session"
+                if recapitulatif
+                else "demande d'inventaire des chapitres"
                 if inventaire
                 else "demande d'aide sans objet nommé"
                 if ouverte
@@ -812,12 +917,28 @@ class TutorAgent:
             # ``stream()`` la restituent alors telle quelle, sans appeler le
             # modèle. Le prompt reste assemblé et tracé — il documente ce que le
             # tour aurait envoyé, et le rejeu QA continue de l'assérer.
-            "reponse_directe": reponse_catalogue(catalogue) if inventaire else None,
+            # Deux réponses écrites par le code sur cette branche : l'inventaire
+            # des chapitres (#26) et le récapitulatif de session (#25). Les deux
+            # se jugent à leur exactitude, jamais à leur tournure.
+            "reponse_directe": (
+                reponse_envoi_de_fichier()
+                if fichier
+                else reponse_resume_session(
+                    state.get("memoire") or MemoireSession(),
+                    state.get("conversation_history"),
+                )
+                if recapitulatif
+                else reponse_catalogue(catalogue)
+                if inventaire
+                else None
+            ),
             "trace": trace,
             "node_trace": [
                 {
                     "node": "guardrail_meta",
                     "n_chapitres": len(catalogue),
+                    "fichier": fichier,
+                    "recapitulatif": recapitulatif,
                     "inventaire": inventaire,
                     "demande_ouverte": ouverte,
                     "utilite_discipline": utilite,
@@ -967,6 +1088,7 @@ class TutorAgent:
         system, user_prompt = assemble_course_prompt(
             question, position, retrieved, ctx, state.get("conversation_history", []),
             has_course=state.get("has_course", True),
+            memoire=state.get("memoire"),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -1078,7 +1200,8 @@ class TutorAgent:
         moderation = moderate(question)
 
         system, user_prompt = assemble_exercise_prompt(
-            question, entrainement, retrieved, ctx, state.get("conversation_history", [])
+            question, entrainement, retrieved, ctx, state.get("conversation_history", []),
+            memoire=state.get("memoire"),
         )
         if moderation.flagged:
             user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
@@ -1336,6 +1459,7 @@ class TutorAgent:
         g.add_node("triage_securite", self._n_triage_securite)
         g.add_node("reponse_securite", self._n_reponse_securite)
         g.add_node("profil_eleve", self._n_profil_eleve)
+        g.add_node("memoire_session", self._n_memoire)
         g.add_node("detect_intent", self._n_detect_intent)
         # Ouverture de soutien : après l'intention, avant l'aiguillage — le
         # découragement est un état de l'élève, pas une propriété du sujet, et
@@ -1369,7 +1493,8 @@ class TutorAgent:
             _route_par_securite,
             {"detresse": "reponse_securite", "normal": "profil_eleve"},
         )
-        g.add_edge("profil_eleve", "detect_intent")
+        g.add_edge("profil_eleve", "memoire_session")
+        g.add_edge("memoire_session", "detect_intent")
         g.add_edge("reponse_securite", END)
         # Une question méta est détournée AVANT la recherche : c'est le
         # retrieval lui-même qui produisait la réponse hors-sujet (cas #2/#3/#4).

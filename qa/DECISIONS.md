@@ -438,7 +438,48 @@ ricochet.
 
 ## D7 — L'angle mort du consensus de chapitre : un top-k unanime mais faux
 
-**Statut : Ouverte — ouverte par la mesure du 2026-08-16, pas par une préférence**
+**Statut : ACTÉE le 2026-08-27 — investir, sur l'option (2)**
+
+**Décision : investir dans une liaison par titre restreinte aux tours
+conceptuels.** Prise sur instruction du porteur du projet (« résous tous les
+autres cas Moyen »), après que les cas #29 et #30 ont été bloqués deux sprints
+durant faute de cet arbitrage.
+
+**Ce que la décision a coûté à concevoir**, et qui répond à la réserve inscrite
+ci-dessous (« un sous-classement d'intention à concevoir et à mesurer ») :
+
+- `intent.est_un_tour_conceptuel` sépare la question *sur une notion* de
+  l'énoncé que l'élève apporte. La borne décisive est la présence d'un verbe de
+  résolution : « calcule », « résous », « démontre » signent un énoncé, que le
+  corpus n'a aucune raison de nommer. C'est exactement ce que cette entrée avait
+  mesuré en fermant la voie « liaison par titre » : le cas **#6** et la fixture
+  positive **#55** en dépendent, et deux tests les vérifient explicitement ;
+- `course_plan.notion_couverte_par_le_catalogue` compare les termes du sujet aux
+  **titres réellement indexés**, avec un rapprochement morphologique sur cinq
+  caractères — sans lui, « dériver » ne se liait pas à « Dérivation » et la
+  fixture positive **#54** aurait été déclarée à tort hors périmètre sur le
+  corpus de production ;
+- le défaut de sûreté est « couverte » : sans terme de sujet exploitable
+  (« pourquoi ? »), on ne déclare rien.
+
+**Ce que cela a refermé.** Les cas **#29** et **#30**, et — sans que ce fût le
+but — le cas critique **#5**, qui attendait un seuil de similarité qu'aucune
+grandeur ne permettait de poser : « la différence entre une suite arithmétique
+et une suite géométrique » se décide sur les titres, donc sans vecteurs et sans
+dépendre de l'embedder. `AGENT_PAR_CAS` est vidé en conséquence.
+
+**Ce que cela NE referme pas**, et qu'il faut savoir : l'angle mort reste entier
+pour les **énoncés** apportés par l'élève. C'est délibéré — le refermer là
+casserait un cas critique clos et un comportement validé — et cela reste le
+point à surveiller quand le corpus s'élargira.
+
+**Date :** 2026-08-27
+
+---
+
+### Contexte d'origine (avant la décision)
+
+**Statut antérieur : Ouverte — ouverte par la mesure du 2026-08-16, pas par une préférence**
 
 **Contexte.** Le cas #5 décide l'appartenance au périmètre par **consensus de
 chapitre** : on exige qu'une fraction (0,8 sous BGE-M3) du top-k se porte sur un
@@ -525,7 +566,29 @@ hors-périmètre que rien ne détecte.
 
 ## D8 — Validation humaine du cas #42 (refus hors mathématiques)
 
-**Statut : Ouverte — le correctif est livré, la validation manque**
+**Statut : ACTÉE le 2026-08-27 — VALIDÉ tel quel**
+
+**Décision : validé.** Le refus produit par le pipeline convient tel qu'il est,
+et le point (2) tombe avec lui : **pas de message déterministe**. Les fixtures
+positives #58, #59 et #61 gardent donc leurs refus rédigés par le modèle, et
+c'est ce qui était en jeu — un texte unique les aurait uniformisés.
+
+Le cas #42 passe à `corrigé` dans `qa_status.json`. La validation porte sur le
+comportement mesuré sur la stack Docker le 2026-08-27 (prompt exact, LLM réel),
+cité ci-dessous.
+
+**Date :** 2026-08-27
+**Notes :** la garantie tient à trois pièces distinctes, et aucune n'est un
+message écrit d'avance : le routage en mode cours (correctif du #35), l'échec
+assumé de la liaison de chapitre, et l'avertissement de couverture qui interdit
+d'enseigner autre chose à la place. Une attente enregistrée les vérifie à chaque
+exécution.
+
+---
+
+### Contexte de la décision
+
+**Statut antérieur : Ouverte — le correctif est livré, la validation manque**
 
 **Contexte.** Cas #42, « apprend moi à danser? » (OKERE Rafiatou) : l'agent « ne
 refuse pas clairement et tente un pivot forcé vers le calcul intégral ». Le cas
@@ -567,7 +630,32 @@ faire sans validation humaine explicite.
 
 ## D9 — Arbitrage produit : upload d'image (#24) et mémoire/export de session (#25)
 
-**Statut : Ouverte — hors du moteur pédagogique, décision produit**
+**Statut : ACTÉE EN PARTIE le 2026-08-27 — la moitié honnête est livrée ; l'OCR reste ouvert**
+
+**Décision (point 2) : livrer la moitié honnête**, sur instruction du porteur du
+projet. Elle l'est :
+
+- **#24** — l'agent dit désormais qu'il ne lit pas les images, explique quoi
+  faire à la place, et ne promet aucune fonctionnalité future (texte écrit par
+  le code : une capacité annoncée doit être exacte) ;
+- **#25** — le cas disait « pas de mémoire de session ». Mesuré, l'historique
+  était bien persisté et réinjecté, mais sur six messages seulement : au-delà,
+  tout disparaissait. Une mémoire de session déterministe a été ajoutée
+  (`agent/memoire_session.py`), le récapitulatif est écrit par le code, et
+  l'export se fait sans dépendance (Markdown + feuille de style d'impression
+  pour le PDF).
+
+**Reste ouvert (point 1) : l'upload d'image avec OCR.** Rien n'en a été fait, et
+c'est délibéré : stockage d'images d'élèves mineurs, coût de l'OCR, vie privée.
+La question reste posée telle quelle.
+
+**Date :** 2026-08-27 (partielle)
+
+---
+
+### Contexte d'origine
+
+**Statut antérieur : Ouverte — hors du moteur pédagogique, décision produit**
 
 **Contexte.** Deux cas Moyenne ne sont pas des défauts de comportement mais des
 fonctionnalités absentes, et leur action recommandée le dit (« étudier la
@@ -602,7 +690,31 @@ reproche réel des deux testeurs, qui est d'avoir reçu une réponse à côté.
 
 ## D10 — Cas #33 : fiabiliser une démonstration longue
 
-**Statut : Ouverte — demande un investissement, pas un correctif**
+**Statut : ACTÉE le 2026-08-27 — vérifier le RÉSULTAT (option 1)**
+
+**Décision : option (1), vérifier le résultat**, sur instruction du porteur du
+projet. `tools/suite.py` établit par SymPy les premiers termes exacts, la forme
+close d'une récurrence affine, la monotonie, la borne et la limite ; le prompt
+les déclare vérifiés et interdit de les recalculer.
+
+Ce que cela donne, et ce que cela ne donne pas : on ne juge pas le raisonnement
+du modèle — c'était l'option (2), écartée pour l'instant — mais une
+démonstration qui conclurait autrement que ces valeurs se contredirait
+visiblement, sous les yeux de l'élève. Hors du cas affine et en cas de
+divergence, rien n'est affirmé : les champs restent vides et le prompt dit que
+la monotonie ou la limite n'ont pas pu être établies (règle n°2).
+
+**Reste hors périmètre**, et à rouvrir si le besoin revient : la vérification du
+raisonnement lui-même, qui supposerait un LLM-juge (donc D2) ou un vérificateur
+pas à pas.
+
+**Date :** 2026-08-27
+
+---
+
+### Contexte d'origine
+
+**Statut antérieur : Ouverte — demande un investissement, pas un correctif**
 
 **Contexte.** Cas #33, « Démontre que la suite définie par u₀ = 2 et
 uₙ₊₁ = (uₙ + 3)/2 est monotone, majorée, et calcule sa limite » (Pierre Ndong).

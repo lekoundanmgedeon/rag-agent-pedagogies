@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from .attentes import AGENT_PAR_CAS, ATTENTES, CONTEXTE_DEFAUT, CONTEXTES
+from .attentes import AGENT_PAR_CAS, ATTENTES, CONTEXTE_DEFAUT, CONTEXTES, HORS_MOTEUR
 from .cas import cas_critiques
 
 CAS = cas_critiques()
@@ -26,6 +26,8 @@ def _parametre(cas):
 
 @pytest.mark.parametrize("cas", [_parametre(c) for c in CAS])
 async def test_cas_critique(cas, request, session_eleve):
+    if cas.id in HORS_MOTEUR:
+        pytest.xfail(f"cas QA #{cas.id} — {HORS_MOTEUR[cas.id]}")
     attente = ATTENTES.get(cas.id)
     if attente is None:
         pytest.xfail(f"cas QA #{cas.id} ({cas.subtheme}) — encore « à_traiter »")

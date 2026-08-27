@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from . import assertions
+from .assertions import NOEUD_RETRIEVAL
 from .cas import cas_positifs
 
 CAS = cas_positifs()
@@ -69,4 +70,13 @@ async def test_aucun_faux_positif_du_routeur_meta(cas, agent_qa, session_eleve):
     entree = next((e for e in resultat.node_trace if e["node"] == "detect_intent"), None)
     assert entree is not None
     assert entree["intent"] != "meta", f"question de contenu absorbée par le routeur méta : {cas.prompt!r}"
-    assert resultat.retrieved, "le corpus n'a pas été interrogé sur une question de contenu"
+    # Le corpus doit être **interrogé** — c'est ce que le routeur méta
+    # supprimait. Ce qu'il en reste, en revanche, peut légitimement être vide :
+    # depuis le contrôle de couverture des tours conceptuels (cas #29/#30), une
+    # notion absente de tous les chapitres indexés fait écarter les extraits au
+    # lieu de servir les moins mauvais. Sur le corpus figé à deux chapitres,
+    # c'est le cas de #49, #51, #54 et #59 — et pour #51 (« inégalités
+    # remarquables »), c'est précisément le comportement que la testeuse avait
+    # validé : « l'agent indique honnêtement l'absence d'information ».
+    recherche = next((e for e in resultat.node_trace if e["node"] == NOEUD_RETRIEVAL), None)
+    assert recherche is not None, "le corpus n'a pas été interrogé sur une question de contenu"

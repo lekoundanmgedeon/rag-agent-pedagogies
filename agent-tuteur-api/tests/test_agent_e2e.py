@@ -88,6 +88,11 @@ async def test_prepare_exposes_node_by_node_orchestration_trace(agent):
         # sert de filtre de retrieval autant que de cadre annoncé dans le
         # prompt, et les deux doivent voir la même valeur.
         "profil_eleve",
+        # « memoire_session » reconstruit ce que l'agent sait déjà de CETTE
+        # conversation (prénom donné, chapitres travaillés, dernier exercice) :
+        # avant l'aiguillage, parce que le fil de discussion n'appartient à
+        # aucune posture en particulier.
+        "memoire_session",
         "detect_intent",
         # « soutien_eleve » s'intercale entre l'intention et l'aiguillage : le
         # découragement est un état de l'élève, pas une propriété du sujet, et

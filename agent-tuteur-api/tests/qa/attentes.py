@@ -526,16 +526,133 @@ def _cas_48_definition_illustree(resultat, cas) -> None:
     assert "exemple concret" in prompt or HINT_INSTRUCTIONS[1] in prompt
 
 
+# --- Cas 24, 25, 29, 30, 33, 34 — sprint 3, dernière fournée -----------------
+def _cas_24_envoi_de_fichier(resultat, cas) -> None:
+    """« Puis uploader une capture d'écran de mon exercice ? » (Pierre Ndong).
+
+    Une capacité annoncée doit être exacte : le texte est écrit par le code, dit
+    ce que l'agent ne sait pas faire, propose la marche à suivre, et ne promet
+    aucune fonctionnalité future (l'upload relève de D9).
+    """
+    assertions.assert_intention(resultat, "meta")
+    assertions.assert_pas_de_retrieval(resultat)
+    reponse = assertions._aplatir(resultat.answer)
+    assert "je ne sais pas encore lire les images" in reponse
+
+
+def _cas_25_resume_de_session(resultat, cas) -> None:
+    """« Résume moi tous les questions … et notre session » (Pierre Ndong).
+
+    Rejoué sans historique par le harnais générique : le récapitulatif doit
+    alors dire qu'il n'y a rien à résumer plutôt que d'inventer une séance.
+    C'est la moitié la plus exposée du cas — celle où un modèle broderait.
+    """
+    assertions.assert_intention(resultat, "meta")
+    assertions.assert_pas_de_retrieval(resultat)
+    assert "vient de commencer" in resultat.answer
+
+
+def _cas_hors_catalogue(resultat, cas) -> None:
+    """Cas #29 (« les inegalites remarquables ») et #30 (« la dérivée de x² »).
+
+    Tour conceptuel dont la notion n'est dans aucun chapitre indexé : aucun
+    extrait ne doit être servi — c'est sur eux que l'agent dérivait — le
+    hors-périmètre doit être avoué, et la main rendue à l'élève.
+    """
+    from agent_tuteur.agent.prompt import CONSIGNE_HORS_PERIMETRE, CONSIGNE_LAISSER_LE_CHOIX
+
+    assert resultat.retrieved == [], (
+        f"extraits étrangers servis : {[sc.chunk.metadata.chapitre for sc in resultat.retrieved]}"
+    )
+    assert resultat.trace["hors_perimetre"] is True
+    assert CONSIGNE_HORS_PERIMETRE in resultat.final_prompt
+    assert CONSIGNE_LAISSER_LE_CHOIX in resultat.final_prompt
+
+
+def _cas_33_suite_recurrente(resultat, cas) -> None:
+    """« Démontre que la suite … est monotone, majorée … » (Pierre Ndong).
+
+    Le testeur validait la réponse et demandait un garde-fou. Les faits sont
+    désormais établis par SymPy et déclarés vérifiés dans le prompt : une
+    démonstration qui conclurait autrement se contredirait visiblement.
+    """
+    suite = resultat.trace["suite_recurrente"]
+    assert suite is not None, "aucune vérification symbolique sur une suite récurrente"
+    assert suite["premiers_termes"][:3] == ["2", "5/2", "11/4"]
+    assert suite["monotonie"] == "croissante"
+    assert suite["limite"] == "3"
+
+
+def _cas_34_reformatage(resultat, cas) -> None:
+    """« … le résultat de l'integral … » puis demande d'un autre format (Rafiatou).
+
+    Rejoué seul par le harnais générique : il n'y a pas de réponse précédente,
+    donc rien à reformater — et l'attente vérifie que le tour ne prétend pas le
+    contraire. Le comportement avec historique est couvert par
+    ``test_qa_24_25_34_session``.
+    """
+    assert resultat.trace["reformatage"] is False
+
+
+# --- Cas 22 et 42 ------------------------------------------------------------
+def _cas_22_reponse_vide(resultat, cas) -> None:
+    """« je veux comprendre la physique » (Marie Paul Basse).
+
+    La réponse vide n'est pas reproductible sur le pipeline actuel ; ce que la
+    couche A peut geler, c'est que le tour aboutit et emprunte le chemin
+    honnête : chapitre non lié, aveu, aucune substitution. L'autre moitié du
+    cas — l'étanchéité entre le contexte admin et le contexte élève — se vérifie
+    au niveau de l'API (``tests/api/test_chat_etancheite_role.py``), seul
+    endroit où un rôle existe.
+    """
+    assert resultat.answer.strip(), "le tour n'a produit aucune réponse"
+    cours = resultat.trace["course"]
+    assert cours is not None and cours["chapitre_confirmed"] is False
+    assert "n'enseigne SURTOUT PAS un autre chapitre à la place" in resultat.final_prompt
+
+
+def _cas_42_refus_hors_discipline(resultat, cas) -> None:
+    """« apprend moi à danser? » (OKERE Rafiatou).
+
+    Catégorie « Sécurité, bien-être & garde-fous » : le statut reste `en_cours`
+    jusqu'à validation humaine (D8), et cette attente ne remplace pas cette
+    validation — elle gèle ce que le pipeline garantit. Le pivot reproché est
+    interdit explicitement, et l'invitation à faire indexer la leçon est
+    restreinte aux sujets qui relèvent du programme couvert : proposer d'ajouter
+    un cours de danse était absurde.
+    """
+    cours = resultat.trace["course"]
+    assert cours is not None and cours["chapitre_confirmed"] is False
+    assert "n'enseigne SURTOUT PAS un autre chapitre à la place" in resultat.final_prompt
+    assert "s'il n'en relève pas du tout, refuse simplement" in resultat.final_prompt
+
+
+#: Cas dont le correctif ne vit PAS dans le moteur pédagogique. Le rejeu
+#: générique les signale à part, au lieu de les confondre avec des cas non
+#: traités : leur prompt n'a rien à prouver ici, et le prétendre serait pire que
+#: l'``xfail``.
+HORS_MOTEUR: dict[int, str] = {
+    23: (
+        "suppression de conversation — vérifiée sur l'API (DELETE "
+        "/api/conversations/{id}, couvert par tests/api/test_conversations.py) "
+        "et durcie côté interface ; rien à assérer sur un tour de chat"
+    ),
+}
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
     3: _cas_meta,
     4: _cas_meta,
-    # 5: _cas_05_hors_perimetre — enregistré le jour où un embedder déclare un
-    # seuil. La mécanique est en place et testée ; c'est la *grandeur* à
-    # seuiller qui reste à trancher (cf. qa_status.json #5 et l'attente
-    # ci-dessus, déjà écrite). Le cas ressort donc en xfail, comme un cas non
-    # traité — ce qu'il est encore.
+    # Le cas #5 a fini par se clore par une autre voie que celle qu'on
+    # attendait. On cherchait un SEUIL sur une grandeur de similarité — bloqué
+    # faute de grandeur stable (RC-0, D3) — et c'est le contrôle de couverture
+    # des tours conceptuels (cas #29/#30) qui l'a réglé : « la différence entre
+    # une suite arithmétique et une suite géométrique » nomme une notion absente
+    # de tous les chapitres indexés, ce qui se décide sur les titres et non sur
+    # des vecteurs. Le verdict ne dépend donc plus de l'embedder.
+    5: _cas_05_hors_perimetre,
     6: _cas_06_complexe,
     7: _cas_07_detresse,
     8: _cas_08_serie,
@@ -551,16 +668,24 @@ ATTENTES: dict[int, Attente] = {
     19: _cas_19_decouragement,
     20: _cas_20_blocage_declare,
     21: _cas_21_abandon,
+    22: _cas_22_reponse_vide,
+    24: _cas_24_envoi_de_fichier,
+    25: _cas_25_resume_de_session,
     26: _cas_26_inventaire,
     27: _cas_27_demande_ouverte,
     28: _cas_28_accueil_synchronise,
+    29: _cas_hors_catalogue,
+    30: _cas_hors_catalogue,
     31: _cas_31_exercice_demande,
     32: _cas_32_derivee_livree,
+    33: _cas_33_suite_recurrente,
+    34: _cas_34_reformatage,
     35: _cas_35_sujet_non_demande,
     36: _cas_36_aucun_anterieur,
     37: _cas_37_rendu_latex,
     39: _cas_39_simplification,
     40: _cas_40_laisser_le_choix,
+    42: _cas_42_refus_hors_discipline,
     43: _cas_43_utilite_de_la_discipline,
     44: _cas_chapitre_absent_avoue,
     45: _cas_45_equation_differentielle,
@@ -573,13 +698,15 @@ ATTENTES: dict[int, Attente] = {
 
 #: Pile de rejeu, quand le cas ne peut pas être jugé sur la pile hors-ligne.
 #:
-#: Le cas #5 porte sur le **seuil de pertinence**, qui est une propriété de
-#: l'espace vectoriel : mesuré sur les 12 leçons, « light » ne sépare pas les
-#: questions couvertes des questions étrangères (0,278 contre 0,524, nuages
-#: recouverts). Le rejouer sur « light » ne prouverait donc rien — pire, il
-#: ferait passer pour vert un correctif inopérant. Il est jugé sur BGE-M3,
-#: l'embedder de production depuis la décision D3.
-AGENT_PAR_CAS: dict[int, str] = {5: "agent_qa_bge"}
+#: Vide depuis le 2026-08-27, et c'est une conséquence directe de la façon dont
+#: le cas #5 s'est refermé. Tant qu'on cherchait un **seuil** de similarité, le
+#: verdict était une propriété de l'espace vectoriel : « light » ne sépare pas
+#: les questions couvertes des étrangères (0,278 contre 0,524, nuages
+#: recouverts), et le cas devait être jugé sur BGE-M3. Le contrôle de couverture
+#: qui l'a réglé se décide sur les **titres des chapitres indexés** : il donne le
+#: même verdict quel que soit l'embedder, et le rejeu redevient donc exécutable
+#: partout, sans FlagEmbedding.
+AGENT_PAR_CAS: dict[int, str] = {}
 
 #: Contexte curriculaire du rejeu, quand le cas exige autre chose que le défaut.
 #: Le cas 8 se joue **sans profil de compte** : c'est sa situation d'origine, et

@@ -5,7 +5,10 @@
         <h2>{{ headerTitle }}</h2>
         <p class="muted">Le tuteur guide par indices progressifs ou en cours structuré, selon ta demande.</p>
       </div>
-      <button class="btn btn-sm" @click="showCtx = !showCtx">⚙️ Contexte</button>
+      <div class="ch-actions">
+        <button class="btn btn-sm" :disabled="!chat.messages.length" @click="exporter">⬇️ Exporter</button>
+        <button class="btn btn-sm" @click="showCtx = !showCtx">⚙️ Contexte</button>
+      </div>
     </header>
 
     <div v-if="showCtx" class="ctx-bar card">
@@ -118,6 +121,35 @@ async function send(question) {
   await chat.send(question)
 }
 
+// Export de la session (cas QA #25). Volontairement sans dépendance : le fichier
+// Markdown est construit ici et téléchargé par le navigateur, et la feuille de
+// style d'impression ci-dessous permet d'obtenir un PDF par « Imprimer →
+// Enregistrer au format PDF ». Ajouter une bibliothèque de génération de PDF
+// pour ce seul besoin coûterait plus que ce qu'elle apporterait.
+function conversationEnMarkdown() {
+  const entete = [`# ${headerTitle.value}`, '', `_Session exportée le ${new Date().toLocaleString('fr-FR')}._`, '']
+  const corps = chat.messages.flatMap((m) => [
+    m.role === 'user' ? '## Élève' : '## Tuteur',
+    '',
+    (m.content || '').trim(),
+    '',
+  ])
+  return [...entete, ...corps].join('\n')
+}
+
+function exporter() {
+  if (!chat.messages.length) return
+  const blob = new Blob([conversationEnMarkdown()], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const lien = document.createElement('a')
+  lien.href = url
+  lien.download = `${headerTitle.value.replace(/[^\p{L}\p{N} -]/gu, '').trim() || 'session'}.md`
+  document.body.appendChild(lien)
+  lien.click()
+  document.body.removeChild(lien)
+  URL.revokeObjectURL(url)
+}
+
 async function syncFromRoute() {
   const id = route.params.id
   if (id && id !== chat.conversationId) {
@@ -160,4 +192,13 @@ watch(() => [chat.messages.length, chat.messages.at(-1)?.content], scrollToBotto
 .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 22px; }
 .suggestion { border-style: dashed; }
 .chat-error { margin: 8px 0 20px; }
+.ch-actions { display: flex; gap: 8px; }
+
+/* Impression : ne garder que le fil de discussion, pour que « Enregistrer au
+   format PDF » produise un document lisible (cas QA #25). */
+@media print {
+  .chat-header, .chat-foot, .ctx-bar, .suggestions { display: none !important; }
+  .chat-scroll { overflow: visible !important; height: auto !important; }
+  .chat-inner { max-width: none; padding: 0; }
+}
 </style>
