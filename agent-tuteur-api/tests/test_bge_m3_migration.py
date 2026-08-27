@@ -18,7 +18,6 @@ from agent_tuteur.factory import build_rag_stack
 from agent_tuteur.vectorstore.embeddings import BaseEmbedder, build_embedder
 from agent_tuteur.vectorstore.qdrant_store import QdrantVectorStore
 
-
 # --- La dimension du store vient de l'embedder, pas du réglage ---------------
 
 

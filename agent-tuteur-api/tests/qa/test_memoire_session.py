@@ -131,7 +131,10 @@ async def test_les_messages_longs_sont_tronques_pas_supprimes(agent_qa, session_
     )
     assert "Les nombres complexes prolongent les réels." in resultat.final_prompt
     assert long_texte.strip() not in resultat.final_prompt
-    assert "[…]" in resultat.final_prompt
+
+    reprise = resultat.final_prompt.split("Tuteur : ")[1].split("\n")[0]
+    assert reprise.endswith("[…]")
+    assert len(reprise) <= MAX_CARACTERES_PAR_MESSAGE + len(" […]")
 
 
 async def test_la_memoire_ne_dit_rien_d_un_premier_tour(agent_qa, session_eleve):

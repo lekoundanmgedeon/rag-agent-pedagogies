@@ -247,6 +247,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/catalogue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Catalogue
+         * @description Chapitres disponibles pour ce cadre curriculaire (vide si rien n'est indexé).
+         *
+         *     Les filtres reprennent ceux de la recherche : un élève de S2 ne doit pas se
+         *     voir proposer un chapitre réservé à une autre série. Une liste vide est une
+         *     réponse légitime — c'est au client de le dire honnêtement, pas d'inventer.
+         */
+        get: operations["get_catalogue_api_catalogue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/progression/{student_id}": {
         parameters: {
             query?: never;
@@ -442,6 +466,19 @@ export interface components {
             competence?: string | null;
             /** Examen Associe */
             examen_associe?: string | null;
+        };
+        /**
+         * CatalogueOut
+         * @description Chapitres réellement indexés pour un cadre curriculaire donné.
+         *
+         *     Sert l'écran d'accueil : les sujets proposés à l'élève doivent venir de ce
+         *     que le corpus contient, jamais d'une liste écrite à la main (cas QA #28 —
+         *     l'accueil proposait « Fais-moi un cours sur les suites numériques », que
+         *     l'agent refusait ensuite, à juste titre, faute de leçon indexée).
+         */
+        CatalogueOut: {
+            /** Chapitres */
+            chapitres: string[];
         };
         /**
          * ChatLogEntry
@@ -1318,6 +1355,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchResultOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_catalogue_api_catalogue_get: {
+        parameters: {
+            query?: {
+                serie?: string | null;
+                niveau?: string | null;
+                classe?: string | null;
+                discipline?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogueOut"];
                 };
             };
             /** @description Validation Error */

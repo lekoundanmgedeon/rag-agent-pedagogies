@@ -91,7 +91,7 @@ async def _chat_stream(
     try:
         async for frame in _chat_stream_inner(agent, payload, tenant_id, student_id):
             yield frame
-    except Exception as exc:  # noqa: BLE001 - le flux doit toujours se conclure
+    except Exception as exc:  # le flux doit toujours se conclure
         log_event(
             _logger,
             "chat:stream_failed",

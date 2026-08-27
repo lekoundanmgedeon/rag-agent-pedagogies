@@ -705,6 +705,109 @@
         ]
       }
     },
+    "/api/catalogue": {
+      "get": {
+        "tags": [
+          "catalogue"
+        ],
+        "summary": "Get Catalogue",
+        "description": "Chapitres disponibles pour ce cadre curriculaire (vide si rien n'est indexé).\n\nLes filtres reprennent ceux de la recherche : un élève de S2 ne doit pas se\nvoir proposer un chapitre réservé à une autre série. Une liste vide est une\nréponse légitime — c'est au client de le dire honnêtement, pas d'inventer.",
+        "operationId": "get_catalogue_api_catalogue_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "serie",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Serie"
+            }
+          },
+          {
+            "name": "niveau",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Niveau"
+            }
+          },
+          {
+            "name": "classe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Classe"
+            }
+          },
+          {
+            "name": "discipline",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Discipline"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogueOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/progression/{student_id}": {
       "get": {
         "tags": [
@@ -1247,6 +1350,23 @@
           "files"
         ],
         "title": "Body_upload_documents_api_documents_post"
+      },
+      "CatalogueOut": {
+        "properties": {
+          "chapitres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chapitres"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapitres"
+        ],
+        "title": "CatalogueOut",
+        "description": "Chapitres réellement indexés pour un cadre curriculaire donné.\n\nSert l'écran d'accueil : les sujets proposés à l'élève doivent venir de ce\nque le corpus contient, jamais d'une liste écrite à la main (cas QA #28 —\nl'accueil proposait « Fais-moi un cours sur les suites numériques », que\nl'agent refusait ensuite, à juste titre, faute de leçon indexée)."
       },
       "ChatLogEntry": {
         "properties": {

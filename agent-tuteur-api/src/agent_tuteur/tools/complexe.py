@@ -29,7 +29,6 @@ import re
 from dataclasses import dataclass
 
 import sympy
-
 from sympy.parsing.sympy_parser import parse_expr
 
 from agent_tuteur.tools.calculator import (
@@ -93,7 +92,7 @@ def _analyser(corps: str):
             transformations=_TRANSFORMS,
             evaluate=True,
         )
-    except Exception as exc:      # noqa: BLE001 — SymPy lève des types variés
+    except Exception as exc:  # SymPy lève des types d'erreur variés
         raise CalculationError(f"Complexe non analysable : {corps!r}") from exc
 
 
@@ -113,7 +112,7 @@ def analyser_complexe(corps: str, nom: str = "z") -> ComplexeAnalyse:
     if expr != 0:
         try:
             argument = str(sympy.simplify(sympy.arg(expr)))
-        except Exception:          # noqa: BLE001
+        except Exception:  # SymPy lève des types d'erreur variés
             argument = ""
 
     return ComplexeAnalyse(

@@ -151,7 +151,7 @@ def _limites(expr, var, domaine) -> tuple[tuple[str, str], ...]:
         for borne, direction in ((composante.inf, "+"), (composante.sup, "-")):
             try:
                 valeur = sympy.limit(expr, var, borne, direction)
-            except Exception:      # noqa: BLE001 — SymPy lève des types variés
+            except Exception:  # SymPy lève des types d'erreur variés
                 continue
             etiquette = _borne_lisible(borne)
             if borne.is_finite:
@@ -166,7 +166,7 @@ def _variations(derivee, var, domaine) -> tuple[tuple[str, str], ...]:
     for sens, relation in (("croissante", derivee > 0), ("décroissante", derivee < 0)):
         try:
             ensemble = sympy.solveset(relation, var, domaine)
-        except Exception:          # noqa: BLE001
+        except Exception:  # SymPy lève des types d'erreur variés
             continue
         if ensemble is sympy.EmptySet or ensemble == sympy.EmptySet:
             continue
@@ -190,11 +190,11 @@ def etudier(expression: str) -> EtudeFonction:
 
     try:
         domaine = continuous_domain(expr, var, sympy.S.Reals)
-    except Exception:              # noqa: BLE001
+    except Exception:  # SymPy lève des types d'erreur variés
         domaine = None
     try:
         derivee = sympy.simplify(sympy.diff(expr, var))
-    except Exception:              # noqa: BLE001
+    except Exception:  # SymPy lève des types d'erreur variés
         derivee = None
 
     return EtudeFonction(

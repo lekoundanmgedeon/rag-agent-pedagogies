@@ -45,10 +45,10 @@ from langgraph.graph import END, START, StateGraph
 
 from agent_tuteur.agent.course_plan import (
     CLE_SECTION_EXERCICES,
-    notion_couverte_par_le_catalogue,
     CoursePosition,
     Section,
     advance,
+    notion_couverte_par_le_catalogue,
     plan_titles,
     resolve_chapitre,
     section_par_cle,
@@ -80,6 +80,13 @@ from agent_tuteur.agent.intent import (
     est_une_question_sur_la_discipline,
 )
 from agent_tuteur.agent.llm.base import BaseLLM
+from agent_tuteur.agent.memoire_session import MemoireSession
+from agent_tuteur.agent.memoire_session import construire as construire_memoire
+from agent_tuteur.agent.orientation import (
+    reponse_catalogue,
+    reponse_envoi_de_fichier,
+    reponse_resume_session,
+)
 from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
 from agent_tuteur.agent.profil import detecter_serie, serie_effective
 from agent_tuteur.agent.prompt import (
@@ -102,12 +109,6 @@ from agent_tuteur.agent.quiz import (
     construire_prompt_quiz,
     contient_du_factice,
 )
-from agent_tuteur.agent.memoire_session import MemoireSession, construire as construire_memoire
-from agent_tuteur.agent.orientation import (
-    reponse_catalogue,
-    reponse_envoi_de_fichier,
-    reponse_resume_session,
-)
 from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
 from agent_tuteur.agent.soutien import ouverture_pour
 from agent_tuteur.agent.state import AgentState
@@ -116,9 +117,6 @@ from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
 from agent_tuteur.textutil import strip_accents
 from agent_tuteur.tools.affirmation import verifier_affirmation
-from agent_tuteur.tools.complexe import analyser_la_demande as analyser_complexe_demande
-from agent_tuteur.tools.etude_fonction import etudier_la_demande
-from agent_tuteur.tools.suite import analyser_la_demande as analyser_suite_recurrente
 from agent_tuteur.tools.calculator import (
     CalculationError,
     compute,
@@ -126,6 +124,9 @@ from agent_tuteur.tools.calculator import (
     est_un_calcul_trivial,
     looks_like_calculation,
 )
+from agent_tuteur.tools.complexe import analyser_la_demande as analyser_complexe_demande
+from agent_tuteur.tools.etude_fonction import etudier_la_demande
+from agent_tuteur.tools.suite import analyser_la_demande as analyser_suite_recurrente
 from agent_tuteur.vectorstore.retriever import HybridRetriever
 
 _logger = get_logger("agent_tuteur.agent.graph")
