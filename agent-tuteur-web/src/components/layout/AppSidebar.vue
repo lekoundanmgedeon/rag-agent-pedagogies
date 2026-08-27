@@ -76,8 +76,10 @@ function open(id) {
 }
 async function remove(id) {
   if (!confirm('Supprimer cette conversation ?')) return
-  await chat.deleteConversation(id)
-  if (route.params.id === id) router.push('/')
+  // Ne quitte la conversation courante que si la suppression a réellement eu
+  // lieu : rediriger sur un échec laisserait croire qu'elle a fonctionné.
+  const supprimee = await chat.deleteConversation(id)
+  if (supprimee && route.params.id === id) router.push('/')
 }
 function logout() {
   auth.logout()

@@ -113,6 +113,18 @@ class SearchResultOut(BaseModel):
     metadata: dict
 
 
+class CatalogueOut(BaseModel):
+    """Chapitres réellement indexés pour un cadre curriculaire donné.
+
+    Sert l'écran d'accueil : les sujets proposés à l'élève doivent venir de ce
+    que le corpus contient, jamais d'une liste écrite à la main (cas QA #28 —
+    l'accueil proposait « Fais-moi un cours sur les suites numériques », que
+    l'agent refusait ensuite, à juste titre, faute de leçon indexée).
+    """
+
+    chapitres: list[str]
+
+
 class UploadedDocumentOut(BaseModel):
     document_id: str
     filename: str

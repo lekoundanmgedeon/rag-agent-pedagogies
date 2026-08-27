@@ -61,6 +61,7 @@ import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.js'
 import { useChatStore } from '@/stores/chat.js'
+import { catalogueApi } from '@/services/api.js'
 import AppShell from '@/components/layout/AppShell.vue'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
@@ -72,11 +73,37 @@ const scroller = ref(null)
 const showCtx = ref(false)
 
 const niveaux = ['préscolaire', 'élémentaire', 'moyen', 'secondaire', 'EBJA']
-const suggestions = [
-  'Comment dériver un quotient de fonctions ?',
-  'Fais-moi un cours sur les suites numériques.',
-  'Calcule la dérivée de x^3 - 3x.',
+
+// Suggestions d'accueil — dérivées des chapitres RÉELLEMENT indexés (cas QA #28).
+// La liste était écrite en dur et proposait « Fais-moi un cours sur les suites
+// numériques », que l'agent refusait ensuite faute de leçon indexée : le refus
+// était correct, c'est l'invitation qui ne l'était pas. Tant que le catalogue
+// n'a pas répondu — ou s'il revient vide — on ne nomme aucun sujet plutôt que
+// d'en inventer un.
+const chapitres = ref([])
+const SUGGESTIONS_SANS_SUJET = [
+  'Sur quels chapitres peux-tu m’aider ?',
+  'Donne-moi des conseils pour progresser en maths.',
 ]
+const MAX_CHAPITRES_SUGGERES = 2
+
+const suggestions = computed(() => {
+  if (!chapitres.value.length) return SUGGESTIONS_SANS_SUJET
+  return chapitres.value
+    .slice(0, MAX_CHAPITRES_SUGGERES)
+    .flatMap((c) => [`Fais-moi un cours sur ${c}.`, `Donne-moi un exercice sur ${c}.`])
+})
+
+async function chargerLeCatalogue() {
+  try {
+    const { data } = await catalogueApi.list(chat.curriculumContext())
+    chapitres.value = data.chapitres || []
+  } catch {
+    // Panne réseau ou catalogue indisponible : on retombe sur des suggestions
+    // qui ne nomment aucun chapitre — jamais sur une liste écrite en dur.
+    chapitres.value = []
+  }
+}
 
 const headerTitle = computed(() => {
   const cur = chat.conversations.find((c) => c.id === chat.conversationId)
@@ -108,6 +135,10 @@ function scrollToBottom() {
 }
 
 onMounted(syncFromRoute)
+onMounted(chargerLeCatalogue)
+// Le cadre curriculaire filtre le catalogue : en changer doit changer ce qui est
+// proposé, sinon l'accueil reproposerait un chapitre d'une autre série.
+watch(() => chat.curriculumContext(), chargerLeCatalogue, { deep: true })
 watch(() => route.params.id, syncFromRoute)
 watch(() => [chat.messages.length, chat.messages.at(-1)?.content], scrollToBottom)
 </script>

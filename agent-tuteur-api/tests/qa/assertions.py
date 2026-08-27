@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 
+from agent_tuteur.agent.course_plan import titre_de_section
+from agent_tuteur.agent.hint_strategy import HINT_INSTRUCTIONS
 from agent_tuteur.textutil import strip_accents
 
 # Nœud de recherche RAG : son absence du parcours prouve le court-circuit.
@@ -290,3 +292,39 @@ def assert_catalogue_honnete(prepared, chapitres_indexes: set[str]) -> None:
     inventes = ("Suites Numériques", "Probabilités", "Arithmétique", "Équations Différentielles")
     for absent in inventes:
         assert absent not in prepared.final_prompt, f"chapitre non indexé annoncé : {absent}"
+
+
+def assert_enonce_servi_au_modele(resultat) -> None:
+    """Le prompt porte de vrais énoncés d'exercices, et aucun corrigé (cas #31).
+
+    C'est la moitié assérable du reproche du testeur : on ne peut pas juger la
+    prose du modèle, mais on peut vérifier qu'il a reçu de quoi proposer un
+    exercice — et qu'il n'a PAS reçu la solution qu'on lui demande de taire.
+    Sans énoncé dans le contexte, la seule chose que le tour puisse produire est
+    le rappel de règle générale que l'élève a reçu en démo.
+    """
+    titres = [
+        titre
+        for sc in resultat.retrieved
+        if (titre := titre_de_section(sc.chunk.text)) is not None
+    ]
+    assert any("exercice" in _aplatir(t) or "type bac" in _aplatir(t) for t in titres), (
+        f"aucune section d'énoncés servie au modèle : {titres}"
+    )
+    assert not any("corrig" in _aplatir(t) for t in titres), (
+        f"le corrigé a été servi au modèle sur un tour d'entraînement : {titres}"
+    )
+
+
+def assert_aucune_consigne_socratique(resultat) -> None:
+    """Aucune consigne d'indice graduée n'est partie au modèle.
+
+    Le cas #31 ne se règle pas en montant d'un cran dans la graduation : c'est
+    la graduation elle-même qui n'a pas d'objet quand l'élève n'a pas encore
+    d'énoncé. On vérifie donc l'absence des cinq consignes, pas la valeur d'un
+    niveau.
+    """
+    for niveau, consigne in HINT_INSTRUCTIONS.items():
+        assert consigne not in resultat.final_prompt, (
+            f"consigne d'indice de niveau {niveau} envoyée sur un tour d'entraînement"
+        )

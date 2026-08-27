@@ -118,6 +118,33 @@ _BLOCAGE_DECLARE = [
 ]
 
 
+#: Demande explicite de **reformulation simplifiée** (cas QA #39). Distincte du
+#: blocage déclaré : l'élève ne dit pas qu'on lui a déjà expliqué, il dit que
+#: l'explication reçue est trop compliquée pour lui. Le registre est en cause,
+#: pas le nombre de tentatives — et le signal existe dans ses mots, il n'y a
+#: rien à inférer.
+#:
+#: Le motif exige la demande de simplification elle-même (« plus simplement »,
+#: « en plus simple », « avec des mots simples », « trop compliqué ») : « je
+#: n'ai rien compris » tout seul reste une difficulté ordinaire, déjà couverte
+#: par les marqueurs de ton.
+_DEMANDE_SIMPLIFICATION = [
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\bplus\s+simple(?:ment)?\b",
+        r"\b(?:en|de\s+fa[çc]on|de\s+mani[èe]re)\s+plus\s+simple\b",
+        r"\bsimplifie[\s-]?(?:moi|le|la)?\b",
+        r"\bavec\s+des\s+mots\s+simples\b",
+        r"\bplus\s+facile\s+[àa]\s+comprendre\b",
+        r"\bc['’e]est\s+(?:trop\s+)?(?:compliqu[ée]|complexe|dur)\s+[àa]\s+comprendre\b",
+        r"\bexplique[\s-]?(?:moi|le|la)?\s+(?:[çc]a\s+)?autrement\b",
+        r"\bre(?:formule|explique|prends?)\b[^?.!]{0,20}?\b(?:simple(?:ment)?|autrement|"
+        r"plus\s+clair(?:ement)?)\b",
+        r"\bje\s+(?:ne\s+)?comprends?\s+rien\s+[àa]\s+tes\s+explications\b",
+    )
+]
+
+
 @dataclass
 class FrustrationSignal:
     score: float
@@ -132,6 +159,11 @@ class FrustrationSignal:
     #: les deux registres appellent des réponses différentes, et les confondre
     #: dans un compteur rendrait le second invisible à qui lit la trace.
     decouragement: bool = False
+    #: L'élève demande explicitement une explication plus simple (cas QA #39).
+    #: Troisième registre distinct, pour la même raison que les deux précédents :
+    #: la réponse attendue n'est ni un cran d'indice de plus, ni un changement
+    #: d'angle, mais un exemple concret et des mots plus simples.
+    demande_simplification: bool = False
 
 
 def count_repetitions(question: str, recent: list[str]) -> int:
@@ -159,6 +191,11 @@ def detecte_un_decouragement(question: str) -> bool:
     return any(pattern.search(question) for pattern in _DECOURAGEMENT)
 
 
+def demande_une_simplification(question: str) -> bool:
+    """Vrai si l'élève demande explicitement une explication plus simple."""
+    return any(pattern.search(question) for pattern in _DEMANDE_SIMPLIFICATION)
+
+
 def detect_frustration(question: str, session: SessionState) -> FrustrationSignal:
     """Score : ``min(1, 0.3*rep + 0.4*marqueurs + 0.3*blocage + 0.4*découragement)``.
 
@@ -180,6 +217,7 @@ def detect_frustration(question: str, session: SessionState) -> FrustrationSigna
     markers = count_markers(question)
     blocage = detecte_un_blocage_declare(question)
     decouragement = detecte_un_decouragement(question)
+    simplification = demande_une_simplification(question)
     score = min(1.0, 0.3 * repetitions + 0.4 * markers + 0.3 * blocage + 0.4 * decouragement)
     return FrustrationSignal(
         score=round(score, 4),
@@ -187,4 +225,11 @@ def detect_frustration(question: str, session: SessionState) -> FrustrationSigna
         markers=markers,
         blocage_declare=blocage,
         decouragement=decouragement,
+        # Volontairement HORS du score : une demande de simplification ne dit
+        # rien de plus sur ce qu'il faut dévoiler à l'élève, elle dit comment le
+        # dire. La faire peser sur la graduation socratique reviendrait à
+        # répondre « voilà un cran de solution de plus » à quelqu'un qui demande
+        # des mots plus simples. Son effet propre est décidé dans
+        # ``hint_strategy.ajuster_pour_simplification``.
+        demande_simplification=simplification,
     )

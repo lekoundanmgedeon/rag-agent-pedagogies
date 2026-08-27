@@ -118,9 +118,13 @@ async def test_course_binds_chapter_present_in_corpus(agent):
     course = prep.trace["course"]
     assert course["chapitre_confirmed"] is True
     assert "dériv" in (course["chapitre"] or "").lower()
-    # Liaison réussie => aucun avertissement, et les extraits sont recentrés
-    # sur le seul chapitre enseigné.
-    assert "ATTENTION" not in prep.final_prompt
+    # Liaison réussie => aucun avertissement DE COUVERTURE, et les extraits sont
+    # recentrés sur le seul chapitre enseigné. L'assertion porte sur le texte de
+    # cet avertissement et non sur le mot « ATTENTION » : d'autres consignes
+    # légitimes l'emploient (cas QA #36, premier message de la conversation), et
+    # un test qui les attraperait toutes ne dirait plus ce qu'il vérifie.
+    assert "le chapitre demandé n'a pas pu être identifié" not in prep.final_prompt
+    assert "n'enseigne SURTOUT PAS un autre chapitre" not in prep.final_prompt
     assert {s["label"] for s in prep.trace["sources"]}
     chapters = {sc.chunk.metadata.chapitre for sc in prep.retrieved}
     assert chapters == {course["chapitre"]}

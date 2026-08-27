@@ -55,6 +55,14 @@ export const authApi = {
   createUser: (payload) => http.post('/api/auth/users', payload),
 }
 
+// ── Catalogue (chapitres réellement indexés) ─────────────────────────────────
+// Ce que l'accueil propose doit venir du corpus, jamais d'une liste écrite ici :
+// l'agent refuse — à juste titre — un chapitre qu'il n'a pas, et une suggestion
+// écrite en dur l'invitait à le demander quand même (cas QA #28).
+export const catalogueApi = {
+  list: (curriculumContext = {}) => http.get('/api/catalogue', { params: curriculumContext }),
+}
+
 // ── Chat (SSE via fetch) ─────────────────────────────────────────────────────
 /**
  * Ouvre le flux SSE de /api/chat et yield les événements décodés.

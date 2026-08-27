@@ -300,6 +300,159 @@ def _cas_21_abandon(resultat, cas) -> None:
     assert resultat.trace["hint_level"] > 1
 
 
+# --- Cas 31 — Exercice demandé, règle générale servie à la place -------------
+def _cas_31_exercice_demande(resultat, cas) -> None:
+    """« Donne moi un exercice sur le calcul d integral » (Marie Paul Basse).
+
+    Trois choses tenues ensemble, parce qu'aucune ne suffit seule : le tour est
+    routé hors de la posture socratique (dont la consigne de niveau 1 produisait
+    littéralement la « règle générale » reçue par la testeuse), il reçoit de
+    vrais énoncés du chapitre demandé, et il ne reçoit pas le corrigé qu'on lui
+    demande de taire.
+    """
+    assertions.assert_intention(resultat, "entrainement")
+    assert resultat.trace["entrainement"]["chapitre"] == "Le Calcul Intégral"
+    assertions.assert_enonce_servi_au_modele(resultat)
+    assertions.assert_aucune_consigne_socratique(resultat)
+
+
+# --- Cas 26 et 27 — demandes d'orientation traitées comme du contenu ---------
+def _cas_26_inventaire(resultat, cas) -> None:
+    """« Listes moi les chapitres du cours de maths en terminale S1 » (Rahma).
+
+    La variabilité rapportée venait du routage : « cours de maths » ouvrait un
+    cours. L'attente tient donc les deux bouts — la branche (méta, sans
+    recherche) et la stabilité (réponse écrite par le code, pas échantillonnée).
+    """
+    assertions.assert_intention(resultat, "meta")
+    assertions.assert_pas_de_retrieval(resultat)
+    assert resultat.trace["hint_reason"] == "demande d'inventaire des chapitres"
+    for chapitre in resultat.trace["catalogue"]:
+        assert chapitre in resultat.answer, f"chapitre indexé passé sous silence : {chapitre}"
+
+
+def _cas_27_demande_ouverte(resultat, cas) -> None:
+    """« Aide moi à devenir meilleure en Mathématique. » (Rafiatou).
+
+    Ce que la couche A juge : le tour n'est plus socratisé sur des extraits pris
+    au hasard, et le prompt porte la consigne de clarification adossée au
+    catalogue. La pertinence de la question posée relève, elle, de la prose.
+    """
+    from agent_tuteur.agent.prompt import CONSIGNE_DEMANDE_OUVERTE
+
+    assertions.assert_intention(resultat, "meta")
+    assertions.assert_pas_de_retrieval(resultat)
+    assert CONSIGNE_DEMANDE_OUVERTE in resultat.final_prompt
+
+
+# --- Cas 28 — sujet proposé à l'accueil mais non couvert ---------------------
+def _cas_28_accueil_synchronise(resultat, cas) -> None:
+    """« Fais-moi un cours sur les suites numériques. » (OKERE Rafiatou).
+
+    Le refus de l'agent était **déjà correct** — c'est l'accueil qui avait
+    proposé le sujet. Le correctif vit donc ailleurs que dans le moteur : les
+    suggestions de l'écran d'accueil viennent désormais de ``GET /api/catalogue``
+    (couvert par ``tests/api/test_catalogue.py``), et non plus d'une liste
+    écrite dans le frontend.
+
+    Ce qui est gelé ici est la moitié que le rejeu QA peut juger : le sujet
+    n'étant pas indexé, le tour ne doit ni le prétendre couvert ni enseigner un
+    autre chapitre à sa place.
+    """
+    cours = resultat.trace["course"]
+    assert cours is not None, "une demande de cours doit ouvrir la branche cours"
+    assert cours["chapitre_confirmed"] is False, (
+        "les suites numériques ne sont pas dans le corpus figé : les déclarer "
+        "couvertes ferait mentir l'agent"
+    )
+    assert "n'enseigne SURTOUT PAS un autre chapitre à la place" in resultat.final_prompt
+
+
+# --- Cas 35 — sujet non demandé introduit par le tour ------------------------
+def _cas_35_sujet_non_demande(resultat, cas) -> None:
+    """« Expliques moi les dérivées » (Rahma).
+
+    Cause mesurée : une variante d'accord (« expliqueS moi ») ne matchait aucun
+    déclencheur de cours ; le tour partait en posture socratique de niveau 1 sur
+    cinq extraits de nombres complexes. Le sujet « jamais demandé » venait donc
+    de nos extraits, pas de l'imagination du modèle.
+    """
+    from agent_tuteur.agent.hint_strategy import HINT_INSTRUCTIONS
+
+    assertions.assert_intention(resultat, "cours")
+    assert HINT_INSTRUCTIONS[1] not in resultat.final_prompt
+    cours = resultat.trace["course"]
+    assert cours is not None
+    if not cours["chapitre_confirmed"]:
+        assert "n'enseigne SURTOUT PAS un autre chapitre à la place" in resultat.final_prompt
+
+
+# --- Cas 37 (et 47) — rendu des expressions mathématiques --------------------
+def _cas_37_rendu_latex(resultat, cas) -> None:
+    """« … le principe du raisonnement par récurrence … » (Pierre Ndong).
+
+    Le refus était correct ; c'est le rendu qui ne l'était pas. Ce qui est
+    assérable en couche A est la matière envoyée au modèle : aucun délimiteur
+    hors format pivot ne doit s'y trouver, puisque le modèle recopie ce qu'on
+    lui montre. Le cas #47 (priorité Basse) relève du même correctif.
+    """
+    for delimiteur in (r"\(", r"\)", r"\[", r"\]"):
+        assert delimiteur not in resultat.final_prompt, (
+            f"délimiteur {delimiteur!r} envoyé au modèle : il le recopiera"
+        )
+
+
+# --- Cas 39 — reformulation « plus simple » restée vague ---------------------
+def _cas_39_simplification(resultat, cas) -> None:
+    """« J'ai rien compris, reprends plus simplement » (Tony SARRE).
+
+    Le vague reproché venait de la consigne de niveau 1, qui interdisait
+    d'appliquer la règle au cas de l'élève — donc l'exemple concret demandé.
+    L'attente vérifie que cette consigne ne part plus et que celle qui nomme
+    l'exemple chiffré la remplace.
+    """
+    from agent_tuteur.agent.hint_strategy import HINT_INSTRUCTIONS
+    from agent_tuteur.agent.prompt import CONSIGNE_SIMPLIFICATION
+
+    assert resultat.trace["demande_simplification"] is True
+    assert CONSIGNE_SIMPLIFICATION in resultat.final_prompt
+    assert HINT_INSTRUCTIONS[1] not in resultat.final_prompt
+
+
+# --- Cas 36 — référence à une « première partie » inexistante ----------------
+def _cas_36_aucun_anterieur(resultat, cas) -> None:
+    """« Génères un cours sur les nombres complexes » (Rahma).
+
+    Règle non-négociable n°3, dans sa variante temporelle : rien de « déjà vu »
+    ne doit être évoqué au premier message. L'absence d'historique est désormais
+    **dite** au modèle au lieu d'être supposée évidente.
+    """
+    from agent_tuteur.agent.prompt import CONSIGNE_AUCUN_ANTERIEUR
+
+    assert CONSIGNE_AUCUN_ANTERIEUR in resultat.final_prompt
+
+
+# --- Cas 40 — reprise forcée du cours après un aveu de non-couverture --------
+def _cas_40_laisser_le_choix(resultat, cas) -> None:
+    """« Différence entre une limite et une dérivée ? » (Tony SARRE).
+
+    Ce que la couche A peut geler : dès que le code SAIT qu'il y a une lacune
+    (aucun extrait servi, ou chapitre non identifié), la consigne qui interdit
+    d'enchaîner sur la section suivante part avec le prompt, et la persona de
+    cours ne dit plus « toujours proposer la suite » sans réserve.
+
+    Détecter qu'une relance posée *pendant* un cours porte sur autre chose que
+    le chapitre enseigné n'a, elle, aucun signal fiable sur ce corpus (mesuré,
+    cf. le test dédié) : c'est l'angle mort de la décision D7.
+    """
+    from agent_tuteur.agent.prompt import CONSIGNE_LAISSER_LE_CHOIX
+
+    if resultat.trace.get("hors_perimetre") or (
+        resultat.trace.get("course") and not resultat.trace["course"]["chapitre_confirmed"]
+    ):
+        assert CONSIGNE_LAISSER_LE_CHOIX in resultat.final_prompt
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
@@ -325,7 +478,16 @@ ATTENTES: dict[int, Attente] = {
     19: _cas_19_decouragement,
     20: _cas_20_blocage_declare,
     21: _cas_21_abandon,
+    26: _cas_26_inventaire,
+    27: _cas_27_demande_ouverte,
+    28: _cas_28_accueil_synchronise,
+    31: _cas_31_exercice_demande,
     32: _cas_32_derivee_livree,
+    35: _cas_35_sujet_non_demande,
+    36: _cas_36_aucun_anterieur,
+    37: _cas_37_rendu_latex,
+    39: _cas_39_simplification,
+    40: _cas_40_laisser_le_choix,
     38: _cas_salutation,
     41: _cas_salutation,
 }

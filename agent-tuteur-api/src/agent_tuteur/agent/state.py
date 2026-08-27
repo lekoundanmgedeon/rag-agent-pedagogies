@@ -56,7 +56,7 @@ class AgentState(TypedDict, total=False):
     reponse_directe: str | None
 
     # --- Intention (nœud detect_intent) ---
-    intent: str  # "exercice" | "cours" | "quiz"
+    intent: str  # "exercice" | "cours" | "quiz" | "meta" | "salutation" | "entrainement"
     intent_nav: str | None  # navigation cours détectée ("start"|"next"|"prev"|"goto")
 
     # --- Produits des nœuds a→e ---
@@ -84,6 +84,11 @@ class AgentState(TypedDict, total=False):
     #: décision D5, tranchée le 2026-08-24 : ouverture de soutien puis reprise
     #: du cours (cf. ``soutien``, ci-dessous).
     decouragement: bool
+    #: L'élève demande explicitement une explication plus simple (cas QA #39).
+    #: Ne pèse pas sur le score de frustration — il ne dit rien sur ce qu'il faut
+    #: dévoiler — mais lève l'interdiction d'illustrer portée par la consigne de
+    #: niveau 1 et fait injecter ``prompt.CONSIGNE_SIMPLIFICATION``.
+    demande_simplification: bool
     #: Ouverture de soutien due à ce tour ({"signal", "variante", "texte"}), ou
     #: ``None`` pour un tour ordinaire. Produite par ``soutien.py``, donc écrite
     #: par le code et non échantillonnée : c'est ce qui permet de la faire
@@ -126,6 +131,13 @@ class AgentState(TypedDict, total=False):
     #: quand la demande de l'élève n'a matché aucun chapitre du corpus : le prompt
     #: bascule alors en posture prudente au lieu de substituer un autre chapitre.
     course_section: dict[str, Any]
+    #: Branche entraînement : chapitre lié à la demande, sections d'énoncés
+    #: servies et chapitres de repli ({"chapitre", "chapitre_confirmed",
+    #: "topic", "alternatives", "sections_servies"}). Présent uniquement quand
+    #: l'élève a réclamé un exercice (cas QA #31). ``chapitre_confirmed`` faux
+    #: veut dire qu'aucun chapitre indexé ne correspond : le prompt le dit alors
+    #: à l'élève au lieu de lui servir l'exercice d'un autre chapitre.
+    entrainement: dict[str, Any]
     #: Branche quiz : sur quoi interroger, et sous quelle forme.
     quiz_competence: str
     quiz_type: str

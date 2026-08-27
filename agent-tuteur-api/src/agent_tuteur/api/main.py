@@ -23,6 +23,7 @@ from agent_tuteur.agent.graph import TutorAgent
 from agent_tuteur.api.rate_limit import limiter
 from agent_tuteur.api.routes import (
     auth,
+    catalogue,
     chat,
     conversations,
     documents,
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations.router)
     app.include_router(documents.router)
     app.include_router(search.router)
+    app.include_router(catalogue.router)
     app.include_router(progression.router)
     # Domaine pédagogique porté de NURU (module 5 de la fusion).
     app.include_router(quiz.router)

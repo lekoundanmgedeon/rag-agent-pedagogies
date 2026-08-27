@@ -37,6 +37,12 @@ class Intent(str, Enum):
     #: rien à chercher ni à socratiser : on accueille, puis on oriente vers ce
     #: que le corpus couvre réellement (cas QA #38, #41).
     SALUTATION = "salutation"
+    #: L'élève demande qu'on lui **donne** un exercice à faire (« donne-moi un
+    #: exercice sur le calcul intégral »). C'est l'inverse du tour ``EXERCICE``,
+    #: où il travaille déjà sur un énoncé et demande de l'aide : ici il n'a pas
+    #: d'énoncé, et la posture socratique n'a rien à retenir — elle ne peut que
+    #: lui rappeler une règle générale, ce qu'il n'a pas demandé (cas QA #31).
+    ENTRAINEMENT = "entrainement"
 
 
 class Navigation(str, Enum):
@@ -59,11 +65,27 @@ _COURSE_START = re.compile(
     r"|donne(?:[\s-]+moi)?\s+un\s+cours"
     r"|un\s+cours\s+sur"
     r"|cours\s+(?:sur|de|complet)"
-    r"|explique(?:[\s-]+moi|[\s-]+nous)?\b"
-    r"|expliqu[ez]-?(?:moi|nous)"
-    r"|pr[ée]sente(?:[\s-]+moi)?\b"
-    r"|enseigne(?:[\s-]+moi)?\b"
-    r"|apprends(?:[\s-]+moi)?\b"
+    # Les variantes d'accord et d'infinitif comptent autant que la forme
+    # canonique : « Expliques moi les dérivées » (cas QA #35) ne matchait NI
+    # « explique\b » (le « s » colle au mot) NI « expliqu[ez]-(?:moi) » (l'espace
+    # remplace le trait d'union). La phrase partait donc en posture socratique,
+    # où le niveau 1 « rappelle la règle utile » s'appliquait à cinq extraits de
+    # nombres complexes — d'où le sujet jamais demandé que la testeuse a vu
+    # apparaître. Une faute d'accord ne doit pas changer de branche.
+    # Les lookbehinds tiennent la frontière que le « s » avait ouverte : « Ça
+    # fait 3 fois que TU M'expliques » (cas QA #20) est un constat sur les tours
+    # précédents, pas une demande de cours. Sans eux, le correctif du #35
+    # détournait le #20 — déjà clos — vers le mode cours.
+    r"|(?<!m['’])(?<!me\s)(?<!tu\s)(?<!nous\s)(?<!vous\s)"
+    r"explique[sz]?(?:[\s-]+(?:moi|nous))?\b"
+    # L'infinitif n'a pas besoin du garde-fou ci-dessus et gagne à l'éviter :
+    # « tu peux m'expliquer les intégrales ? » est bien une demande de cours,
+    # alors que « tu m'expliques » n'en est pas une.
+    r"|expliquer\b"
+    r"|pr[ée]sentes?(?:[\s-]+moi)?\b"
+    r"|pr[ée]senter\s+(?:le|la|les)\b"
+    r"|enseignes?(?:[\s-]+moi)?\b"
+    r"|apprends?(?:[\s-]+moi)?\b"
     r"|je\s+veux\s+(?:apprendre|comprendre|r[ée]viser|[ée]tudier)"
     r"|j['e]\s*aimerais\s+(?:apprendre|comprendre|r[ée]viser)"
     r"|initie(?:[\s-]+moi)?\b"
@@ -207,6 +229,88 @@ _QUIZ_REQUEST = re.compile(
 )
 
 
+# --- Demande d'un exercice à faire -------------------------------------------
+# « Donne-moi un exercice sur le calcul intégral » (cas QA #31). Le tour tombait
+# en EXERCICE — le défaut — puis au niveau d'indice 1, dont la consigne est
+# « Rappelle la règle utile SANS l'appliquer ». L'élève recevait donc une règle
+# générale à la place de l'énoncé qu'il demandait, et l'insistance ne changeait
+# rien : chaque relance repassait par la même consigne.
+#
+# La distinction que porte ce prédicat est celle-ci, et elle est structurelle :
+# la posture socratique suppose que l'élève a **déjà** un énoncé sous les yeux —
+# c'est ce qu'elle retient qui le fait chercher. Quand il n'en a pas, il n'y a
+# rien à retenir, et lui refuser l'énoncé n'enseigne rien.
+
+#: Verbes par lesquels on demande qu'on nous **donne** quelque chose.
+_VERBE_DE_REMISE = (
+    r"(?:donne|propose|file|sors|choisis|s[ée]lectionne|g[ée]n[èe]re|genere|"
+    r"cr[ée]e|pr[ée]pare|trouve|fais|balance|montre)"
+)
+
+#: Déterminant **indéfini**, et c'est lui qui fait le tri : « donne-moi UN
+#: exercice » réclame un énoncé, « corrige MON exercice » / « donne-moi LA
+#: correction de l'exercice » parlent d'un énoncé déjà en main, qui relève de la
+#: posture socratique inchangée. Exiger l'indéfini écarte donc les seconds sans
+#: avoir à énumérer les tournures d'aide, toujours plus nombreuses.
+_DETERMINANT_INDEFINI = (
+    r"(?:un\s+autre|une\s+autre|encore\s+un|encore\s+une|d['’e]\s*autres|"
+    r"quelques|plusieurs|des|un|une|deux|trois|\d+)"
+)
+
+#: Ce qu'on demande : un énoncé à traiter. « exemple » n'y figure PAS — un
+#: exemple résolu est du matériel de cours, et le confondre avec un exercice
+#: ferait basculer en entraînement des demandes d'explication.
+_NOM_D_EXERCICE = (
+    r"(?:exercices?|exos?|probl[èe]mes?|entra[îi]nements?|applications?|"
+    r"questions?\s+type\s+bac|sujets?\s+d['’e]\s*entra[îi]nement)"
+)
+
+#: Adverbes qui s'intercalent entre le verbe et le déterminant sans changer ce
+#: qui est demandé (« donne-moi PLUTÔT un exercice »). La liste est fermée à
+#: dessein : accepter n'importe quel mot ferait entrer « montre-moi comment faire
+#: un exercice », qui est une question de méthode et relève du mode cours.
+_ADVERBE_INTERCALE = (
+    r"(?:(?:plut[ôo]t|vraiment|maintenant|juste|simplement|encore|alors|donc|"
+    r"d[ée]j[àa]|svp|stp)\s+){0,2}"
+)
+
+_DEMANDE_EXERCICE = re.compile(
+    r"(?:"
+    # « donne-moi un exercice », « propose deux exos », « fais-moi un problème »
+    rf"\b{_VERBE_DE_REMISE}(?:[\s-]+(?:moi|nous))?\s+{_ADVERBE_INTERCALE}"
+    rf"(?:{_DETERMINANT_INDEFINI})\s+(?:\w+\s+){{0,2}}?{_NOM_D_EXERCICE}\b"
+    # « je veux un exercice », « peux-tu me proposer quelques exercices »
+    rf"|\b(?:je\s+(?:veux|voudrais|souhaite)|j['’e]\s*aimerais|"
+    rf"peux[\s-]?tu\s+(?:me\s+)?(?:donner|proposer)|"
+    rf"pourrais[\s-]?tu\s+(?:me\s+)?(?:donner|proposer)|il\s+me\s+faut)\b"
+    rf"[^?.!]{{0,40}}?\b(?:{_DETERMINANT_INDEFINI})\s+(?:\w+\s+){{0,2}}?{_NOM_D_EXERCICE}\b"
+    # « un autre exercice », « encore un exo », « d'autres exercices » (relance)
+    rf"|\b(?:un\s+autre|une\s+autre|encore\s+un|encore\s+une|d['’e]\s*autres)\s+"
+    rf"(?:\w+\s+){{0,2}}?{_NOM_D_EXERCICE}\b"
+    # Forme nominale en tête : « Exercice sur les suites numériques » (fixture
+    # positive #52) — sans verbe, mais sans ambiguïté non plus.
+    rf"|^\s*{_NOM_D_EXERCICE}\s+(?:sur|de|d['’e]\s*|en|autour\s+de)\b"
+    # « entraîne-moi », « je veux m'entraîner »
+    r"|\bentra[îi]ne[\s-]?(?:moi|nous)\b"
+    r"|\bje\s+(?:veux|voudrais)\s+m['’e]\s*(?:entra[îi]ner|exercer|entrainer)\b"
+    r"|\bje\s+veux\s+(?:faire|travailler)\s+(?:des|quelques|plusieurs)\s+"
+    rf"{_NOM_D_EXERCICE}\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def demande_un_exercice(question: str) -> bool:
+    """Vrai si l'élève demande qu'on lui **fournisse** un énoncé à traiter.
+
+    Le prédicat est volontairement exigeant sur le déterminant (cf.
+    :data:`_DETERMINANT_INDEFINI`) : « corrige mon exercice », « je bloque sur
+    cet exercice » ou « donne-moi la correction de l'exercice 3 » parlent d'un
+    énoncé que l'élève a déjà, et doivent rester dans la posture socratique.
+    """
+    return bool(_DEMANDE_EXERCICE.search(question))
+
+
 # --- Questions méta ----------------------------------------------------------
 # Deux niveaux, et la distinction est nécessaire : « donne-moi les astuces »
 # désigne la section « Astuces » quand on est DANS un cours (cf. _SECTION_MENTION
@@ -232,6 +336,73 @@ _META_TOUJOURS = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+#: Sous-ensemble du méta : l'élève demande **l'inventaire** de ce qui est couvert
+#: (« liste-moi les chapitres », « quel est mon programme »). Ce tour-là reçoit
+#: une réponse écrite par le code (cf. ``orientation.reponse_catalogue``), parce
+#: que l'exigence porte sur l'exactitude d'une liste et non sur une tournure.
+#:
+#: La forme impérative manquait, et elle a coûté cher : « Listes moi les
+#: chapitres du cours de maths en terminale S1 » (cas QA #26) tombait en mode
+#: COURS — le mot « cours » y déclenchait ``_COURSE_START`` — donc en ouverture
+#: de chapitre sur une demande d'inventaire. D'où les « réponses de qualité
+#: variable » d'une reformulation à l'autre : ce n'était pas la même branche.
+_META_CATALOGUE = re.compile(
+    r"(?:"
+    r"\b(?:mon|le|du|au|ton)\s+programme\b"
+    r"|\bprogramme\s+(?:de\s+(?:cette\s+ann[ée]e|l'ann[ée]e|maths?|math[ée]matiques)|scolaire|officiel)"
+    r"|\b(?:quels?|quelles?)\s+(?:sont\s+)?(?:les\s+)?(?:grands\s+)?"
+    r"(?:chapitres?|le[çc]ons?|th[èe]mes?|notions?|sujets?)\b"
+    r"|\b(?:chapitres?|le[çc]ons?)\s+(?:disponibles?|couverts?|index[ée]s?|au\s+programme)\b"
+    r"|\bsur\s+quo?[ie]\s+(?:peux[\s-]?tu|pouvez[\s-]?vous|tu\s+peux)\b"
+    r"|\bsur\s+quels?\s+(?:chapitres?|le[çc]ons?|sujets?)\b"
+    # Forme impérative : « liste-moi les chapitres », « donne-moi la liste des
+    # leçons », « montre-moi tes chapitres ».
+    r"|\b(?:listes?|liste[\s-]?(?:moi|nous)|[ée]num[èe]re|donne[\s-]?(?:moi|nous)?\s+la\s+liste|"
+    r"montre[\s-]?(?:moi|nous)?|dis[\s-]?(?:moi|nous)?|c['’e]est\s+quoi)\b"
+    r"[^?.!]{0,30}?\b(?:chapitres?|le[çc]ons?|th[èe]mes?)\b"
+    r"|\bqu['’e]\s*est[\s-]?ce\s+que\s+tu\s+(?:as|couvres?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def demande_le_catalogue(question: str) -> bool:
+    """Vrai si l'élève demande l'inventaire des chapitres couverts."""
+    return bool(_META_CATALOGUE.search(question))
+
+
+#: Demande d'aide **sans objet nommé** : « aide-moi à devenir meilleure en
+#: mathématiques » (cas QA #27). Ni exercice (aucun énoncé), ni cours (aucun
+#: chapitre nommé) : la réponse utile est une question de clarification, adossée
+#: aux chapitres réellement disponibles. Sans cette branche, la phrase tombait
+#: en posture socratique de niveau 1 sur cinq extraits pris au hasard, d'où la
+#: relance sans rapport (« qu'est-ce que tu veux faire avec cette équation ? »).
+#:
+#: Le motif exige la **progression** comme objet ; il laisse donc passer
+#: « aide-moi sur cet exercice » et « aide-moi à calculer cette intégrale », qui
+#: nomment leur objet et relèvent de la posture socratique inchangée.
+_DEMANDE_OUVERTE = re.compile(
+    r"(?:"
+    r"\b(?:aide[\s-]?(?:moi|nous)|aidez[\s-]?(?:moi|nous)|j['’e]\s*ai\s+besoin\s+d['’e]\s*aide)\b"
+    r"\s*(?:[àa]\s+|pour\s+|de\s+)?"
+    r"(?:devenir|[êe]tre|progresser|m['’e]\s*am[ée]liorer|avoir|r[ée]ussir|remonter|"
+    r"me\s+perfectionner|travailler)?"
+    r"[^?.!]{0,30}?\b(?:meilleur[e]?s?|bon(?:ne)?s?|fort[e]?s?|progresser|"
+    r"am[ée]liorer|moyenne|niveau|r[ée]ussir)\b"
+    r"|\bje\s+(?:veux|voudrais|souhaite|aimerais)\s+(?:devenir|[êe]tre)\s+"
+    r"(?:meilleur[e]?|bon(?:ne)?|fort[e]?)\b"
+    r"|\bje\s+veux\s+(?:progresser|m['’e]\s*am[ée]liorer)\b"
+    r"|\bcomment\s+(?:devenir|[êe]tre)\s+(?:meilleur[e]?|bon(?:ne)?|fort[e]?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def est_une_demande_ouverte(question: str) -> bool:
+    """Vrai si l'élève demande de l'aide sans nommer de notion ni d'exercice."""
+    return bool(_DEMANDE_OUVERTE.search(question))
+
 
 #: Reconnu **hors cours** seulement : demande de méthode de travail. En cours,
 #: ces mêmes mots désignent une section du plan et restent une navigation.
@@ -367,9 +538,21 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
         return IntentDecision(Intent.QUIZ, "demande explicite d'évaluation", None)
 
     # Une question méta sans ambiguïté prime sur tout : demander « quels
-    # chapitres as-tu ? » n'est pas demander un cours sur les chapitres.
+    # chapitres as-tu ? » n'est pas demander un cours sur les chapitres. La
+    # demande d'inventaire est distinguée ici parce que le nœud méta lui sert
+    # une réponse déterministe (cas QA #26).
+    if demande_le_catalogue(question):
+        return IntentDecision(Intent.META, "demande d'inventaire des chapitres", None)
     if _META_TOUJOURS.search(question):
         return IntentDecision(Intent.META, "question sur le service (programme, couverture)", None)
+
+    # Demande d'un énoncé à traiter — **hors cours seulement**. En plein cours,
+    # « donne-moi un exercice » désigne la section « Exercices » du chapitre en
+    # train d'être enseigné, et le saut de section y répond déjà (cf.
+    # ``_NAV_GOTO`` et test_section_mention_inside_course_is_goto) : le détourner
+    # ici couperait le cours au lieu de le servir.
+    if not in_course and demande_un_exercice(question):
+        return IntentDecision(Intent.ENTRAINEMENT, "demande d'un exercice à faire", None)
 
     nav = _detect_navigation(question, in_course=in_course)
 
@@ -388,6 +571,12 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
         if _SECTION_MENTION.search(question):
             return IntentDecision(Intent.COURS, "poursuite du cours (goto)", Navigation.GOTO)
         return IntentDecision(Intent.COURS, "poursuite du cours", None)
+
+    # Hors cours seulement : « aide-moi à devenir meilleure en maths » n'a ni
+    # énoncé ni chapitre à quoi se rattacher ; en plein cours, la même phrase
+    # porte sur la section en train d'être enseignée (cas QA #27).
+    if est_une_demande_ouverte(question):
+        return IntentDecision(Intent.META, "demande d'aide sans objet nommé", None)
 
     # Hors cours seulement : « des astuces pour progresser » est une demande de
     # méthode, alors qu'en cours les mêmes mots visent la section « Astuces ».

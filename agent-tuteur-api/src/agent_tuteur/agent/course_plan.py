@@ -173,6 +173,18 @@ def plan_titles() -> list[str]:
     return [s.title for s in LESSON_SECTIONS]
 
 
+#: Clé de l'étape « Exercices d'application » du plan. Le tour d'entraînement
+#: (cas QA #31) s'appuie sur ses ``sources`` pour aller chercher les énoncés du
+#: corpus, sans dépendre de la similarité vectorielle : c'est le même mécanisme
+#: que le mode cours, réemployé hors d'un cours.
+CLE_SECTION_EXERCICES = "exercices"
+
+
+def section_par_cle(cle: str) -> Section:
+    """Section du plan portant cette clé. Lève ``KeyError`` si elle n'existe pas."""
+    return LESSON_SECTIONS[_SECTION_BY_KEY[cle]]
+
+
 def section_at(index: int) -> Section:
     """Section à l'indice donné, borné à ``[FIRST_INDEX, LAST_INDEX]``."""
     return LESSON_SECTIONS[clamp_index(index)]
@@ -221,6 +233,11 @@ _TOPIC_STOPWORDS = frozenset(
         # le sujet cité au modèle — et qu'il peut répéter à l'élève — devenait
         # « comprends pas dérivées ».
         "comprends comprend compris rien pas ne pige flou "
+        # Un tour d'entraînement (cas QA #31) nomme son sujet dans une phrase où
+        # figure le mot « exercice » : sans ces mots ici, le sujet cité au
+        # modèle devenait « Exercice suites numeriques », et le recoupement avec
+        # le titre d'un chapitre partait avec un terme parasite.
+        "exercice exercices exo exos entrainement entrainements propose proposer "
         "est quoi ce que qui les le la des du de un une aux au sur pour dans avec "
         "par en et ou mais plus tout tous toute toutes mon ma mes ton ta tes stp "
         "svp merci peux peut tu je il elle on nous vous ils elles"
@@ -232,13 +249,25 @@ _MIN_TOPIC_TERM_LEN = 3
 
 
 def _stem(token: str) -> str:
-    """Forme comparable d'un terme : pluriel français retiré.
+    """Forme comparable d'un terme : accord français (nombre puis genre) retiré.
 
     « dérivées » et « dérivée », « nombres » et « nombre » désignent le même
     chapitre ; sans cette normalisation, la liaison échouerait sur un simple
     accord entre la question de l'élève et le titre du chapitre.
+
+    Le **féminin** est retiré ensuite, et il ne s'agit pas d'un raffinement :
+    mesuré, « explique-moi les intégrales » ne se liait pas au chapitre « Le
+    Calcul Intégral » (``integrale`` ≠ ``integral``), alors que « cours sur le
+    calcul intégral » s'y liait. L'élève recevait donc l'avertissement de
+    non-couverture sur un chapitre qui EST indexé, selon la façon dont il l'avait
+    nommé. Les deux côtés de la comparaison passent par cette fonction : le
+    dépouillement est symétrique, il ne peut pas faire diverger les formes.
     """
-    return token[:-1] if len(token) > 3 and token.endswith(("s", "x")) else token
+    if len(token) > 3 and token.endswith(("s", "x")):
+        token = token[:-1]
+    if len(token) > 4 and token.endswith("e"):
+        token = token[:-1]
+    return token
 
 
 def topic_terms(question: str) -> list[str]:

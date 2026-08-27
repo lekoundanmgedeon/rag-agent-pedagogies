@@ -116,6 +116,33 @@ def escalade_pour_resultat_verifie(
     )
 
 
+def ajuster_pour_simplification(
+    decision: HintDecision, *, demande_simplification: bool
+) -> HintDecision:
+    """Lève l'interdiction d'illustrer quand l'élève demande plus simple (cas #39).
+
+    Le reproche du testeur — « l'agent reste vague, sans exemple concret » —
+    était, là encore, la sortie fidèle d'une consigne : au niveau 1, le prompt
+    dit « Rappelle la règle […] **SANS l'appliquer** au cas de l'élève ».
+    Autrement dit, l'exemple concret que l'élève réclame y est explicitement
+    interdit. C'est la même contradiction d'assemblage que les cas #11 et #13,
+    sur un autre axe.
+
+    On monte donc au niveau **2**, le premier qui n'interdise plus d'illustrer,
+    et pas plus haut : demander des mots plus simples n'est pas demander la
+    solution. Une décision déjà au-dessus n'est pas touchée — on ne redescend
+    jamais un niveau atteint par frustration ou par répétition.
+    """
+    if not demande_simplification or decision.level >= 2:
+        return decision
+    return HintDecision(
+        level=2,
+        label=HINT_LABELS[2],
+        instruction=HINT_INSTRUCTIONS[2],
+        reason="reformulation simplifiée demandée",
+    )
+
+
 def diagnose_hint_level(
     question: str,
     frustration_score: float = 0.0,

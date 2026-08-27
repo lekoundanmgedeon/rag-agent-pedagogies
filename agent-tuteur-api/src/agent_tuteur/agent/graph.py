@@ -44,14 +44,17 @@ from dataclasses import dataclass, field
 from langgraph.graph import END, START, StateGraph
 
 from agent_tuteur.agent.course_plan import (
+    CLE_SECTION_EXERCICES,
     CoursePosition,
     Section,
     advance,
     plan_titles,
     resolve_chapitre,
+    section_par_cle,
     sources_absentes,
     texte_releve_de_la_section,
     titre_de_section,
+    topic_label,
 )
 from agent_tuteur.agent.frustration import SessionState, detect_frustration
 from agent_tuteur.agent.guardrails import clamp_hint_level, moderate, sanitize
@@ -59,10 +62,17 @@ from agent_tuteur.agent.hint_strategy import (
     HINT_INSTRUCTIONS,
     HINT_LABELS,
     HintDecision,
+    ajuster_pour_simplification,
     diagnose_hint_level,
     escalade_pour_resultat_verifie,
 )
-from agent_tuteur.agent.intent import Intent, Navigation, classify_intent
+from agent_tuteur.agent.intent import (
+    Intent,
+    Navigation,
+    classify_intent,
+    demande_le_catalogue,
+    est_une_demande_ouverte,
+)
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
 from agent_tuteur.agent.profil import detecter_serie, serie_effective
@@ -71,6 +81,7 @@ from agent_tuteur.agent.prompt import (
     SYSTEM_PERSONA_QUIZ,
     assemble_accueil_prompt,
     assemble_course_prompt,
+    assemble_exercise_prompt,
     assemble_meta_prompt,
     assemble_prompt,
     build_context_block,
@@ -84,12 +95,14 @@ from agent_tuteur.agent.quiz import (
     construire_prompt_quiz,
     contient_du_factice,
 )
+from agent_tuteur.agent.orientation import reponse_catalogue
 from agent_tuteur.agent.securite import detecter_detresse, reponse_detresse
 from agent_tuteur.agent.soutien import ouverture_pour
 from agent_tuteur.agent.state import AgentState
 from agent_tuteur.agent.verify import verifier_coherence_mathematique
 from agent_tuteur.domain.models import ScoredChunk
 from agent_tuteur.observability import get_logger, log_event
+from agent_tuteur.textutil import strip_accents
 from agent_tuteur.tools.affirmation import verifier_affirmation
 from agent_tuteur.tools.complexe import analyser_la_demande as analyser_complexe_demande
 from agent_tuteur.tools.etude_fonction import etudier_la_demande
@@ -500,10 +513,12 @@ class TutorAgent:
             "markers": signal.markers,
             "blocage_declare": signal.blocage_declare,
             "decouragement": signal.decouragement,
+            "demande_simplification": signal.demande_simplification,
             "node_trace": [
                 {"node": "detect_frustration", "score": signal.score,
                  "blocage_declare": signal.blocage_declare,
-                 "decouragement": signal.decouragement}
+                 "decouragement": signal.decouragement,
+                 "demande_simplification": signal.demande_simplification}
             ],
         }
 
@@ -660,6 +675,11 @@ class TutorAgent:
             resultat_verifie=state.get("tool_result") is not None,
             demande_concrete=demande_un_calcul_concret(question),
         )
+        # Demande de reformulation simplifiée : la consigne de niveau 1
+        # interdit explicitement l'exemple concret que l'élève réclame (cas #39).
+        decision = ajuster_pour_simplification(
+            decision, demande_simplification=bool(state.get("demande_simplification"))
+        )
         etude = state.get("etude_fonction")
         complexe = state.get("complexe")
         # Une étude de fonction est un livrable, pas un indice : la même
@@ -677,12 +697,14 @@ class TutorAgent:
                 affirmation["affirme"], affirmation["attendu"],
             )
         varier_approche = bool(state.get("blocage_declare"))
+        simplifier = bool(state.get("demande_simplification"))
         system, user_prompt = assemble_prompt(
             question, decision, retrieved, state.get("tool_result"), ctx,
             state.get("conversation_history", []),
             calcul_non_verifie=bool(state.get("calcul_non_verifie")),
             correction_affirmation=correction,
             varier_approche=varier_approche,
+            simplifier=simplifier,
             etude_fonction=consigne_etude_de_fonction(etude) if etude else None,
             complexe=consigne_complexe(complexe) if complexe else None,
         )
@@ -698,6 +720,10 @@ class TutorAgent:
             "hint_reason": decision.reason,
             "frustration_score": state.get("frustration_score", 0.0),
             "blocage_declare": varier_approche,
+            # Exposé à côté de ``blocage_declare`` et non fondu dedans : les
+            # deux signaux appellent des consignes différentes, et la trace doit
+            # dire lequel a joué (cas #20 contre cas #39).
+            "demande_simplification": simplifier,
             # Exposé dans la trace pour que le signal du cas #19 soit lisible
             # là où il sera exploité (routage ou modulation de ton, D5 point 1)
             # plutôt que noyé dans le score agrégé.
@@ -739,8 +765,16 @@ class TutorAgent:
         """
         ctx = state.get("curriculum_context", {})
         catalogue = self._retriever.catalogue(ctx)
+
+        # Demande d'inventaire : la réponse est écrite par le code (cas QA #26).
+        # Une liste de chapitres doit être exacte et **identique** d'un tour à
+        # l'autre ; la faire reformuler à chaque fois était la cause directe des
+        # « réponses de qualité variable » rapportées par la testeuse.
+        inventaire = demande_le_catalogue(state["question"])
+        ouverte = est_une_demande_ouverte(state["question"])
         system, user_prompt = assemble_meta_prompt(
-            state["question"], catalogue, ctx, state.get("conversation_history", [])
+            state["question"], catalogue, ctx, state.get("conversation_history", []),
+            demande_ouverte=ouverte,
         )
         user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
         trace = {
@@ -749,7 +783,13 @@ class TutorAgent:
             "soutien": state.get("soutien"),
             "hint_level": None,
             "hint_label": "Orientation",
-            "hint_reason": "question sur le service",
+            "hint_reason": (
+                "demande d'inventaire des chapitres"
+                if inventaire
+                else "demande d'aide sans objet nommé"
+                if ouverte
+                else "question sur le service"
+            ),
             "frustration_score": 0.0,
             "tool_used": None,
             "competence": None,
@@ -763,8 +803,20 @@ class TutorAgent:
             "system_prompt": system,
             "final_prompt": user_prompt,
             "retrieved": [],
+            # Posée seulement sur l'inventaire : ``compose_response`` et
+            # ``stream()`` la restituent alors telle quelle, sans appeler le
+            # modèle. Le prompt reste assemblé et tracé — il documente ce que le
+            # tour aurait envoyé, et le rejeu QA continue de l'assérer.
+            "reponse_directe": reponse_catalogue(catalogue) if inventaire else None,
             "trace": trace,
-            "node_trace": [{"node": "guardrail_meta", "n_chapitres": len(catalogue)}],
+            "node_trace": [
+                {
+                    "node": "guardrail_meta",
+                    "n_chapitres": len(catalogue),
+                    "inventaire": inventaire,
+                    "demande_ouverte": ouverte,
+                }
+            ],
         }
 
     @_timed_node("guardrail_accueil")
@@ -952,6 +1004,114 @@ class TutorAgent:
             "node_trace": [{"node": "guardrail_course", "moderation_flagged": moderation.flagged}],
         }
 
+    # --- Branche entraînement (l'élève réclame un énoncé) --------------------
+
+    @_timed_node("entrainement_planner")
+    async def _n_entrainement_planner(self, state: AgentState) -> dict:
+        """Va chercher un énoncé du corpus, plutôt qu'un rappel de règle (cas #31).
+
+        Le nœud réemploie hors cours les deux mécanismes du mode cours qui ne
+        dépendent pas de la similarité vectorielle : la **liaison du chapitre au
+        sujet demandé** (``resolve_chapitre``, par recoupement de titre) et
+        l'**ancrage sur une section nommée** (``_ancrer_sur_la_section``, par
+        titre de section). La recherche, elle, a eu lieu sur la phrase brute de
+        l'élève : elle ignore qu'on cherche des énoncés, et remontait ici
+        « Astuces », « Erreurs fréquentes » et « Théorèmes » — de quoi rappeler
+        une règle, jamais de quoi proposer un exercice.
+
+        Les corrigés sont écartés du contexte : les laisser, c'est mettre la
+        solution sous les yeux du modèle au moment précis où on lui demande de
+        ne pas la donner. Le repli garde la liste d'origine si le filtre la
+        vidait — mieux vaut un contexte imparfait qu'un tour sans documentation.
+        """
+        ctx = state.get("curriculum_context", {})
+        retrieved = state.get("retrieved", [])
+        binding = resolve_chapitre(
+            state["question"], [sc.chunk.metadata.chapitre for sc in retrieved]
+        )
+        chapitre = binding.chapitre if binding.confirmed else None
+        section = section_par_cle(CLE_SECTION_EXERCICES)
+
+        focused = _focus_on_chapitre(retrieved, chapitre) if chapitre else retrieved
+        focused, sections_servies = self._ancrer_sur_la_section(focused, section, chapitre, ctx)
+        sans_corriges = [sc for sc in focused if not _est_un_corrige(sc)]
+        focused = sans_corriges or focused
+
+        # Quand la demande ne se rattache à aucun chapitre, ce sont les chapitres
+        # réellement indexés qu'on propose — lus dans le store, jamais déduits
+        # des extraits remontés, qui peuvent être vides (fixture positive #52).
+        alternatives = list(binding.alternatives) or self._retriever.catalogue(ctx)
+
+        entrainement = {
+            "chapitre": binding.chapitre,
+            "chapitre_confirmed": binding.confirmed,
+            "topic": topic_label(state["question"]),
+            "alternatives": alternatives,
+            "sections_servies": sections_servies,
+        }
+        return {
+            "retrieved": focused,
+            "entrainement": entrainement,
+            "node_trace": [
+                {
+                    "node": "entrainement_planner",
+                    "chapitre": binding.chapitre,
+                    "chapitre_confirmed": binding.confirmed,
+                    "sections_servies": sections_servies,
+                    "n_sources": len(focused),
+                }
+            ],
+        }
+
+    @_timed_node("guardrail_entrainement")
+    async def _n_guardrail_entrainement(self, state: AgentState) -> dict:
+        question = state["question"]
+        ctx = state.get("curriculum_context", {})
+        retrieved = state.get("retrieved", [])
+        entrainement = state["entrainement"]
+        moderation = moderate(question)
+
+        system, user_prompt = assemble_exercise_prompt(
+            question, entrainement, retrieved, ctx, state.get("conversation_history", [])
+        )
+        if moderation.flagged:
+            user_prompt = f"{_MODERATION_OVERRIDE}\n\n{user_prompt}"
+        user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
+
+        trace = {
+            "trace_id": state.get("trace_id"),
+            "soutien": state.get("soutien"),
+            # Pas de niveau d'indice ici, comme en mode cours et pour la même
+            # raison : la graduation socratique n'a pas d'objet tant que l'élève
+            # n'a pas d'énoncé. Les clés du contrat restent présentes.
+            "hint_level": None,
+            "hint_label": "Exercice proposé",
+            "hint_reason": (
+                "exercice demandé par l'élève"
+                if entrainement["chapitre_confirmed"]
+                else "exercice demandé, chapitre non couvert"
+            ),
+            "frustration_score": 0.0,
+            "tool_used": None,
+            "competence": _competence_from_context(ctx, retrieved),
+            "course": None,
+            "entrainement": entrainement,
+            "hors_perimetre": bool(state.get("hors_perimetre"))
+            or not entrainement["chapitre_confirmed"],
+            "sources": _sources_payload(retrieved),
+            "scores": [sc.score for sc in retrieved],
+        }
+        await self._write_audit(state, trace)
+        return {
+            "system_prompt": system,
+            "final_prompt": user_prompt,
+            "moderation_flagged": moderation.flagged,
+            "trace": trace,
+            "node_trace": [
+                {"node": "guardrail_entrainement", "moderation_flagged": moderation.flagged}
+            ],
+        }
+
     # --- Branche quiz (posture d'évaluation) --------------------------------
 
     @_timed_node("quiz_planner")
@@ -1018,7 +1178,16 @@ class TutorAgent:
 
     @_timed_node("compose_response")
     async def _n_compose(self, state: AgentState) -> dict:
-        answer = await self._llm.generate(state["final_prompt"], system=state.get("system_prompt"))
+        # Réponse déjà écrite par le code (inventaire des chapitres, cas #26) :
+        # le modèle n'est pas sollicité. C'est le pendant non streamé du même
+        # court-circuit dans ``stream()`` — les deux chemins doivent rendre le
+        # même texte, sans quoi la démo et les tests divergeraient.
+        directe = state.get("reponse_directe")
+        answer = (
+            directe
+            if directe is not None
+            else await self._llm.generate(state["final_prompt"], system=state.get("system_prompt"))
+        )
         # L'ouverture de soutien passe devant la génération — c'est ce que veut
         # dire « dédramatiser AVANT de reprendre le cours » (cas #19). Le
         # pendant streamé est dans ``stream()`` : les deux chemins doivent
@@ -1175,6 +1344,9 @@ class TutorAgent:
         # Branche cours (posture didactique).
         g.add_node("course_planner", self._n_course_planner)
         g.add_node("guardrail_course", self._n_guardrail_course)
+        # Branche entraînement (l'élève réclame un énoncé à traiter, cas #31).
+        g.add_node("entrainement_planner", self._n_entrainement_planner)
+        g.add_node("guardrail_entrainement", self._n_guardrail_entrainement)
         # Branche quiz (posture d'évaluation) — portée de NURU.
         g.add_node("quiz_planner", self._n_quiz_planner)
         g.add_node("guardrail_quiz", self._n_guardrail_quiz)
@@ -1212,12 +1384,14 @@ class TutorAgent:
                 "exercice": "detect_frustration",
                 "cours": "course_planner",
                 "quiz": "quiz_planner",
+                "entrainement": "entrainement_planner",
             },
         )
         g.add_edge("detect_frustration", "diagnose_hint_level")
         g.add_edge("diagnose_hint_level", "route_tool")
         g.add_edge("route_tool", "guardrail")
         g.add_edge("course_planner", "guardrail_course")
+        g.add_edge("entrainement_planner", "guardrail_entrainement")
         g.add_edge("quiz_planner", "guardrail_quiz")
 
         if include_compose:
@@ -1229,6 +1403,7 @@ class TutorAgent:
             g.add_node("persist_progression", self._n_persist_progression)
             g.add_edge("guardrail", "compose_response")
             g.add_edge("guardrail_course", "compose_response")
+            g.add_edge("guardrail_entrainement", "compose_response")
             g.add_edge("guardrail_quiz", "compose_response")
             g.add_edge("guardrail_meta", "compose_response")
             g.add_edge("guardrail_accueil", "compose_response")
@@ -1238,6 +1413,7 @@ class TutorAgent:
         else:
             g.add_edge("guardrail", END)
             g.add_edge("guardrail_course", END)
+            g.add_edge("guardrail_entrainement", END)
             g.add_edge("guardrail_quiz", END)
             g.add_edge("guardrail_meta", END)
             g.add_edge("guardrail_accueil", END)
@@ -1310,11 +1486,14 @@ class TutorAgent:
         """
         t0 = time.perf_counter()
         token_count = 0
-        # Tour de mise en sécurité : la réponse est déjà écrite, et le modèle ne
-        # doit pas être sollicité — c'est ce qui garantit qu'elle ne varie pas
-        # d'un appel à l'autre et qu'aucune ressource d'aide n'est inventée.
+        # Réponse déjà écrite par le code — mise en sécurité (cas #7) ou
+        # inventaire des chapitres (cas #26). Le modèle n'est pas sollicité :
+        # c'est ce qui garantit que le texte ne varie pas d'un appel à l'autre.
+        # Le fournisseur déclaré distingue les deux, parce que la trace sert
+        # aussi à prouver qu'un tour de détresse n'est jamais passé par le
+        # modèle — un libellé unique noierait ce contrôle.
         if prepared.reponse_directe is not None:
-            fournisseur = "securite"
+            fournisseur = "securite" if prepared.trace.get("securite") else "code"
             for token in re.findall(r"\S+\s*", prepared.reponse_directe):
                 token_count += 1
                 yield token
@@ -1454,6 +1633,8 @@ def _route_by_intent(state: AgentState) -> str:
         return "cours"
     if intent == Intent.QUIZ.value:
         return "quiz"
+    if intent == Intent.ENTRAINEMENT.value:
+        return "entrainement"
     return "exercice"
 
 
@@ -1478,6 +1659,17 @@ def _sources_payload(retrieved: list[ScoredChunk]) -> list[dict]:
         }
         for sc in retrieved
     ]
+
+
+def _est_un_corrige(sc: ScoredChunk) -> bool:
+    """Vrai si ce chunk est la section « Corrigés détaillés » d'une leçon.
+
+    Écarté du tour d'entraînement : donner au modèle l'énoncé ET sa solution
+    pendant qu'on lui demande de ne pas résoudre, c'est compter sur sa retenue
+    là où le code peut simplement ne pas la lui montrer.
+    """
+    titre = titre_de_section(sc.chunk.text)
+    return bool(titre) and "corrig" in strip_accents(titre).lower()
 
 
 def _focus_on_chapitre(

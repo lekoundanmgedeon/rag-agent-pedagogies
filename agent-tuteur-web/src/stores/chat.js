@@ -83,10 +83,24 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    // Cas QA #23 : « la suppression ne fonctionne pas ». Rejouée sur la stack,
+    // la route DELETE /api/conversations/{id} répond 200 et supprime bien —
+    // mais un échec (réseau, 404, jeton expiré) remontait ici en exception non
+    // capturée : la liste restait telle quelle et l'élève ne voyait RIEN, ni
+    // suppression ni message. Les deux issues se ressemblaient donc à l'écran.
+    // Les deux autres actions du store (chargement, ouverture) traitaient déjà
+    // leur erreur ainsi ; celle-ci était la seule à ne pas le faire.
     async deleteConversation(id) {
-      await conversationsApi.remove(id)
+      try {
+        await conversationsApi.remove(id)
+        this.error = ''
+      } catch (e) {
+        this.error = apiErrorMessage(e)
+        return false
+      }
       if (id === this.conversationId) this.newConversation()
       await this.loadConversations()
+      return true
     },
 
     async send(question) {

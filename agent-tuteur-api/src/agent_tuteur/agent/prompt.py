@@ -14,6 +14,7 @@ from __future__ import annotations
 from agent_tuteur.agent.course_plan import CoursePosition, plan_titles
 from agent_tuteur.agent.hint_strategy import HintDecision
 from agent_tuteur.domain.models import ScoredChunk
+from agent_tuteur.ingestion.normalize import delimiteurs_latex
 
 # Contraintes communes aux deux postures (ancrage RAG + rendu LaTeX). Toute
 # persona doit les rappeler à l'identique pour un affichage cohérent côté client.
@@ -29,7 +30,8 @@ _COMMON_RULES = (
     "attribue jamais une série, une classe, un établissement, un historique "
     "de cours ni des notions « déjà vues » que tu y aurais lus — tu ne sais de "
     "l'élève que ce qu'il t'a dit lui-même dans cette conversation. Tu "
-    "t'exprimes en français clair, avec des formules en LaTeX. Utilise "
+    "t'exprimes en français clair et RELU — accords, conjugaison et ponctuation "
+    "corrects —, avec des formules en LaTeX. Utilise "
     "EXCLUSIVEMENT les délimiteurs $...$ (inline) et $$...$$ (bloc) ; n'utilise "
     "JAMAIS \\(...\\) ni \\[...\\], qui ne s'affichent pas correctement ici."
 )
@@ -43,6 +45,41 @@ SYSTEM_PERSONA = (
 )
 
 #: Posture inverse de la persona socratique : ici on **expose** le cours.
+#: Injectée quand le tour est le **premier** de la conversation (cas QA #36).
+#: La testeuse a reçu une réponse renvoyant à « la première partie » du cours,
+#: sur son tout premier message. Rien dans le prompt ne disait au modèle qu'il
+#: n'y avait pas d'avant : le plan en 8 sections lui était montré, et l'absence
+#: d'historique ne se distingue pas, pour lui, d'un historique qu'on aurait omis
+#: de rappeler. On le dit donc explicitement, au lieu de compter sur son silence
+#: (règle non-négociable n°3).
+CONSIGNE_AUCUN_ANTERIEUR = (
+    "ATTENTION : c'est le PREMIER message de cette conversation. Il n'y a "
+    "aucune partie précédente, aucun échange antérieur, aucun exercice déjà "
+    "traité et aucune notion « déjà vue ensemble ». Ne renvoie donc à rien de "
+    "tel — pas de « comme nous l'avons vu », pas de « dans la première partie », "
+    "pas de « tu te souviens ». Tu ne sais de l'élève que ce qu'il vient "
+    "d'écrire."
+)
+
+
+#: Injectée sur un tour de cours qui doit avouer une lacune de couverture (cas
+#: QA #40). Le testeur note que le hors-périmètre est « correctement signalé »,
+#: puis que l'agent « reprend de force le cours sans laisser le choix ». La
+#: reprise n'était pas une dérive : la persona de cours demande de « terminer
+#: TOUJOURS en proposant de passer à la section suivante ». Sur un tour ordinaire
+#: c'est ce qu'il faut ; juste après un aveu, cela revient à répondre « passons à
+#: autre chose » à un élève qui vient de poser une vraie question.
+CONSIGNE_LAISSER_LE_CHOIX = (
+    "ATTENTION : ce tour doit reconnaître que ta documentation ne couvre pas ce "
+    "que l'élève demande. Ne reprends donc PAS le cours de ton propre chef et "
+    "n'enchaîne PAS sur la section suivante. Après l'avoir dit franchement et "
+    "l'avoir aidé avec ce que tu sais, laisse-lui explicitement le choix de la "
+    "suite : reprendre le cours là où il en était, passer à un autre chapitre "
+    "parmi ceux dont tu disposes, ou continuer sur ce point. Pose la question, "
+    "puis arrête-toi : c'est à lui de décider."
+)
+
+
 SYSTEM_PERSONA_COURSE = (
     "Tu es un professeur pédagogue pour le programme scolaire sénégalais (de "
     "l'élémentaire au Baccalauréat). Tu construis le cours d'un chapitre PAS À "
@@ -51,7 +88,8 @@ SYSTEM_PERSONA_COURSE = (
     "t'assures d'être compris avant d'avancer. " + _COMMON_RULES + " Tu traites "
     "UNIQUEMENT la section courante indiquée — n'anticipe pas les suivantes. "
     "Tu termines toujours en vérifiant la compréhension et en proposant "
-    "explicitement de passer à la section suivante (ou de poser une question)."
+    "explicitement de passer à la section suivante (ou de poser une question) — "
+    "tu PROPOSES la suite, tu ne l'imposes jamais, et le choix revient à l'élève."
 )
 
 #: Posture d'évaluation : ni indices, ni exposé — on interroge.
@@ -64,6 +102,20 @@ SYSTEM_PERSONA_QUIZ = (
     "seule proposition est correcte. Tu réponds EXCLUSIVEMENT par l'objet JSON "
     "demandé, sans aucun texte avant ni après, sans balise markdown."
 )
+
+#: Posture d'entraînement : l'élève réclame un énoncé à traiter (cas QA #31).
+#: Ni exposé de cours, ni indice socratique — les deux sont des façons de ne pas
+#: donner l'exercice demandé, et c'est précisément le reproche du testeur. La
+#: retenue reste entière, mais elle porte sur la **solution**, pas sur l'énoncé.
+SYSTEM_PERSONA_ENTRAINEMENT = (
+    "Tu es un tuteur pédagogique pour le programme scolaire sénégalais (de "
+    "l'élémentaire au Baccalauréat). L'élève te demande un exercice à faire : "
+    "tu lui en fournis un, tiré de la documentation de cours, et tu le laisses "
+    "chercher. Tu ne résous jamais l'exercice que tu proposes — c'est son "
+    "travail, et c'est là que la posture socratique reprend ses droits : s'il "
+    "bloque, tu l'aideras par des indices au tour suivant. " + _COMMON_RULES
+)
+
 
 #: Posture d'orientation : l'élève interroge le service, pas une notion.
 #: Les règles communes ne s'appliquent pas telles quelles — il n'y a pas de
@@ -106,7 +158,14 @@ def build_context_block(retrieved: list[ScoredChunk]) -> str:
         return "(Aucune documentation de cours pertinente trouvée.)"
     lines: list[str] = []
     for i, sc in enumerate(retrieved, start=1):
-        excerpt = sc.chunk.text.strip()
+        # Délimiteurs LaTeX ramenés au format pivot ($ … $) avant de partir au
+        # modèle : les leçons du corpus emploient « \( … \) », et le modèle
+        # recopie la typographie qu'on lui montre — mesuré sur la stack réelle,
+        # c'est le rendu « à revoir » des cas QA #37 et #47. L'ingestion
+        # normalise déjà (``normalize.to_pivot``) ; ce second passage protège
+        # les index construits AVANT ce correctif, qu'aucune ligne de code ne
+        # peut réécrire (la réindexation est une opération sur données).
+        excerpt = delimiteurs_latex(sc.chunk.text.strip())
         if len(excerpt) > _MAX_EXCERPT:
             excerpt = excerpt[:_MAX_EXCERPT].rstrip() + " […]"
         lines.append(f"[Réf. interne {i} — {sc.libelle_interne}]\n{excerpt}")
@@ -158,6 +217,23 @@ CONSIGNE_VARIATION_APPROCHE = (
     "élémentaires vérifiables une par une, ou propose une analogie, ou décris la "
     "situation géométriquement. Commence par reconnaître que ton explication "
     "précédente n'a pas fonctionné, puis demande-lui quel point précis bloque."
+)
+
+
+#: Injectée quand l'élève demande explicitement une explication plus simple
+#: (cas QA #39). Le testeur a reçu une reformulation « vague, sans exemple
+#: concret » : au niveau d'indice 1, la consigne interdisait précisément
+#: d'appliquer la règle à son cas. La consigne ci-dessous nomme donc ce qui doit
+#: apparaître — un exemple chiffré — plutôt que de demander vaguement « plus
+#: simple », ce que le modèle interprétait en raccourcissant.
+CONSIGNE_SIMPLIFICATION = (
+    "ATTENTION : l'élève demande explicitement une explication PLUS SIMPLE. Ne "
+    "te contente pas de raccourcir ni de reformuler la même phrase autrement. "
+    "Repars d'un EXEMPLE CHIFFRÉ concret, avec des nombres, et déroule-le "
+    "jusqu'au bout — c'est ce qui manquait. Emploie des phrases courtes et des "
+    "mots du quotidien, une seule idée à la fois, et n'introduis AUCUNE notion "
+    "nouvelle ni vocabulaire technique supplémentaire. Termine par une question "
+    "simple qui vérifie ce point précis."
 )
 
 
@@ -297,6 +373,7 @@ def assemble_prompt(
     calcul_non_verifie: bool = False,
     correction_affirmation: str | None = None,
     varier_approche: bool = False,
+    simplifier: bool = False,
     etude_fonction: str | None = None,
     complexe: str | None = None,
 ) -> tuple[str, str]:
@@ -325,6 +402,8 @@ def assemble_prompt(
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
+    else:
+        parts.append(CONSIGNE_AUCUN_ANTERIEUR)
     parts.append(
         "Documentation de cours (usage interne, invisible pour l'élève) :\n"
         + build_context_block(retrieved)
@@ -342,6 +421,12 @@ def assemble_prompt(
         parts.append(correction_affirmation)
     if varier_approche:
         parts.append(CONSIGNE_VARIATION_APPROCHE)
+    # Après la variation d'approche, qu'elle précise : changer d'angle (cas #20)
+    # et simplifier le registre (cas #39) sont deux demandes distinctes, et un
+    # élève peut faire les deux à la fois (« ça fait 3 fois, reprends plus
+    # simplement »). Elles s'additionnent au lieu de se remplacer.
+    if simplifier:
+        parts.append(CONSIGNE_SIMPLIFICATION)
     # Placée juste avant la consigne d'indice, qu'elle précise : l'étude est le
     # livrable, la graduation ne règle plus que le ton (cas QA #9).
     if etude_fonction:
@@ -411,11 +496,30 @@ def assemble_accueil_prompt(
     return SYSTEM_PERSONA_META, "\n\n".join(parts)
 
 
+#: Consigne d'un tour méta **sans objet nommé** (cas QA #27). L'élève demande à
+#: progresser, sans dire sur quoi : la réponse utile est une question de
+#: clarification adossée à ce qui existe, pas un indice sur un extrait pris au
+#: hasard — ce que la testeuse a reçu (« qu'est-ce que tu veux faire avec cette
+#: équation ? », sur une équation dont elle n'avait jamais parlé).
+CONSIGNE_DEMANDE_OUVERTE = (
+    "L'élève demande de l'aide pour progresser, SANS nommer de notion ni "
+    "d'exercice. Ne devine pas ce qu'il a en tête et n'invente aucun énoncé : "
+    "accueille la demande en une phrase, dis-lui concrètement ce que tu peux "
+    "faire avec lui (cours d'un chapitre, exercice à chercher, interrogation), "
+    "puis pose UNE question de clarification qui l'aide à choisir — sur quel "
+    "chapitre parmi ceux listés ci-dessus, ou ce qui lui pose le plus de "
+    "difficulté. Ne fais référence à aucun exercice, aucune équation et aucune "
+    "notion qu'il n'a pas mentionnés."
+)
+
+
 def assemble_meta_prompt(
     question: str,
     catalogue: list[str],
     curriculum_context: dict | None = None,
     conversation_history: list[dict[str, str]] | None = None,
+    *,
+    demande_ouverte: bool = False,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` pour un tour **méta**.
 
@@ -454,6 +558,9 @@ def assemble_meta_prompt(
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
 
+    if demande_ouverte:
+        parts.append(CONSIGNE_DEMANDE_OUVERTE)
+
     parts.append(f"Question de l'élève : {question}")
     return SYSTEM_PERSONA_META, "\n\n".join(parts)
 
@@ -482,7 +589,10 @@ def _uncovered_topic_block(position: CoursePosition) -> str:
         "le sujet demandé. Si oui, fais le cours normalement. Si NON, "
         "dis-le franchement à l'élève et n'enseigne SURTOUT PAS un "
         "autre chapitre à la place : propose-lui plutôt les chapitres disponibles "
-        "ci-dessus, ou invite-le à faire indexer la leçon manquante."
+        "ci-dessus. Tu peux l'inviter à faire indexer la leçon manquante "
+        "UNIQUEMENT si le sujet demandé relève du programme scolaire que tu "
+        "couvres ; s'il n'en relève pas du tout, refuse simplement, sans "
+        "proposer de l'ajouter et sans t'excuser longuement."
     )
     # Le vocabulaire à tenir face à l'élève (ne pas nommer extraits/sources) est
     # porté par _COMMON_RULES, commun aux deux postures : la même fuite avait été
@@ -552,6 +662,10 @@ def assemble_course_prompt(
     history_block = build_history_block(conversation_history)
     if history_block:
         parts.append(f"Historique récent de la conversation :\n{history_block}")
+    else:
+        # Le plan en 8 sections est sous ses yeux : sans cette phrase, le modèle
+        # peut renvoyer à « la première partie » dès le premier message (cas #36).
+        parts.append(CONSIGNE_AUCUN_ANTERIEUR)
 
     parts.append(
         "Documentation de cours (usage interne, invisible pour l'élève) :\n"
@@ -566,6 +680,12 @@ def assemble_course_prompt(
         parts.append(CONSIGNE_HORS_PERIMETRE)
     if not has_course:
         parts.append(AVERTISSEMENT_SANS_COURS)
+    # Un tour qui doit avouer une lacune ne doit pas se terminer par « passons à
+    # la section suivante » (cas #40). Les deux situations qui l'imposent sont
+    # celles où l'aveu a déjà été prescrit ci-dessus : rien à servir, ou chapitre
+    # non identifié.
+    if not retrieved or not position.chapitre_confirmed:
+        parts.append(CONSIGNE_LAISSER_LE_CHOIX)
     parts.append(
         f"Section à enseigner : {position.section_index + 1}. {section.title}.\n"
         f"Consigne : {section.instruction}"
@@ -573,3 +693,102 @@ def assemble_course_prompt(
     parts.append(f"Message de l'élève : {question}")
 
     return SYSTEM_PERSONA_COURSE, "\n\n".join(parts)
+
+
+#: Consigne du tour d'entraînement (cas QA #31). Elle nomme ce qu'il ne faut PAS
+#: faire autant que l'inverse, et pour la même raison qu'à l'accueil : ce que le
+#: testeur a reçu — « une règle générale, même après insistance » — était la
+#: sortie fidèle d'une consigne d'indice de niveau 1 (« rappelle la règle SANS
+#: l'appliquer »), pas une dérive du modèle.
+CONSIGNE_EXERCICE = (
+    "L'élève demande un EXERCICE À FAIRE : il n'a pas d'énoncé sous les yeux et "
+    "attend que tu lui en donnes un. Choisis UN seul exercice dans la "
+    "documentation ci-dessus (sections d'exercices et de questions type Bac) et "
+    "recopie son énoncé fidèlement, en entier, sans le déformer. Commence par un "
+    "exercice accessible si l'élève n'a pas précisé de niveau. "
+    "Tu ne donnes NI la solution, NI le résultat, NI le début de la résolution, "
+    "NI les étapes à suivre : il doit chercher lui-même. "
+    "Ne réponds SURTOUT PAS par un rappel de règle, de définition ou de méthode "
+    "à la place de l'énoncé, et ne pose pas de question pour vérifier sa "
+    "compréhension avant de le lui donner — c'est l'exercice qu'il attend. "
+    "Termine en l'invitant à s'y essayer et en lui proposant, s'il le souhaite, "
+    "un indice, un exercice plus facile ou plus difficile. "
+    "Si la documentation ne contient aucun énoncé exploitable, dis-le "
+    "franchement au lieu d'en inventer un."
+)
+
+
+def _bloc_exercice_hors_perimetre(entrainement: dict) -> str:
+    """Avertissement quand la demande ne se rattache à aucun chapitre indexé.
+
+    Pendant du :func:`_uncovered_topic_block` du mode cours, pour un tour où le
+    livrable n'est pas une leçon mais un énoncé. Le comportement visé est celui
+    que la fixture positive **#52** (« Exercice sur les suites numeriques ») a
+    déjà validé chez un testeur : dire honnêtement que le chapitre n'est pas
+    couvert, puis proposer ceux qui existent. Servir un exercice d'un autre
+    chapitre le dégraderait, et en inventer un violerait la règle n°2 — un
+    énoncé fabriqué peut être faux, ou sans solution.
+    """
+    lignes = ["ATTENTION — le sujet demandé ne correspond à aucun chapitre de ta documentation."]
+    if entrainement.get("topic"):
+        lignes.append(f"Sujet demandé par l'élève : « {entrainement['topic']} ».")
+    if entrainement.get("alternatives"):
+        lignes.append(
+            "Chapitres réellement disponibles : "
+            + ", ".join(entrainement["alternatives"])
+            + "."
+        )
+    lignes.append(
+        "Dis-le à l'élève simplement et sans détour : tu n'as pas d'exercice sur "
+        "ce sujet. N'en invente AUCUN et ne lui sers SURTOUT PAS un exercice d'un "
+        "autre chapitre en le faisant passer pour ce qu'il a demandé. Propose-lui "
+        "plutôt un exercice sur l'un des chapitres disponibles ci-dessus, et "
+        "demande-lui s'il le souhaite."
+    )
+    return "\n".join(lignes)
+
+
+def assemble_exercise_prompt(
+    question: str,
+    entrainement: dict,
+    retrieved: list[ScoredChunk],
+    curriculum_context: dict | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> tuple[str, str]:
+    """Retourne ``(system_prompt, user_prompt)`` pour un tour **d'entraînement**.
+
+    Aucun niveau d'indice n'y figure, et c'est le cœur du correctif : la
+    graduation socratique suppose un énoncé déjà en main, alors qu'ici l'élève
+    en réclame un. L'injecter revenait à répondre « rappelle la règle SANS
+    l'appliquer » à quelqu'un qui n'avait rien à quoi l'appliquer (cas QA #31).
+    """
+    ctx = curriculum_context or {}
+    scope = ", ".join(
+        f"{k}={v}" for k in ("niveau", "classe", "serie", "discipline") if (v := ctx.get(k))
+    )
+
+    parts: list[str] = []
+    entete = "Tour d'entraînement : l'élève demande un exercice."
+    if entrainement.get("chapitre_confirmed") and entrainement.get("chapitre"):
+        entete += f" Chapitre demandé : {entrainement['chapitre']}."
+    if scope:
+        entete += f" Cadre curriculaire : {scope}."
+    parts.append(entete)
+
+    if not entrainement.get("chapitre_confirmed"):
+        parts.append(_bloc_exercice_hors_perimetre(entrainement))
+
+    history_block = build_history_block(conversation_history)
+    if history_block:
+        parts.append(f"Historique récent de la conversation :\n{history_block}")
+
+    parts.append(
+        "Documentation de cours (usage interne, invisible pour l'élève) :\n"
+        + build_context_block(retrieved)
+    )
+    if not retrieved:
+        parts.append(CONSIGNE_HORS_PERIMETRE)
+    parts.append(CONSIGNE_EXERCICE)
+    parts.append(f"Message de l'élève : {question}")
+
+    return SYSTEM_PERSONA_ENTRAINEMENT, "\n\n".join(parts)
