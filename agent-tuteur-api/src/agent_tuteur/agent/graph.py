@@ -72,6 +72,7 @@ from agent_tuteur.agent.intent import (
     classify_intent,
     demande_le_catalogue,
     est_une_demande_ouverte,
+    est_une_question_sur_la_discipline,
 )
 from agent_tuteur.agent.llm.base import BaseLLM
 from agent_tuteur.agent.ports import AuditLogPort, MasteryPort, StudentMemoryPort
@@ -772,9 +773,11 @@ class TutorAgent:
         # « réponses de qualité variable » rapportées par la testeuse.
         inventaire = demande_le_catalogue(state["question"])
         ouverte = est_une_demande_ouverte(state["question"])
+        utilite = est_une_question_sur_la_discipline(state["question"])
         system, user_prompt = assemble_meta_prompt(
             state["question"], catalogue, ctx, state.get("conversation_history", []),
             demande_ouverte=ouverte,
+            utilite_discipline=utilite,
         )
         user_prompt = _prefixer_consigne_de_soutien(user_prompt, state)
         trace = {
@@ -788,6 +791,8 @@ class TutorAgent:
                 if inventaire
                 else "demande d'aide sans objet nommé"
                 if ouverte
+                else "question sur l'utilité de la discipline"
+                if utilite
                 else "question sur le service"
             ),
             "frustration_score": 0.0,
@@ -815,6 +820,7 @@ class TutorAgent:
                     "n_chapitres": len(catalogue),
                     "inventaire": inventaire,
                     "demande_ouverte": ouverte,
+                    "utilite_discipline": utilite,
                 }
             ],
         }

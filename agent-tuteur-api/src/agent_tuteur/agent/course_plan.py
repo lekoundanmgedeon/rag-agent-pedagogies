@@ -53,7 +53,9 @@ LESSON_SECTIONS: tuple[Section, ...] = (
         # garde son rôle, qui est de les énoncer *toutes*, une par une.
         "Commence par énoncer la définition fondatrice du chapitre, avec sa "
         "notation exacte, telle qu'elle figure dans les extraits — c'est ce que "
-        "l'élève est venu chercher. Situe ensuite le chapitre brièvement : à "
+        "l'élève est venu chercher — puis donne IMMÉDIATEMENT un exemple "
+        "concret qui la rend lisible (cas QA #48 : une définition juste mais "
+        "nue ne se rattache à rien). Situe ensuite le chapitre brièvement : à "
         "quoi il sert, où il intervient au Baccalauréat, ses applications. "
         "Garde le cadrage motivant court, et toujours APRÈS la définition. "
         "N'entre pas encore dans le détail des autres définitions ni dans les "

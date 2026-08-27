@@ -38,8 +38,15 @@ HINT_INSTRUCTIONS: dict[int, str] = {
         "compréhension. N'apporte AUCUNE information nouvelle et ne résous rien."
     ),
     1: (
-        "Rappelle la règle, la définition ou le théorème utile, SANS l'appliquer "
-        "au cas de l'élève. Invite-le à faire le lien lui-même."
+        # « SANS l'appliquer au cas de l'élève » ne veut pas dire « sans
+        # exemple » : le cas QA #48 rapporte une définition juste mais nue, que
+        # l'élève ne pouvait rattacher à rien. La distinction est explicitée ici
+        # plutôt que laissée à l'interprétation du modèle — c'est elle qui était
+        # ambiguë, pas la volonté de retenue.
+        "Rappelle la règle, la définition ou le théorème utile, et illustre-le "
+        "TOUJOURS d'un exemple simple et concret (avec des nombres quand c'est "
+        "possible), pris à part du cas de l'élève. Ne l'applique pas à SON "
+        "énoncé : invite-le à faire le lien lui-même."
     ),
     2: (
         "Donne un indice ciblé qui pointe la PROCHAINE étape à effectuer, sans la "

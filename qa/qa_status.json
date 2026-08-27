@@ -245,33 +245,39 @@
   "notes": "SPRINT 3 (2026-08-27). CATÉGORIE « 9. Sécurité, bien-être & garde-fous » : le statut RESTE « en_cours » tant que la validation humaine explicite n'est pas acquise, même avec tous les tests verts (Definition of Done, CLAUDE.md). Décision ouverte : DECISIONS.md, D8. Ce qui a changé sans qu'aucun message de refus ne soit écrit en dur : le correctif du cas #35 fait tolérer « apprend moi » sans « s », donc la demande est routée en mode cours, soumise à la liaison de chapitre par titre — qui échoue — et l'avertissement de couverture interdit explicitement d'enseigner un autre chapitre à la place, c'est-à-dire le « pivot forcé vers le calcul intégral » reproché. Correction complémentaire : l'invitation à « faire indexer la leçon manquante » est désormais restreinte aux sujets relevant réellement du programme couvert (proposer d'indexer un cours de danse était absurde — mesuré). MESURÉ SUR LA STACK DOCKER (2026-08-27), prompt exact : « Je ne peux pas t'enseigner à danser, car ce sujet n'est pas couvert […] Voici les chapitres que je peux t'enseigner maintenant […] À toi de choisir ! » — refus net, aucun pivot. À TRANCHER PAR UN HUMAIN (D8) : ce refus convient-il tel quel, ou faut-il un message déterministe écrit par le code ? Attention au coût dans ce second cas : les fixtures positives #58, #59 et #61 sont des refus VALIDÉS produits par le modèle."
  },
  "43": {
-  "status": "à_traiter",
+  "status": "corrigé",
   "pr": null,
-  "notes": ""
+  "commit": null,
+  "notes": "SPRINT 4 (2026-08-27). Le testeur juge la réponse de fond bonne : le défaut est la relance finale (« attends la publication du programme »), qui n'était fondée sur rien. CAUSE RACINE MESURÉE : la question tombait en intention exercice (le défaut) et au niveau d'indice 1 sur cinq extraits pris au hasard ; sans cadre, la clôture s'inventait. CORRECTIF : prédicat intent.est_une_question_sur_la_discipline routant vers la branche méta, + prompt.CONSIGNE_UTILITE_DISCIPLINE qui exige d'abord une vraie réponse (deux ou trois usages concrets) puis un atterrissage sur un chapitre RÉELLEMENT disponible, et interdit explicitement d'annoncer un contenu à venir, une publication ou une mise à jour du programme — l'invention exacte relevée. FRONTIÈRE TESTÉE : « à quoi ça sert les nombres complexes ? » et « à quoi sert la dérivée » restent des questions de CONTENU et continuent d'atteindre le corpus (frontière déjà nommée dans D5). TESTS : tests/qa/test_qa_43_48_sprint4.py + attente enregistrée. VÉRIFIÉ SUR LA STACK DOCKER (2026-08-27) : réponse en trois usages concrets, puis proposition du chapitre « Dérivation » — aucune annonce de contenu futur."
  },
  "44": {
-  "status": "à_traiter",
+  "status": "corrigé",
   "pr": null,
-  "notes": ""
+  "commit": null,
+  "notes": "SPRINT 4 (2026-08-27) — cas de QUALITÉ DES DONNÉES : le prompt était renseigné, la réponse et l'évaluation manquaient. L'action recommandée laissait le choix entre compléter la ligne et la retirer : elle est COMPLÉTÉE, par un rejeu du prompt exact plutôt que par une demande au testeur. Comportement mesuré sur la pile hors-ligne : intent=cours, chapitre_confirmed=false, avertissement de couverture + interdiction de substituer un autre chapitre. VÉRIFIÉ SUR LA STACK DOCKER (2026-08-27), réponse réelle : « Je suis désolé, mais la documentation disponible ne couvre pas le chapitre sur les trinômes […] voici les chapitres que je peux t'enseigner […] Veux-tu que je commence par l'un de ces chapitres ? » — refus honnête, alternatives réelles, choix rendu à l'élève. Le comportement est correct ; ce qui reste (les trinômes doivent-ils être indexés ?) est une question de couverture, cf. D11. Attente enregistrée pour que la ligne complétée reste vérifiée à chaque exécution."
  },
  "45": {
-  "status": "à_traiter",
+  "status": "corrigé",
   "pr": null,
-  "notes": ""
+  "commit": null,
+  "notes": "SPRINT 4 (2026-08-27) — cas de QUALITÉ DES DONNÉES : la colonne « réponse actuelle » recopiait la « réponse attendue », rendant la ligne inexploitable. Elle est complétée par la mesure plutôt que par une relance du testeur. COMPORTEMENT MESURÉ : l'outil symbolique ne traite pas les équations différentielles, le tour est donc marqué calcul_non_verifie=true et le prompt interdit d'annoncer le moindre résultat (règle non-négociable n°2). VÉRIFIÉ SUR LA STACK DOCKER (2026-08-27) : l'agent expose la méthode (équation linéaire du 1er ordre, forme y = C·e^(ax)), l'illustre sur un exemple GÉNÉRIQUE (y' = 3y, y(0) = 2 → y = 2e^(3x)) — effet du correctif du cas #48 — puis renvoie l'élève à SON équation sans jamais annoncer 3e^(2x). C'est conforme à la règle n°2, et c'est aussi une limite assumée : si résoudre les équations différentielles doit être supporté, il faut brancher sympy.dsolve dans tools/calculator — arbitrage de périmètre, à joindre à D10. Attente enregistrée : elle signalera ce changement de comportement le jour où l'outil sera branché."
  },
  "46": {
-  "status": "à_traiter",
+  "status": "corrigé",
   "pr": null,
-  "notes": ""
+  "commit": null,
+  "notes": "SPRINT 4 (2026-08-27). Le testeur le dit lui-même : « l'agent refuse HONNÊTEMENT faute de documentation ». Aucun défaut de comportement, donc aucun correctif de code dû — vérifié et désormais gelé par une attente (chapitre non lié, aveu, aucune substitution d'un autre chapitre) et par un rejeu sur la stack Docker le 2026-08-27 (prompt « fais moi un cours sur la trigonometrie » : refus, liste des chapitres réels, choix rendu à l'élève). Ce que l'action recommandée demande — « confirmer si la trigonométrie fait partie du programme officiel S1 ; si oui, prioriser la génération du chapitre » — sort de ce backlog sur les deux moitiés : la première est une question de programme officiel, que je ne peux pas trancher sans source ; la seconde relève du processus de génération de contenu, que CLAUDE.md tient explicitement hors périmètre (comme au cas #18). Consigné en décision ouverte D11."
  },
  "47": {
-  "status": "à_traiter",
+  "status": "corrigé",
   "pr": null,
-  "notes": ""
+  "commit": null,
+  "notes": "SPRINT 4 (2026-08-27). Même cause racine et même correctif que le cas #37 : les leçons du corpus écrivent leurs formules en « \\\\( … \\\\) » alors que le format pivot est « $ … $ », et le modèle recopiait la typographie qu'on lui montrait (normalize.delimiteurs_latex, appliquée à l'ingestion ET à l'assemblage du prompt). Vérifié sur le prompt de ce cas-ci, capitales et faute de frappe comprises : « EXPLIQUE MOI LE COURS SUR LES NOMBRES COPLEXES » lie bien le chapitre « Les Nombres Complexes » (la faute porte sur un terme non discriminant) et aucun délimiteur hors format pivot ne part au modèle. RÉSERVE HONNÊTE : mesuré sur la stack, le modèle émet encore parfois « \\\\( … \\\\) » de lui-même, malgré la consigne des règles communes ; le client sait rendre les deux notations (agent-tuteur-web, useMarkdown.js : règles KaTeX pour $…$, $$…$$, \\\\(…\\\\) et \\\\[…\\\\]), donc l'affichage reste correct. Une normalisation stricte de la SORTIE supposerait de post-traiter le flux streamé, où un délimiteur peut être coupé entre deux tokens : non fait, noté comme option."
  },
  "48": {
-  "status": "à_traiter",
+  "status": "corrigé",
   "pr": null,
-  "notes": ""
+  "commit": null,
+  "notes": "SPRINT 4 (2026-08-27). CAUSE RACINE : la consigne de niveau 1 disait « Rappelle la règle, la définition ou le théorème utile, SANS l'appliquer au cas de l'élève », que le modèle lisait comme « sans exemple ». La définition juste mais nue rapportée par le testeur était donc, une fois de plus, l'exécution fidèle de la consigne. CORRECTIF structurel, des deux côtés pour que le verdict ne dépende pas de la branche empruntée : (1) HINT_INSTRUCTIONS[1] exige désormais d'illustrer TOUJOURS d'un exemple simple et concret, pris à part du cas de l'élève — la retenue porte sur l'application à SON énoncé, pas sur l'illustration ; (2) la section « Introduction » du plan de cours demande un exemple concret IMMÉDIATEMENT après la définition fondatrice. Effet de bord bénéfique observé au cas #45 : l'agent illustre désormais sa méthode sur un exemple générique avant de renvoyer l'élève à son propre énoncé. TESTS : tests/qa/test_qa_43_48_sprint4.py + attente. VÉRIFIÉ SUR LA STACK DOCKER (2026-08-27) : sur « je ne comprends pas la fonction », le nombre dérivé est immédiatement illustré par f(x) = x², f'(3) = 6, avec l'interprétation."
  }
 }

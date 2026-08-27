@@ -632,6 +632,42 @@ dû tant que la cible n'est pas choisie, le comportement observé étant correct
 
 ---
 
+## D11 — Couverture curriculaire : quels chapitres manquent réellement ?
+
+**Statut : Ouverte — question de programme, pas de code**
+
+**Contexte.** Le sprint 4 referme plusieurs cas sur le même constat : l'agent
+**refuse honnêtement** un chapitre qu'il n'a pas, et c'est le comportement
+attendu. Ce qui reste n'est pas un défaut mais une question de couverture, que
+Claude Code ne peut pas trancher :
+
+| Cas | Chapitre demandé | Comportement actuel (mesuré sur la stack) |
+|---|---|---|
+| #46 | trigonométrie | refus honnête + chapitres réels proposés |
+| #44 | trinômes | idem |
+| #28 | suites numériques | idem — et l'accueil ne le propose plus (corrigé) |
+| #29 | identités remarquables (prérequis de Première) | **dévie**, faute de signal de hors-périmètre (bloqué sur D7) |
+
+**Ce qu'il faut trancher.** (1) Lesquels de ces chapitres appartiennent au
+programme officiel de la série visée — question de source, pas d'opinion : je
+n'ai pas de référentiel du programme sénégalais dans le dépôt, et l'affirmer
+sans source serait exactement ce que la règle n°3 interdit ailleurs. (2) Pour
+ceux qui en font partie, dans quel ordre la génération des leçons est-elle
+priorisée ? Ce chantier suit le **processus de contenu** (template de leçon à 18
+sections), que CLAUDE.md tient hors de ce backlog — c'est déjà l'arbitrage rendu
+au cas #18.
+
+**Ce qui reste bloqué tant que non tranchée.** Rien côté code : les cas #44 et
+#46 sont clos sur le comportement, qui est correct. Ce qui attend, c'est la
+**décision de couverture** — et, pour le #29, elle ne suffira pas : il lui faut
+aussi D7.
+
+**Décision :** _(à remplir — liste des chapitres à générer, et priorité)_
+**Date :**
+**Notes :**
+
+---
+
 ## Historique des décisions actées
 
 _(déplacer ici chaque entrée une fois `Décision` renseignée, pour garder la section

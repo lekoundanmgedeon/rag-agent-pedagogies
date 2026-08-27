@@ -399,6 +399,32 @@ _DEMANDE_OUVERTE = re.compile(
 )
 
 
+#: Question générale **sur la discipline elle-même** — « à quoi servent les
+#: mathématiques ? » (cas QA #43). Ni exercice (rien à résoudre) ni cours (aucun
+#: chapitre nommé) : c'est une question d'orientation, à laquelle la branche
+#: méta répond en s'appuyant sur ce que l'agent couvre réellement.
+#:
+#: Le motif exige la **discipline** comme objet, jamais une notion : « à quoi ça
+#: sert les nombres complexes ? » reste une question de contenu et doit continuer
+#: d'atteindre le corpus (elle est déjà citée comme frontière à tenir dans D5).
+_QUESTION_SUR_LA_DISCIPLINE = re.compile(
+    r"(?:"
+    r"\b(?:[àa]\s+quoi|pourquoi)\b[^?.!]{0,40}?"
+    r"\b(?:sert|servent|[ée]tudier|apprendre|faire|travailler|utile)\b"
+    r"[^?.!]{0,20}?\b(?:les\s+)?math(?:s|[ée]matiques?)\b"
+    r"|\b(?:les\s+)?math(?:s|[ée]matiques?)\b[^?.!]{0,20}?"
+    r"\b(?:[çc]a\s+)?(?:sert|servent)\s+[àa]\s+quoi\b"
+    r"|\b(?:l['’e]\s*)?(?:utilit[ée]|int[ée]r[êe]t)\s+des?\s+math(?:s|[ée]matiques?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def est_une_question_sur_la_discipline(question: str) -> bool:
+    """Vrai si l'élève interroge l'utilité des mathématiques en général."""
+    return bool(_QUESTION_SUR_LA_DISCIPLINE.search(question))
+
+
 def est_une_demande_ouverte(question: str) -> bool:
     """Vrai si l'élève demande de l'aide sans nommer de notion ni d'exercice."""
     return bool(_DEMANDE_OUVERTE.search(question))
@@ -577,6 +603,14 @@ def classify_intent(question: str, *, in_course: bool = False) -> IntentDecision
     # porte sur la section en train d'être enseignée (cas QA #27).
     if est_une_demande_ouverte(question):
         return IntentDecision(Intent.META, "demande d'aide sans objet nommé", None)
+
+    # « À quoi servent les mathématiques ? » : question sur la discipline, pas
+    # sur une notion. Sans cette branche, elle partait en posture socratique sur
+    # cinq extraits pris au hasard, et la relance finale sortait de nulle part
+    # (cas QA #43). Hors cours seulement : en plein cours, la même question est
+    # une digression que la section en train d'être enseignée absorbe.
+    if est_une_question_sur_la_discipline(question):
+        return IntentDecision(Intent.META, "question sur l'utilité de la discipline", None)
 
     # Hors cours seulement : « des astuces pour progresser » est une demande de
     # méthode, alors qu'en cours les mêmes mots visent la section « Astuces ».

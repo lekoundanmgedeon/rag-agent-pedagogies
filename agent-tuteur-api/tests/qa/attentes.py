@@ -453,6 +453,79 @@ def _cas_40_laisser_le_choix(resultat, cas) -> None:
         assert CONSIGNE_LAISSER_LE_CHOIX in resultat.final_prompt
 
 
+# --- Sprint 4 (priorité Basse) -----------------------------------------------
+def _cas_43_utilite_de_la_discipline(resultat, cas) -> None:
+    """« À quoi servent les mathématiques … ? » (Pierre Ndong).
+
+    La réponse de fond était bonne ; c'est la relance finale qui ne l'était pas.
+    Le tour est désormais routé en orientation, et la consigne exige d'y répondre
+    pour de bon tout en interdisant d'annoncer un contenu à venir — l'invention
+    exacte que le testeur a relevée.
+    """
+    from agent_tuteur.agent.prompt import CONSIGNE_UTILITE_DISCIPLINE
+
+    assertions.assert_intention(resultat, "meta")
+    assertions.assert_pas_de_retrieval(resultat)
+    assert CONSIGNE_UTILITE_DISCIPLINE in resultat.final_prompt
+
+
+def _cas_chapitre_absent_avoue(resultat, cas) -> None:
+    """Cas #44 (« les trinomes ») et #46 (« la trigonometrie »).
+
+    Deux cas de *données* plus que de comportement : le #44 n'avait aucune
+    réponse enregistrée, le #46 constate un refus déjà correct. Le prompt est
+    rejoué ici pour que la ligne manquante existe et reste vérifiée à chaque
+    exécution : chapitre non lié, aveu, et aucune substitution d'un autre
+    chapitre. Ce qui reste au #46 — la trigonométrie doit-elle être couverte ? —
+    est une question de programme, hors de ce backlog.
+    """
+    cours = resultat.trace["course"]
+    assert cours is not None, "une demande de cours doit ouvrir la branche cours"
+    assert cours["chapitre_confirmed"] is False
+    assert "n'enseigne SURTOUT PAS un autre chapitre à la place" in resultat.final_prompt
+
+
+def _cas_45_equation_differentielle(resultat, cas) -> None:
+    """« Résous l'équation différentielle y' = 2y … » (Pierre Ndong).
+
+    La ligne de suivi était inexploitable (la réponse « actuelle » recopiait la
+    réponse « attendue »). Ce que la mesure établit, et que cette attente gèle :
+    l'outil symbolique ne traite pas les équations différentielles, le tour est
+    donc marqué ``calcul_non_verifie`` et le prompt interdit d'annoncer le
+    moindre résultat — règle non-négociable n°2. Le jour où ``dsolve`` sera
+    branché, c'est ce test qui signalera que le comportement a changé.
+    """
+    assert resultat.trace["tool_result"] is None
+    assert resultat.trace["calcul_non_verifie"] is True
+    assert "tu te tromperais peut-être sans pouvoir le savoir" in resultat.final_prompt
+
+
+def _cas_47_rendu_d_une_suite(resultat, cas) -> None:
+    """« EXPLIQUE MOI LE COURS SUR LES NOMBRES COPLEXES » (Marie Paul Basse).
+
+    Même correctif que le #37 (délimiteurs ramenés au format pivot), vérifié sur
+    ce prompt-ci — capitales et faute de frappe comprises, qui ne doivent pas
+    faire échouer la liaison du chapitre.
+    """
+    assert resultat.trace["course"]["chapitre"] == "Les Nombres Complexes"
+    for delimiteur in (r"\(", r"\)", r"\[", r"\]"):
+        assert delimiteur not in resultat.final_prompt
+
+
+def _cas_48_definition_illustree(resultat, cas) -> None:
+    """« je ne comprends pas la fonction » (Mohamed FAYE).
+
+    Définition juste, mais nue. La consigne de niveau 1 disait « SANS l'appliquer
+    au cas de l'élève », lu comme « sans exemple » ; l'exigence d'illustrer est
+    désormais explicite, des deux côtés (posture socratique et introduction de
+    cours), pour que le verdict ne dépende pas de la branche empruntée.
+    """
+    from agent_tuteur.agent.hint_strategy import HINT_INSTRUCTIONS
+
+    prompt = resultat.final_prompt
+    assert "exemple concret" in prompt or HINT_INSTRUCTIONS[1] in prompt
+
+
 ATTENTES: dict[int, Attente] = {
     1: _cas_01_derivee,
     2: _cas_meta,
@@ -488,6 +561,12 @@ ATTENTES: dict[int, Attente] = {
     37: _cas_37_rendu_latex,
     39: _cas_39_simplification,
     40: _cas_40_laisser_le_choix,
+    43: _cas_43_utilite_de_la_discipline,
+    44: _cas_chapitre_absent_avoue,
+    45: _cas_45_equation_differentielle,
+    46: _cas_chapitre_absent_avoue,
+    47: _cas_47_rendu_d_une_suite,
+    48: _cas_48_definition_illustree,
     38: _cas_salutation,
     41: _cas_salutation,
 }

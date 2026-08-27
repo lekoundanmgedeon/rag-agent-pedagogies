@@ -513,6 +513,23 @@ CONSIGNE_DEMANDE_OUVERTE = (
 )
 
 
+#: Consigne d'un tour méta portant sur **l'utilité de la discipline** (cas QA
+#: #43). Le testeur juge la réponse de fond bonne : ce qu'il reproche est la
+#: relance finale, « attends la publication du programme », qui ne répondait à
+#: rien et n'était fondée sur rien. La consigne demande donc de répondre pour de
+#: bon — la question est légitime et mérite mieux qu'un aiguillage — puis
+#: d'atterrir sur ce que l'agent peut réellement faire, sans rien annoncer.
+CONSIGNE_UTILITE_DISCIPLINE = (
+    "L'élève demande à quoi servent les mathématiques. C'est une vraie question, "
+    "pas une demande d'exercice : réponds-y d'abord, concrètement, avec deux ou "
+    "trois usages parlants pour un lycéen (vie quotidienne, autres matières, "
+    "études et métiers), sans jargon. Termine en lui proposant l'un des "
+    "chapitres listés ci-dessus. N'annonce AUCUN contenu à venir, aucune "
+    "publication, aucune mise à jour du programme : tu ne sais rien de ce qui "
+    "sera ajouté, et le lui laisser croire serait inventer."
+)
+
+
 def assemble_meta_prompt(
     question: str,
     catalogue: list[str],
@@ -520,6 +537,7 @@ def assemble_meta_prompt(
     conversation_history: list[dict[str, str]] | None = None,
     *,
     demande_ouverte: bool = False,
+    utilite_discipline: bool = False,
 ) -> tuple[str, str]:
     """Retourne ``(system_prompt, user_prompt)`` pour un tour **méta**.
 
@@ -560,6 +578,8 @@ def assemble_meta_prompt(
 
     if demande_ouverte:
         parts.append(CONSIGNE_DEMANDE_OUVERTE)
+    if utilite_discipline:
+        parts.append(CONSIGNE_UTILITE_DISCIPLINE)
 
     parts.append(f"Question de l'élève : {question}")
     return SYSTEM_PERSONA_META, "\n\n".join(parts)
