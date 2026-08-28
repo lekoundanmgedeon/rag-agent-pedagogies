@@ -15,7 +15,7 @@
         <div class="markdown-body" v-html="rendered" />
         <span v-if="streaming" class="caret" />
 
-        <details v-if="message.trace && (message.trace.sources?.length || message.trace.node_trace?.length)" class="msg-details">
+        <details v-if="montreLesDetails" class="msg-details">
           <summary>Détails RAG & orchestration</summary>
           <div class="details-body">
             <div v-if="message.trace.tool_used" class="detail-line">🧮 Outil : <span class="mono">{{ message.trace.tool_used }}</span></div>
@@ -55,6 +55,7 @@
 <script setup>
 import { computed } from 'vue'
 import { renderMarkdown } from '@/composables/useMarkdown.js'
+import { useAuthStore } from '@/stores/auth.js'
 import StatusBanner from './StatusBanner.vue'
 
 const props = defineProps({
@@ -63,7 +64,24 @@ const props = defineProps({
 })
 defineEmits(['feedback'])
 
+const auth = useAuthStore()
 const rendered = computed(() => renderMarkdown(props.message.content))
+
+/**
+ * Le bloc « Détails RAG & orchestration » est réservé à l'administration.
+ *
+ * Ce qu'il contient — extraits remontés, scores de similarité, nœuds du graphe
+ * traversés — sert à comprendre *pourquoi* l'agent a répondu ainsi. C'est un
+ * outil de diagnostic, pas un élément de cours : pour un élève, il ajoute du
+ * vocabulaire technique sous chaque réponse et donne à voir une mécanique qui ne
+ * le concerne pas. Les autres rôles (enseignant, parent) ne le voient pas non
+ * plus : le besoin de diagnostic est celui de qui exploite la plateforme.
+ */
+const montreLesDetails = computed(() => {
+  if (!auth.isAdmin) return false
+  const trace = props.message.trace
+  return Boolean(trace && (trace.sources?.length || trace.node_trace?.length))
+})
 </script>
 
 <style scoped>
