@@ -1,4 +1,13 @@
-"""POST /api/quiz — génère un quiz · POST /api/quiz/answer — corrige et enregistre.
+"""POST /api/quiz — sert un quiz · POST /api/quiz/answer — corrige et enregistre.
+
+**Les questions viennent du corpus, elles ne sont plus générées** (décision D12,
+tranchée le 2026-08-28). Le modèle produisait des questions dont la réponse
+déclarée pouvait être fausse — mesuré dès le premier essai sur la stack réelle —
+et rien ne la vérifiait. Les sections « 18. Auto-évaluation » des leçons portent
+des items rédigés et corrigés par l'auteur : les lire rend la question juste par
+construction. Quand le chapitre n'en a pas, on le dit (``available`` faux) plutôt
+que de retomber sur la génération, qui ramènerait le défaut par la porte de
+service.
 
 **La bonne réponse ne descend jamais dans le navigateur.** Elle voyage scellée
 dans ``quiz_token`` (cf. ``api/security.create_quiz_token``) : le client la
@@ -14,14 +23,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from agent_tuteur.agent.graph import TutorAgent
-from agent_tuteur.agent.quiz import corriger_quiz, generer_quiz
+from agent_tuteur.agent import quiz_corpus
+from agent_tuteur.agent.quiz import corriger_quiz
 from agent_tuteur.api.dependencies import (
     badge_repo,
     ensure_can_access_student,
     exercise_repo,
-    get_agent,
     get_current_user,
+    get_retriever,
     link_repo,
     mastery_repo,
 )
@@ -42,6 +51,7 @@ from agent_tuteur.persistence.repositories import (
     MasteryRepository,
     StudentLinkRepository,
 )
+from agent_tuteur.vectorstore.retriever import HybridRetriever
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 
@@ -82,47 +92,53 @@ def _competence_visee(demande: QuizRequest) -> str:
 async def generate_quiz(
     payload: QuizRequest,
     principal: Principal = Depends(get_current_user),
-    agent: TutorAgent = Depends(get_agent),
+    retriever: HybridRetriever = Depends(get_retriever),
 ) -> QuizOut:
-    """Génère un quiz sur une compétence.
+    """Sert une question d'évaluation **tirée du corpus** sur une compétence.
 
-    Un quiz indisponible (``available`` faux) n'est **pas** une erreur HTTP :
-    c'est le résultat honnête d'un modèle qui n'a rien produit d'exploitable.
-    L'interface affiche ``instructions`` et propose de réessayer — jamais un
-    questionnaire de remplissage.
+    L'absence de question n'est **pas** une erreur HTTP : c'est le résultat
+    honnête d'un chapitre dont la section d'auto-évaluation est vide, absente,
+    ou dont les QCM ne portent pas de clé de correction. L'interface affiche
+    alors ``instructions`` — jamais un questionnaire de remplissage, jamais une
+    question inventée pour l'occasion.
     """
     competence = _competence_visee(payload)
-    cadre = ", ".join(
-        v for k in ("classe", "serie") if (v := payload.curriculum_context.get(k))
-    )
-    quiz = await generer_quiz(
-        agent.llm,
-        competence,
-        quiz_type=payload.quiz_type,
-        contexte_curriculaire=cadre,
+
+    # Ratissage par métadonnées, pas par similarité : la section d'évaluation
+    # doit être atteinte même si son texte ressemble peu à la demande.
+    extraits = retriever.chunks_du_chapitre(competence, payload.curriculum_context)
+    question = quiz_corpus.choisir(
+        quiz_corpus.questions_du_chapitre(extraits), payload.quiz_type
     )
 
-    if not quiz.est_utilisable:
+    if question is None:
         return QuizOut(
             competence=competence,
             quiz_type=payload.quiz_type,
             available=False,
-            instructions=quiz.to_dict()["instructions"],
+            instructions=(
+                f"Je n'ai pas encore de question d'évaluation corrigée pour « {competence} ». "
+                "Mes questions sont tirées des leçons elles-mêmes, jamais inventées : quand la "
+                "leçon n'en fournit pas, je préfère te le dire plutôt que de risquer de te "
+                "corriger à tort. Essaie un autre chapitre, ou reviens au cours."
+            ),
         )
 
-    question = quiz.questions[0]
     return QuizOut(
         competence=competence,
-        quiz_type=quiz.quiz_type,
+        quiz_type=question.type,
         available=True,
-        question=question["question"],
-        choices=[QuizChoiceOut(**c) for c in question["choices"]],
+        question=question.enonce,
+        choices=[QuizChoiceOut(id=identifiant, text=texte) for identifiant, texte in question.choix],
         quiz_token=create_quiz_token(
             competence=competence,
-            correct_answer=question["correct_answer"],
-            explanation=question["explanation"],
+            correct_answer=question.reponse,
+            explanation=question.explication,
         ),
-        instructions=quiz.to_dict()["instructions"],
+        instructions=(
+            "Choisis la proposition qui te paraît juste, puis valide : la correction est "
+            "immédiate."
+        ),
     )
 
 

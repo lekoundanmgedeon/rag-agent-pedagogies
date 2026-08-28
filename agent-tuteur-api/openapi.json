@@ -861,7 +861,7 @@
           "quiz"
         ],
         "summary": "Generate Quiz",
-        "description": "Génère un quiz sur une compétence.\n\nUn quiz indisponible (``available`` faux) n'est **pas** une erreur HTTP :\nc'est le résultat honnête d'un modèle qui n'a rien produit d'exploitable.\nL'interface affiche ``instructions`` et propose de réessayer — jamais un\nquestionnaire de remplissage.",
+        "description": "Sert une question d'évaluation **tirée du corpus** sur une compétence.\n\nL'absence de question n'est **pas** une erreur HTTP : c'est le résultat\nhonnête d'un chapitre dont la section d'auto-évaluation est vide, absente,\nou dont les QCM ne portent pas de clé de correction. L'interface affiche\nalors ``instructions`` — jamais un questionnaire de remplissage, jamais une\nquestion inventée pour l'occasion.",
         "operationId": "generate_quiz_api_quiz_post",
         "requestBody": {
           "content": {

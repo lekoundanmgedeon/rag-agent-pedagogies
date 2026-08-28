@@ -82,22 +82,21 @@ jobs:
         run: pytest -q
 
       - name: Vérifier que le schéma OpenAPI committé est à jour
-        # Le schéma versionné est le contrat avec le frontend. S'il diverge du
-        # code, les types TypeScript du frontend décrivent une API qui n'existe
-        # plus — et la compilation ne le voit pas. On régénère donc et on exige
-        # qu'il n'y ait aucune différence.
+        # Le schéma versionné est le contrat publié de l'API : il documente ce
+        # que le frontend et les intégrations tierces peuvent appeler. Le
+        # frontend Vue ne génère plus de types à partir de lui (il est en
+        # JavaScript), mais un schéma périmé reste une documentation fausse.
         working-directory: agent-tuteur-api
         run: |
           python scripts/export_openapi.py openapi.json
           git diff --exit-code openapi.json || {
             echo "::error::Le schéma OpenAPI a changé. Lancez :"
             echo "  cd agent-tuteur-api && python scripts/export_openapi.py openapi.json"
-            echo "  cd ../agent-tuteur-web-next && npm run gen:api"
             exit 1
           }
 
   frontend:
-    name: Build du frontend (Next.js)
+    name: Build du frontend (Vue)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,29 +104,15 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: agent-tuteur-web-next/package-lock.json
+          cache-dependency-path: agent-tuteur-web/package-lock.json
       - name: Installer
-        working-directory: agent-tuteur-web-next
+        working-directory: agent-tuteur-web
         run: npm ci
 
-      - name: Vérifier que les types générés sont à jour
-        # Deuxième maillon de la chaîne anti-divergence : le schéma OpenAPI est
-        # vérifié côté API, les types le sont ici. Ensemble, ils garantissent
-        # que le frontend compile contre l'API réelle, pas contre son souvenir.
-        working-directory: agent-tuteur-web-next
-        run: |
-          npm run gen:api
-          git diff --exit-code src/types/api.d.ts || {
-            echo "::error::Types désynchronisés. Lancez : npm run gen:api"
-            exit 1
-          }
-
-      - name: Vérifier les types
-        working-directory: agent-tuteur-web-next
-        run: npm run typecheck
-
       - name: Construire
-        working-directory: agent-tuteur-web-next
+        # C'est ce build que sert la stack de déploiement (service `web` de
+        # docker-compose) : le casser casse l'interface réellement livrée.
+        working-directory: agent-tuteur-web
         run: npm run build
 
   image-api:
@@ -143,21 +128,3 @@ jobs:
         # `numpy==2.5.1` (voir JOURNAL_FUSION.md, module 7).
         run: docker build -t agent-tuteur-api:ci agent-tuteur-api
 
-  frontend-vue:
-    # Frontend historique (cf. JOURNAL_FUSION.md, module 8). À retirer en même
-    # temps que `agent-tuteur-web/` — chantier distinct de la sortie de Render.
-    name: Build du frontend Vue (historique)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: agent-tuteur-web/package-lock.json
-      - name: Installer
-        working-directory: agent-tuteur-web
-        run: npm ci
-      - name: Construire
-        working-directory: agent-tuteur-web
-        run: npm run build

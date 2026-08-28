@@ -136,6 +136,21 @@ export const feedbackApi = {
   submit: (messageId, value) => http.post(`/api/messages/${messageId}/feedback`, { value }),
 }
 
+// ── Quiz ─────────────────────────────────────────────────────────────────────
+// `quiz_token` scelle la bonne réponse et son explication : le client le
+// transporte sans pouvoir le lire, et seule la route de correction le rouvre.
+// Sans cette précaution, l'élève lirait la réponse dans les outils de
+// développement avant de répondre, et l'évaluation ne mesurerait plus rien.
+export const quizApi = {
+  generer: (competence, quizType, curriculumContext = {}) =>
+    http.post('/api/quiz', {
+      competence,
+      quiz_type: quizType,
+      curriculum_context: curriculumContext,
+    }),
+  repondre: (quizToken, answer) => http.post('/api/quiz/answer', { quiz_token: quizToken, answer }),
+}
+
 // ── Progression ──────────────────────────────────────────────────────────────
 export const progressionApi = {
   get: (studentId) => http.get(`/api/progression/${encodeURIComponent(studentId)}`),

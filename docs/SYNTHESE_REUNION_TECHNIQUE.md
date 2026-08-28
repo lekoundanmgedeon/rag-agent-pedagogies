@@ -2,6 +2,8 @@
 
 > **📁 Archive — décisions proposées, tranchées depuis.**
 >
+> **Mise à jour du 2026-08-27** — le frontend **Next.js** (`agent-tuteur-web-next/`) a été **supprimé du dépôt** : le Vue (`agent-tuteur-web/`) est l'interface unique, celle que le déploiement a toujours servie. Tout ce que ce document dit du Next.js décrit l'état d'alors, pas le dépôt d'aujourd'hui.
+>
 > Ce document présentait les 20 décisions à prendre et les 8 points à trancher
 > collectivement **avant** la fusion. La fusion **a eu lieu** (fusionnée dans
 > `main` le 2026-08-06) : les décisions ont été prises et exécutées. Conservé

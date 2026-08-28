@@ -52,17 +52,17 @@ hybride, tout local) : `../docs/GUIDE_LANCEMENT.md`.
 
 ### ⚠️ Après toute modification d'une route ou d'un schéma
 
-Le schéma OpenAPI est **versionné** (`openapi.json`) : c'est le contrat dont le
-frontend Next.js dérive ses types TypeScript. Régénérer les deux :
+Le schéma OpenAPI est **versionné** (`openapi.json`) : c'est le contrat publié
+de l'API — ce que `/docs`, le frontend et toute intégration tierce décrivent.
+Le régénérer :
 
 ```bash
 python scripts/export_openapi.py openapi.json
-cd ../agent-tuteur-web-next && npm run gen:api
 ```
 
 L'intégration continue régénère et exige zéro différence — elle échoue sinon.
-C'est ce qui fait que renommer un champ ici **casse la compilation** du frontend
-au lieu de passer inaperçu jusqu'en production.
+Un schéma périmé n'est pas un détail de forme : c'est une documentation qui
+décrit une API qui n'existe plus.
 
 ## Tests
 

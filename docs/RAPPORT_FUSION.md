@@ -1,5 +1,7 @@
 # Rapport de fusion — choix adoptés et justifications
 
+> **Mise à jour du 2026-08-27** — le frontend **Next.js** (`agent-tuteur-web-next/`) a été **supprimé du dépôt** : le Vue (`agent-tuteur-web/`) est l'interface unique, celle que le déploiement a toujours servie. Tout ce que ce document dit du Next.js décrit l'état d'alors, pas le dépôt d'aujourd'hui.
+
 **Objet** : rendre compte de la fusion de `rag-agent-pedagogie` (**ATS**) et
 `nuru-binta` (**NURU**) en une base unique — ce qui a été décidé, sur quelles
 bases, et ce qui reste à trancher.

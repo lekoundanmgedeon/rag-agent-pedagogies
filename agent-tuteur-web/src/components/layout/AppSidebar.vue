@@ -15,6 +15,7 @@
 
     <nav class="nav">
       <RouterLink to="/" class="nav-link" :class="{ active: route.name === 'chat' || route.name === 'conversation' }">💬 Chat</RouterLink>
+      <RouterLink to="/quiz" class="nav-link" :class="{ active: route.name === 'quiz' }">🎯 Quiz</RouterLink>
       <RouterLink to="/progression" class="nav-link" :class="{ active: route.name === 'progression' }">📈 Ma progression</RouterLink>
       <RouterLink v-if="auth.isAdmin" to="/admin" class="nav-link">🛠️ Administration</RouterLink>
     </nav>

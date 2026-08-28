@@ -2,6 +2,8 @@
 
 > **📁 Archive — esquisses, désormais implémentées.**
 >
+> **Mise à jour du 2026-08-27** — le frontend **Next.js** (`agent-tuteur-web-next/`) a été **supprimé du dépôt** : le Vue (`agent-tuteur-web/`) est l'interface unique, celle que le déploiement a toujours servie. Tout ce que ce document dit du Next.js décrit l'état d'alors, pas le dépôt d'aujourd'hui.
+>
 > Les extraits de code ci-dessous sont des **esquisses de discussion** écrites
 > avant la fusion, pas le code livré. La fusion a eu lieu (fusionnée dans `main`
 > le 2026-08-06) et l'implémentation réelle diffère des esquisses sur plusieurs

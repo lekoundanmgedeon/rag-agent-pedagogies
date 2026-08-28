@@ -7,6 +7,7 @@ const routes = [
   // Espace élève (accessible aussi à l'admin).
   { path: '/', name: 'chat', component: () => import('@/views/ChatView.vue') },
   { path: '/c/:id', name: 'conversation', component: () => import('@/views/ChatView.vue') },
+  { path: '/quiz', name: 'quiz', component: () => import('@/views/QuizView.vue') },
   { path: '/progression', name: 'progression', component: () => import('@/views/ProgressionView.vue') },
 
   // Espace administration (rôle admin requis).

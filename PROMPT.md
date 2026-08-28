@@ -2,7 +2,8 @@
 >
 > Ce fichier est le cahier des charges qui a servi à créer le projet *from
 > scratch*. **Les huit étapes qu'il décrit sont toutes réalisées**, et le projet
-> a beaucoup évolué depuis (authentification JWT, frontend Vue puis Next.js,
+> a beaucoup évolué depuis (authentification JWT, frontend Vue — un frontend
+> Next.js a existé d'août 2026 au 2026-08-27, puis a été supprimé —,
 > fusion avec le dépôt NURU). Les instructions d'arrêt ci-dessous ne
 > s'appliquent plus.
 >

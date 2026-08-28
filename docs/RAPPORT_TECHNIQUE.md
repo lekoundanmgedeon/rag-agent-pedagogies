@@ -51,8 +51,8 @@ Quatre différenciateurs guident les choix techniques qui suivent :
 
 ```
 ┌─────────────────────┐  HTTP  ┌──────────────────────────────────────┐
-│ agent-tuteur-web-next│  +JWT  │  agent-tuteur-api                    │
-│  (Next.js 16 :       │◄──────►│  ┌────────────────────────────────┐ │
+│  agent-tuteur-web    │  +JWT  │  agent-tuteur-api                    │
+│  (Vue 3 + Vite :     │◄──────►│  ┌────────────────────────────────┐ │
 │   élève + admin)     │  SSE   │  │ api/  (FastAPI, routes, deps)  │ │
 └─────────────────────┘        │  └───────────────┬────────────────┘ │
                                  │                  │                  │
@@ -136,14 +136,8 @@ rag-agent-pedagogie/
 │   ├── scripts/                   demo.py, create_user.py, export_openapi.py, seed_corpus.py
 │   ├── Dockerfile, pyproject.toml, requirements.txt, .env.example
 │
-├── agent-tuteur-web-next/       Frontend courant : Next.js 16 / React 19 / TypeScript
-│   ├── src/                      9 écrans (élève + administration)
-│   ├── src/types/api.d.ts        ⚠️ GÉNÉRÉ depuis openapi.json — ne pas éditer
-│   ├── next.config.ts            Redirection /api → API_ORIGIN (lue au *build*)
-│   ├── package.json, tsconfig.json, postcss.config.mjs
-│
-├── agent-tuteur-web/            Frontend Vue 3 (SPA) — historique, fait encore
-│   ├── src/views/                tourner le déploiement (bascule = point V7)
+├── agent-tuteur-web/            Frontend unique : Vue 3 (SPA) + Vite
+│   ├── src/views/                Espace élève (chat, progression) + administration
 │   ├── src/stores/               Pinia (auth, chat)
 │   ├── src/services/api.js       Seul point de contact avec le backend (HTTP/SSE + JWT)
 │   ├── Dockerfile, nginx.conf, package.json, vite.config.js, .env.example
@@ -255,7 +249,7 @@ FastAPI (même processus) — le même code de pipeline est appelé dans les deu
 cas, seul l'exécuteur change. Ce n'est pas un filet de sécurité théorique : il
 a été testé en coupant Redis délibérément.
 
-### Le frontend : Streamlit → Vue 3 → Next.js (et pourquoi deux coexistent)
+### Le frontend : Streamlit → Vue 3 → Next.js → Vue 3
 
 Le frontend est un **client pur** de l'API (aucun import du cœur métier), et il a
 changé deux fois sans que le cœur bouge — c'est la validation concrète de
@@ -283,13 +277,24 @@ compilation** du frontend — vérifié en le simulant — au lieu de produire u
 `undefined` silencieux découvert en production. Aucun des frontends précédents ne
 donnait cette garantie.
 
-**Pourquoi les deux coexistent encore.** Le Next.js est prêt et vérifié de bout
-en bout (connexion, garde de route, boucle quiz, streaming SSE contre une vraie
-API), mais le déploiement pointe toujours vers le Vue. La bascule touche la
-production et diffère en nature — le Vue est **statique** (servi par nginx), Next
-exige un **processus Node** — donc elle attend un arbitrage d'équipe (point V7).
-Les deux sont construits par l'intégration continue en attendant ; le Vue partira
-avec la bascule.
+**Épilogue, 2026-08-27 : le Next.js a été supprimé et le Vue conservé.** La
+bascule attendue (ancien point V7) n'a jamais eu lieu — pendant trois semaines,
+le déploiement a continué de servir le Vue pendant que la CI construisait les
+deux. Décision du porteur du projet : garder l'interface réellement livrée,
+supprimer l'autre. Ce que cela coûte, il faut le dire : la garantie de typage
+générée depuis OpenAPI disparaît avec le frontend qui l'exploitait. Le schéma
+reste versionné et vérifié en CI comme contrat publié de l'API, mais un champ
+renommé ne casse plus aucune compilation. Ce que cela rapporte : une seule
+interface à maintenir, un service qui reste **statique** (nginx sert le `dist/`,
+sans processus Node), et 838 Mo en moins dans le dépôt.
+
+Le seul écran qui n'existait que dans le Next.js — le **quiz** — a été porté en
+Vue le lendemain (2026-08-28) : génération, réponse, correction, maîtrise et
+badges. Deux différences avec l'original, toutes deux volontaires : la liste des
+chapitres vient de `GET /api/catalogue` au lieu d'être écrite en dur (c'était le
+défaut du cas QA #28), et le port a mis au jour un défaut de fond de la posture
+*quiz* — **rien ne vérifie que la réponse déclarée par le modèle est vraie**
+(décision **D12**, ouverte).
 
 Le compromis assumé, commun aux deux : une SPA impose une étape de build
 (Node/npm) et une gestion explicite de l'état/routing/auth côté client —
@@ -577,7 +582,8 @@ Listées sans les minimiser — un rapport technique honnête doit les nommer :
 | Pas de stockage d'objets (fichiers originaux) | `/reindex` exige de refournir le fichier ; pas d'archive des documents sources | Documenté dans `docs/api.md` et l'ADR correspondant |
 | Rendu visuel des frontends non capturé | Validés par le build, un test du rendu LaTeX, et la vérification end-to-end du contrat API (login → SSE → gating), mais pas par une capture d'écran navigateur pilotée | À revalider visuellement ; le contrat backend, lui, est couvert par les tests |
 | Statut d'ingestion exposé par sondage (pas d'événements fins) | `/api/documents/{id}/status` sonde la base toutes les 500 ms plutôt que de relayer des événements extract/normalize/chunk/embed publiés par le worker | Contrat SSE observable stable, amélioration possible sans le casser |
-| **Deux frontends maintenus en parallèle** | Le Next.js est prêt mais le déploiement sert toujours le Vue ; la CI construit les deux | Bascule en attente d'arbitrage (**point V7**) — le Vue partira avec elle |
+| ~~Deux frontends maintenus en parallèle~~ | **Résolu le 2026-08-27** : le Next.js a été supprimé, le Vue est le frontend unique ; son écran *quiz* a été porté le 2026-08-28 | — |
+| **🔴 Le quiz peut noter faux** | La bonne réponse vient du modèle et n'est vérifiée par rien ; mesuré le 2026-08-28 sur une suite récurrente dont la réponse déclarée était fausse | Aucun — **décision D12** ouverte (vérification symbolique, questions du corpus, ou écran désactivé) |
 | **Corpus non indexé** | Le pipeline est vérifié de bout en bout (6 007 morceaux produits sur les 103 PDF) mais rien n'est dans Qdrant : il faut un serveur Qdrant et le modèle BGE-M3 | Aucun — chantier ouvert (P1.3) |
 | **Gains du re-ranker non mesurés** | Sans jeu d'évaluation de recherche, impossible de prouver que la priorité au cours améliore les réponses ; le plan désigne ce jeu comme *« le point le plus important »* | Aucun — demande 30 à 50 vraies questions d'élèves avec le chapitre attendu (**point V4**) |
 | **🔴 57 % du corpus invisible au filtrage par série** | Mesuré : **59 documents sur 103** disparaîtraient d'une recherche filtrée par série | Aucun — mesuré, non corrigé (**point V1, le plus urgent**). Révèle aussi qu'une partie du dossier `cours/` est constituée de polycopiés **français**, pas du programme sénégalais — ce qui pose la question des droits d'usage |
@@ -600,8 +606,8 @@ d'équipe à l'issue de la fusion. Liste complète et options dans
 - ~~**Fusion avec le dépôt NURU**~~ — les huit modules du plan sont traités et
   fusionnés dans `main` : lecture PDF fidèle aux formules, priorité au cours dans
   la recherche, domaine pédagogique (maîtrise/badges/recommandations), troisième
-  posture *quiz*, quatre fournisseurs de LLM, frontend Next.js, intégration
-  continue. Voir [ADR 0010](adr/0010-fusion-nuru-ats.md).
+  posture *quiz*, quatre fournisseurs de LLM, frontend Next.js (depuis supprimé,
+  cf. §5), intégration continue. Voir [ADR 0010](adr/0010-fusion-nuru-ats.md).
 
 ### À décider (bloquant ou structurant)
 
@@ -613,8 +619,12 @@ d'équipe à l'issue de la fusion. Liste complète et options dans
    le chapitre attendu. Demande une contribution humaine (un enseignant, ou les
    questions réellement posées). Sans lui, aucune amélioration du RAG n'est
    démontrable, seulement affirmée.
-3. **La bascule du déploiement vers le frontend Next.js** — cinq fichiers, avec
-   un changement de nature (statique → processus Node).
+3. **La justesse des quiz générés** — la bonne réponse est reprise du modèle
+   sans aucune vérification, et une question fausse a été mesurée dès le premier
+   essai. Trois voies dans la décision **D12** : vérifier symboliquement, servir
+   les questions déjà rédigées dans les leçons, ou désactiver l'écran en
+   attendant. *(L'ancienne question de la bascule vers le frontend Next.js est
+   sans objet : ce frontend a été supprimé le 2026-08-27.)*
 
 ### À faire
 

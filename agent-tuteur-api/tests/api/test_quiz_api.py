@@ -1,11 +1,15 @@
 """Routes du domaine pédagogique : quiz, évaluation, maîtrise.
 
-Le point le plus important vérifié ici : **la bonne réponse ne descend jamais
-dans le navigateur**. Elle voyage scellée dans un jeton signé, illisible et
-non modifiable par le client.
+Deux propriétés tenues ici, et la seconde a changé de nature le 2026-08-28 :
+
+* **la bonne réponse ne descend jamais dans le navigateur** — elle voyage
+  scellée dans un jeton signé, illisible et non modifiable par le client ;
+* **les questions viennent du corpus, jamais du modèle** (décision D12). Le
+  modèle produisait des questions dont la réponse déclarée pouvait être fausse ;
+  les sections « Auto-évaluation » des leçons portent des items corrigés par
+  l'auteur. Un chapitre qui n'en a pas ne reçoit **aucune** question inventée.
 """
 
-import json
 import uuid
 
 import pytest
@@ -14,40 +18,47 @@ from agent_tuteur.api.security import create_quiz_token
 from agent_tuteur.persistence.db import session_scope
 from agent_tuteur.persistence.repositories import StudentLinkRepository, UserRepository
 
-QUIZ_JSON = json.dumps(
-    {
-        "question": "Quelle est la dérivée de $x^2$ ?",
-        "choices": [
-            {"id": "A", "text": "$2x$"},
-            {"id": "B", "text": "$x$"},
-            {"id": "C", "text": "$x^3$"},
-            {"id": "D", "text": "$2$"},
-        ],
-        "correct_answer": "A",
-        "explanation": "La dérivée de $x^2$ vaut $2x$.",
-    }
-)
+#: Leçon minimale au format pilote, avec la seule section qui intéresse le quiz.
+#: Les items vrai/faux y portent leur correction, comme dans les 12 leçons.
+LECON_AVEC_EVALUATION = """# Leçon — Dérivation (Terminale S1)
+
+## 1. Métadonnées
+- Niveau : secondaire
+- Série : S1
+- Discipline : Mathématiques
+- Chapitre : Dérivation
+
+## 2. Introduction
+
+La dérivée mesure la vitesse de variation d'une fonction.
+
+## 18. Auto-évaluation
+
+### QCM
+1. La dérivée de $x^2$ est :
+ a) $2x$ b) $x$ c) $x^3$ d) $2$
+
+### Vrai/Faux
+1. La dérivée d'une constante est nulle. (Vrai)
+2. La dérivée de $x^2$ vaut $x$. (Faux — elle vaut $2x$)
+"""
 
 
 @pytest.fixture
-def quiz_llm(api_client):
-    """Force l'agent de l'application à produire un quiz JSON valide."""
+def corpus_avec_evaluation(api_client):
+    """Indexe une leçon qui porte une section d'auto-évaluation corrigée.
 
-    class _LLM:
-        name = "mock-quiz"
-        chain = ["mock-quiz"]
-        last_used = "mock-quiz"
+    On passe par l'``Indexer`` de l'application plutôt que par l'API d'upload :
+    ce qui est testé ici est la lecture des questions, pas l'ingestion, déjà
+    couverte ailleurs.
+    """
+    from agent_tuteur.ingestion.pipeline import ingest_and_index
 
-        def available(self):
-            return True
-
-        async def generate(self, prompt, *, system=None):
-            return QUIZ_JSON
-
-        async def generate_stream(self, prompt, *, system=None):
-            yield QUIZ_JSON
-
-    api_client.app.state.agent._llm = _LLM()
+    ingest_and_index(
+        "lecon_derivation_s1.md",
+        LECON_AVEC_EVALUATION.encode("utf-8"),
+        api_client.app.state.indexer,
+    )
     return api_client
 
 
@@ -71,21 +82,32 @@ async def test_les_routes_pedagogiques_exigent_un_jeton(api_client, method, path
 # --- Génération d'un quiz -----------------------------------------------------
 
 
-async def test_un_quiz_est_genere(quiz_llm, student_headers):
-    reponse = await quiz_llm.post(
-        "/api/quiz", json={"competence": "Dérivation"}, headers=student_headers
+async def test_une_question_du_corpus_est_servie(corpus_avec_evaluation, student_headers):
+    reponse = await corpus_avec_evaluation.post(
+        "/api/quiz",
+        json={"competence": "Dérivation", "quiz_type": "vrai_faux"},
+        headers=student_headers,
     )
     assert reponse.status_code == 200
     corps = reponse.json()
     assert corps["available"] is True
     assert corps["competence"] == "Dérivation"
-    assert len(corps["choices"]) == 4
+    assert [c["text"] for c in corps["choices"]] == ["Vrai", "Faux"]
+    # L'énoncé est celui de la leçon, au mot près : rien n'a été reformulé.
+    assert corps["question"] in {
+        "La dérivée d'une constante est nulle.",
+        "La dérivée de $x^2$ vaut $x$.",
+    }
 
 
-async def test_la_bonne_reponse_ne_descend_jamais_au_client(quiz_llm, student_headers):
+async def test_la_bonne_reponse_ne_descend_jamais_au_client(
+    corpus_avec_evaluation, student_headers
+):
     """Sans cela, l'élève lirait la réponse dans les outils de développement."""
-    reponse = await quiz_llm.post(
-        "/api/quiz", json={"competence": "Dérivation"}, headers=student_headers
+    reponse = await corpus_avec_evaluation.post(
+        "/api/quiz",
+        json={"competence": "Dérivation", "quiz_type": "vrai_faux"},
+        headers=student_headers,
     )
     corps = reponse.json()
 
@@ -96,8 +118,8 @@ async def test_la_bonne_reponse_ne_descend_jamais_au_client(quiz_llm, student_he
     assert "correct_answer" not in corps["quiz_token"]
 
 
-async def test_la_competence_est_deduite_du_cadre_curriculaire(quiz_llm, student_headers):
-    reponse = await quiz_llm.post(
+async def test_la_competence_est_deduite_du_cadre_curriculaire(api_client, student_headers):
+    reponse = await api_client.post(
         "/api/quiz",
         json={"curriculum_context": {"chapitre": "Probabilités", "serie": "S1"}},
         headers=student_headers,
@@ -105,14 +127,21 @@ async def test_la_competence_est_deduite_du_cadre_curriculaire(quiz_llm, student
     assert reponse.json()["competence"] == "Probabilités"
 
 
-async def test_sans_aucune_indication_le_quiz_est_refuse(quiz_llm, student_headers):
+async def test_sans_aucune_indication_le_quiz_est_refuse(api_client, student_headers):
     """On préfère refuser qu'interroger l'élève au hasard."""
-    reponse = await quiz_llm.post("/api/quiz", json={}, headers=student_headers)
+    reponse = await api_client.post("/api/quiz", json={}, headers=student_headers)
     assert reponse.status_code == 422
 
 
-async def test_un_modele_defaillant_ne_produit_pas_de_quiz_factice(api_client, student_headers):
-    """Le mock par défaut ne renvoie pas de JSON : le quiz doit être annoncé absent."""
+async def test_un_chapitre_sans_evaluation_n_invente_aucune_question(
+    api_client, student_headers
+):
+    """Le corpus d'exemple ne porte aucune section d'auto-évaluation.
+
+    C'est le cœur de la décision D12 : plutôt qu'une question fabriquée dont la
+    réponse pourrait être fausse, l'élève reçoit un aveu. Aucun modèle n'est
+    sollicité sur ce chemin — il n'y a plus de génération du tout.
+    """
     reponse = await api_client.post(
         "/api/quiz", json={"competence": "Dérivation"}, headers=student_headers
     )
@@ -120,7 +149,24 @@ async def test_un_modele_defaillant_ne_produit_pas_de_quiz_factice(api_client, s
     corps = reponse.json()
     assert corps["available"] is False
     assert corps["choices"] == []
-    assert "n'a pas pu être généré" in corps["instructions"]
+    assert corps["quiz_token"] == ""
+    assert "pas encore de question d'évaluation corrigée" in corps["instructions"]
+
+
+async def test_un_qcm_sans_cle_de_correction_n_est_pas_servi(
+    corpus_avec_evaluation, student_headers
+):
+    """La leçon contient un QCM, mais sans clé : il est écarté, pas complété.
+
+    C'est la borne qui empêche le défaut de revenir : deviner la bonne réponse
+    d'un QCM qui n'en déclare pas, c'est exactement ce que faisait le modèle.
+    """
+    reponse = await corpus_avec_evaluation.post(
+        "/api/quiz",
+        json={"competence": "Dérivation", "quiz_type": "qcm"},
+        headers=student_headers,
+    )
+    assert reponse.json()["available"] is False
 
 
 # --- Correction ---------------------------------------------------------------

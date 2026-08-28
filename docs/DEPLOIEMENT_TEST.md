@@ -21,11 +21,11 @@ URL HTTPS à envoyer à l'équipe. Complète [`GUIDE_LANCEMENT.md`](GUIDE_LANCEM
 > [ADR 0009](adr/0009-authentification-jwt-roles.md) et
 > [`architecture.md`](architecture.md) §7.
 >
-> **2. Le frontend déployé est le Vue** (`agent-tuteur-web/`), pas le Next.js.
-> C'est toujours exact aujourd'hui, mais provisoire : la bascule vers
-> `agent-tuteur-web-next/` attend un arbitrage (point **V7**, cf.
-> [`STATUS.md`](STATUS.md) §5). Elle changera la nature du service — le Vue est
-> **statique**, Next exige un **processus Node**.
+> **2. Le frontend déployé est le Vue** (`agent-tuteur-web/`) — et c'est
+> désormais le seul du dépôt : le frontend Next.js a été supprimé le
+> **2026-08-27**, l'hypothèse d'une bascule (ancien point V7) est close. Le
+> service reste donc **statique** : nginx sert le `dist/` produit par
+> `npm run build`, sans processus Node.
 >
 > Le reste de la procédure (provisionnement du VPS, TLS, compose de production,
 > sauvegardes) reste valable.
@@ -60,8 +60,8 @@ sites statiques) ne déploie donc quasiment rien — il faudrait de toute façon
 héberger l'API, PostgreSQL et Qdrant ailleurs. D'où le VPS unique.
 
 > *(Ce paragraphe visait à l'origine le frontend Streamlit, supprimé du dépôt le
-> 2026-07-30. L'argument vaut à l'identique pour le SPA Vue déployé aujourd'hui,
-> et pour le Next.js qui lui succédera.)*
+> 2026-07-30. L'argument vaut à l'identique pour le SPA Vue, seul frontend depuis
+> la suppression du Next.js le 2026-08-27.)*
 
 `docker-compose.prod.yml` lance les 7 services sur une seule machine :
 

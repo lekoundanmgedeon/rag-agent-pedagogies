@@ -11,8 +11,7 @@ symbolique.
 
 ```
 agent-tuteur-api/       Cœur métier + API FastAPI + worker ARQ
-agent-tuteur-web-next/  Frontend courant : Next.js 16 / React 19 / TypeScript
-agent-tuteur-web/       Frontend Vue 3 historique — fait encore tourner le déploiement
+agent-tuteur-web/       Frontend Vue 3 + Vite — interface unique (élève + administration)
 agent-tuteur-deploy/    docker-compose (dev/prod), nginx, scripts
 docs/                   STATUS.md, architecture.md, api.md, adr/, guides
 .github/workflows/      Intégration continue (5 vérifications par proposition)
@@ -30,10 +29,10 @@ Le **cœur métier** (`agent/`, `vectorstore/`, `ingestion/`, `tools/`,
 d'aucun framework web ni de base de données — il est testable et exécutable
 hors-ligne (LLM mock, vectorstore in-memory). `api/` (FastAPI), `workers/`
 (ARQ) et `persistence/` (PostgreSQL) sont aux extrémités et consomment ce
-cœur. Le frontend (Next.js, espaces élève + administration) ne parle qu'HTTP/SSE
+cœur. Le frontend (Vue 3, espaces élève + administration) ne parle qu'HTTP/SSE
 à l'API, authentifié par jeton JWT (rôles `admin`, `teacher`, `parent`, `student`).
-Son contrat d'API est **généré depuis le schéma OpenAPI** : renommer un champ
-côté API casse la compilation du frontend, au lieu de passer inaperçu.
+Le schéma OpenAPI reste versionné : c'est le contrat publié de l'API, vérifié à
+chaque proposition de modification.
 
 L'agent tient **trois postures** : *exercice* (indices socratiques gradués,
 posture par défaut), *cours* (exposé section par section) et *quiz*
@@ -62,16 +61,15 @@ jour.
 
 ## ⚠️ Après toute modification d'une route d'API
 
-Le schéma OpenAPI est versionné : c'est le contrat dont le frontend dérive ses
-types TypeScript. Régénérer les deux, sinon **l'intégration continue échoue** :
+Le schéma OpenAPI est versionné : c'est le contrat publié de l'API. Le
+régénérer, sinon **l'intégration continue échoue** :
 
 ```bash
-cd agent-tuteur-api      && python scripts/export_openapi.py openapi.json
-cd agent-tuteur-web-next && npm run gen:api
+cd agent-tuteur-api && python scripts/export_openapi.py openapi.json
 ```
 
-C'est ce qui fait que renommer un champ côté API **casse la compilation** du
-frontend au lieu de passer inaperçu jusqu'en production.
+Un schéma périmé est une documentation fausse : `/docs` et les intégrations
+tierces décrivent alors une API qui n'existe plus.
 
 ## Prérequis
 
@@ -95,19 +93,13 @@ lance l'API (`:8000`), le worker ARQ, et le frontend **Vue** (`:8080`).
 - API : http://localhost:8000/docs
 - Health check : http://localhost:8000/health
 
-⚠️ **Deux frontends coexistent.** Le compose et les cibles `make` lancent le
-**Vue** (historique), parce que c'est lui qui fait encore tourner le déploiement.
-Le frontend courant est le **Next.js**, à lancer séparément :
+Le frontend servi par le compose est le **Vue** — c'est désormais le seul du
+dépôt. Pour le lancer hors Docker, avec rechargement à chaud :
 
 ```bash
-cd agent-tuteur-web-next
-npm install && npm run gen:api
-API_ORIGIN=http://localhost:8000 npm run dev     # http://localhost:3000
+cd agent-tuteur-web
+npm install && npm run dev      # http://localhost:5173, proxy /api -> :8000
 ```
-
-`API_ORIGIN` est lu **au build**, pas au démarrage : la changer sans
-reconstruire n'a aucun effet. La bascule du déploiement vers Next.js attend un
-arbitrage (point V7, cf. [`docs/STATUS.md`](docs/STATUS.md) §5).
 
 **Créer le premier compte admin** (l'API exige une authentification ; aucun
 compte par défaut) :
@@ -156,9 +148,8 @@ PYTHONPATH=src python scripts/demo.py
 ## Variables d'environnement
 
 Voir `agent-tuteur-api/.env.example` (backend : DB, Redis, Qdrant, LLM,
-`JWT_SECRET`, rate limiting), `agent-tuteur-web/.env.example`
-(`VITE_API_TARGET`, frontend Vue) et `API_ORIGIN` pour le frontend Next.js
-(lu **au build**). Tous les défauts permettent un fonctionnement dégradé sans
+`JWT_SECRET`, rate limiting) et `agent-tuteur-web/.env.example`
+(`VITE_API_TARGET`, frontend Vue). Tous les défauts permettent un fonctionnement dégradé sans
 infrastructure lourde (backends légers, LLM mock) — voir la section
 « Dégradation gracieuse » de `docs/architecture.md`. En production, définir un
 `JWT_SECRET` fort (≥ 32 octets).
@@ -209,11 +200,10 @@ l'intégration continue démarre un vrai service PostgreSQL. Voir
 
 `.github/workflows/ci.yml` vérifie cinq choses sur chaque proposition de
 modification : analyse statique (ruff), suite complète **contre un vrai
-PostgreSQL**, fraîcheur du schéma OpenAPI et des types TypeScript générés, build
-du frontend Next.js, et build de l'image Docker de l'API **en Python 3.11** (les
-autres travaux tournent en 3.12 — un épinglage valable seulement en 3.12 casserait
-le déploiement sans que rien ne le signale). Le frontend Vue est également
-construit tant qu'il fait tourner le déploiement.
+PostgreSQL**, fraîcheur du schéma OpenAPI, build du frontend Vue, et build de
+l'image Docker de l'API **en Python 3.11** (les autres travaux tournent en 3.12 —
+un épinglage valable seulement en 3.12 casserait le déploiement sans que rien ne
+le signale).
 
 ## Limitation connue
 

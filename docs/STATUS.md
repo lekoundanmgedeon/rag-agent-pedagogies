@@ -6,9 +6,15 @@ pour une nouvelle session (humaine ou Claude) — pas une doc de référence fin
 
 > **Où en est le projet** : la fusion des dépôts NURU et ATS est **terminée et
 > fusionnée dans `main`** (commit de merge `064db7e`, 2026-08-06). Les huit
-> modules du plan (M0 à M8) sont traités. Il reste **sept points en attente
-> d'arbitrage d'équipe** (V1 à V7, §5) dont un seul bloque une mise en
-> production : la bascule du déploiement vers le frontend Next.js.
+> modules du plan (M0 à M8) sont traités. Il reste **six points en attente
+> d'arbitrage d'équipe** (V1 à V6, §5) — plus aucun ne bloque une mise en
+> production.
+>
+> **Mise à jour du 2026-08-27** : le frontend Next.js (`agent-tuteur-web-next/`)
+> a été **supprimé du dépôt**. Le Vue (`agent-tuteur-web/`) est le frontend
+> unique — c'est celui que le déploiement a toujours servi. Le point V7 est donc
+> sans objet, et le backlog QA des 48 retours de testing est clos
+> (`qa/qa_status.json`).
 
 ---
 
@@ -67,7 +73,7 @@ démarrage).
 | **M5** | Routes `/api/quiz`, `/api/quiz/answer`, `/api/evaluation/{id}`, `/api/mastery/{id}`, toutes protégées par une règle d'accès centralisée | `api/routes/`, `api/dependencies.py` |
 | **M6** | **Gemini** ajouté comme fournisseur ; l'ordre de la chaîne de repli devient le réglage `.env` `LLM_CHAIN` | `agent/llm/router.py` |
 | **M7** | ADR 0010, dépendances épinglées, ruff configuré, **intégration continue** (5 travaux) | `.github/workflows/ci.yml` |
-| **M8** | Frontend **Next.js 16 / React 19 / TypeScript**, 9 écrans, contrat d'API généré depuis OpenAPI | `agent-tuteur-web-next/` |
+| **M8** | Frontend Next.js 16 / React 19 / TypeScript, 9 écrans — ⚠️ **supprimé le 2026-08-27**, le Vue redevient le frontend unique | *(répertoire retiré)* |
 
 Le détail de chaque décision — ce qui a été gardé, écarté et pourquoi — est dans
 [`JOURNAL_FUSION.md`](../JOURNAL_FUSION.md), une section par module.
@@ -78,13 +84,13 @@ Le contrat d'API est **versionné et vérifié en CI**. Après toute modificatio
 d'une route ou d'un schéma :
 
 ```bash
-cd agent-tuteur-api    && python scripts/export_openapi.py openapi.json
-cd agent-tuteur-web-next && npm run gen:api
+cd agent-tuteur-api && python scripts/export_openapi.py openapi.json
 ```
 
-Sans ces deux commandes, la CI échoue (elle régénère et exige zéro différence).
-C'est ce qui garantit que renommer un champ côté API **casse la compilation** du
-frontend au lieu de passer inaperçu.
+Sans cette commande, la CI échoue (elle régénère et exige zéro différence).
+Depuis la suppression du frontend Next.js, le schéma n'alimente plus de types
+TypeScript : il reste le **contrat publié** de l'API, celui que décrivent `/docs`
+et les intégrations tierces.
 
 ---
 
@@ -103,21 +109,15 @@ un service PostgreSQL — ne jamais conclure « tout passe » sur la seule foi d
 
 ### Travail non commité
 
-```
-M agent-tuteur-web-next/next-env.d.ts
-```
-
-Un seul fichier, **généré automatiquement par Next.js** (le chemin des types de
-routes est passé de `./.next/types/` à `./.next/dev/types/` au premier
-`npm run dev`). Sans conséquence : ce fichier porte la mention « should not be
-edited ». À committer ou à ignorer selon la préférence.
+Rien à signaler à la date de ce document. *(L'unique fichier qui figurait ici,
+`agent-tuteur-web-next/next-env.d.ts`, a disparu avec le frontend Next.js le
+2026-08-27.)*
 
 ### Conteneurs Docker actifs
 
 La stack complète `docker-compose.dev.yml` tourne (préfixe
 `agent-tuteur-senegal-*`) : postgres, redis, qdrant, api (`:8000`),
-worker, et le frontend **Vue** (`:8080`) — pas le Next.js, la bascule n'étant
-pas faite (point V7).
+worker, et le frontend **Vue** (`:8080`), désormais le seul du dépôt.
 
 > ⚠️ Les conteneurs `nuru_postgres`, `nuru_redis` et `erp-db-demo` qui tournent
 > sur cette machine **ne nous appartiennent pas** — ne jamais les arrêter.
@@ -157,18 +157,18 @@ TEST_DATABASE_URL="postgresql+asyncpg://test:test@localhost:55432/fusion" \
 
 Le port 55432 a été choisi pour ne percuter aucun service existant sur la machine.
 
-### 4.3 Lancer le frontend Next.js
+### 4.3 Lancer le frontend Vue
 
 ```bash
-cd agent-tuteur-web-next
+cd agent-tuteur-web
 npm install
-npm run gen:api                                   # types depuis le schéma OpenAPI
-API_ORIGIN=http://localhost:8000 npm run dev
-npm run typecheck && npm run build                # ce que vérifie la CI
+npm run dev          # http://localhost:5173, proxy /api et /health -> :8000
+npm run build        # ce que vérifie la CI, et ce que sert nginx
 ```
 
-⚠️ **`API_ORIGIN` est lu au *build*, pas au démarrage** — vérifié. La changer
-sans reconstruire n'a aucun effet.
+L'API est jointe par chemin relatif (`/api/...`), redirigé par Vite en
+développement (`VITE_API_TARGET`) et par nginx en production : le navigateur ne
+connaît jamais l'URL du backend, ce qui évite d'ouvrir CORS.
 
 ### 4.4 Dépendance à ne pas oublier sur une machine neuve
 
@@ -187,7 +187,7 @@ Les 103 PDF sont dans `~/nuru/nuru-binta/data/raw/` (dossiers `cours/` et
 
 ---
 
-## 5. Ce qui reste — sept points en attente d'arbitrage
+## 5. Ce qui reste — six points en attente d'arbitrage
 
 Le code n'a été modifié dans aucun sens sur ces points : ils demandent une
 décision d'équipe. Détail et options dans la section « ⚠️ Points à valider » de
@@ -201,7 +201,6 @@ décision d'équipe. Détail et options dans la section « ⚠️ Points à vali
 | V4 | Le jeu d'évaluation de recherche n'existe pas → les gains du M2 ne sont pas mesurés | 🟠 moyenne |
 | V5 | Une bonne explication de quiz peut être jetée par une règle trop stricte | 🟢 faible |
 | V6 | Faut-il persister les quiz en base (pour analyser la qualité des questions) ? | 🟢 faible |
-| **V7** | **Basculer le déploiement vers le frontend Next.js** (touche la production) | 🟠 moyenne |
 
 **V1 est à traiter en priorité** : il touche la décision D5 du comparatif
 (filtrage curriculaire) et conditionne l'utilité réelle du corpus. Il révèle
@@ -209,11 +208,7 @@ aussi qu'une partie du dossier `cours/` est constituée de polycopiés **frança
 (auteurs `G. COSTANTINI`, `Jérôme ONILLON`) et non du programme sénégalais — ce
 qui rejoint la question des droits d'usage du corpus.
 
-**V7 est le seul qui bloque une mise en production.** Le frontend Next.js est
-prêt et vérifié de bout en bout, mais le déploiement pointe encore vers le Vue.
-Cinq fichiers sont à reprendre (`Dockerfile.render`, `render.yaml`, les deux
-`docker-compose`, le `Makefile`), avec une différence de nature : le Vue est
-**statique**, Next a besoin d'un **processus Node**.
+**V7 — bascule du déploiement vers le frontend Next.js — est sans objet depuis le 2026-08-27** : ce frontend a été supprimé du dépôt, et le déploiement sert le Vue, comme il l'a toujours fait. Plus aucun point de cette liste ne bloque une mise en production.
 
 ### Trois chantiers qui demandent une contribution humaine
 
@@ -269,7 +264,9 @@ les tests unitaires, ni le typage, ni le build ne les auraient révélés :
    silence.
 4. **La garde de route du frontend Next.js interceptait `/health`** et le
    redirigeait vers le login, mettant le tableau de bord d'administration en
-   erreur.
+   erreur. *(Sans objet depuis la suppression de ce frontend, mais le motif —
+   une garde d'authentification qui avale une route technique — est à
+   surveiller partout.)*
 
 **Pièges d'environnement** :
 

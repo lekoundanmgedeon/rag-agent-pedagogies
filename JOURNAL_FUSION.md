@@ -9,8 +9,10 @@ apparaît.
 > `064db7e`, 2026-08-06). Ce journal reste la référence du *pourquoi* de chaque
 > décision — il n'est plus complété. Pour l'état courant du projet et ce qu'il
 > reste à décider : [`docs/STATUS.md`](docs/STATUS.md). La section
-> « ⚠️ Points à valider » ci-dessous est toujours d'actualité : les sept points
-> attendent un arbitrage d'équipe.
+> « ⚠️ Points à valider » ci-dessous reste d'actualité pour **six** d'entre eux :
+> le septième (V7, bascule du déploiement vers le frontend Next.js) est sans
+> objet depuis le **2026-08-27**, date à laquelle ce frontend a été supprimé du
+> dépôt au profit du Vue.
 
 **Branche de travail** : `feat/fusion` (fusionnée dans `main`) · **Base de départ** : ATS (`rag-agent-pedagogie`)
 

@@ -780,6 +780,102 @@ aussi D7.
 
 ---
 
+## D12 — Le quiz peut poser une question dont la bonne réponse est fausse
+
+**Statut : ACTÉE le 2026-08-28 — option 2 : servir les questions des leçons**
+
+**Décision : le quiz lit le corpus, il ne génère plus.** Prise par le porteur du
+projet le jour même du constat.
+
+**Ce qui est livré.** `agent/quiz_corpus.py` lit la section « 18.
+Auto-évaluation » du chapitre demandé et en tire les items **rédigés et corrigés
+par l'auteur de la leçon** ; `POST /api/quiz` sert l'un d'eux, tiré au sort parmi
+ceux du type demandé. Le tirage porte sur le *choix* de la question, jamais sur
+son contenu : c'est ce qui donne un peu de variété sans rouvrir la porte à une
+réponse inventée. Aucun appel de modèle ne subsiste sur ce chemin.
+
+**Ce que la mesure a imposé, et qu'il faut savoir.** Les 12 leçons portent
+chacune 3 QCM et 3 vrai/faux. Les vrai/faux déclarent leur correction — « (Faux
+— c'est \( z\bar z \)) » — donc **36 items directement servables**. Les 36 QCM,
+eux, n'ont **aucune clé de correction** : ni dans la section, ni ailleurs dans la
+leçon. Ils sont donc écartés par le lecteur, parce que deviner leur réponse
+serait exactement le défaut qu'on corrige. Le motif de clé
+(`(Réponse : b)` ou `→ b`) est déjà reconnu : **ajouter la clé dans les leçons
+suffira à rendre les QCM servables, sans toucher au code**. C'est une tâche du
+processus de contenu, à joindre à D11.
+
+**Quand un chapitre n'a rien**, l'élève reçoit un aveu — « je n'ai pas encore de
+question corrigée pour ce chapitre, mes questions viennent des leçons » — et
+non une question fabriquée. C'est le cas aujourd'hui de tout le corpus de démo
+(`agent-tuteur-api/corpus/`), qui n'a pas de section d'auto-évaluation.
+
+**Vérifié sur la stack Docker le 2026-08-28** : leçon 01 (Nombres Complexes)
+ingérée, `POST /api/quiz` sert « Le conjugué de $re^{i\theta}$ est
+$re^{-i\theta}$ » — énoncé de la leçon au mot près — et la correction répond
+juste dans les deux sens, en mettant la maîtrise à jour.
+
+**Ce que cette décision NE règle PAS**, et qui reste ouvert : la posture *quiz*
+du **chat** (« teste-moi ») passe toujours par le modèle et garde donc le défaut
+d'origine. La voie la plus simple serait d'y renvoyer vers l'écran de quiz plutôt
+que d'y générer une question ; elle n'est pas faite.
+
+**Date :** 2026-08-28
+
+---
+
+### Contexte du constat
+
+**Statut antérieur : Ouverte — trouvée à la mesure le 2026-08-28, en portant l'écran de quiz**
+
+**Contexte.** L'écran de quiz du frontend Next.js a été porté en Vue le
+2026-08-28. En vérifiant le contrat d'API de bout en bout sur la stack réelle, la
+première question générée était **fausse** :
+
+> Soit $(u_n)$ définie par $u_0 = 2$ et $u_{n+1} = 3u_n - 4$. Quelle est la
+> valeur de $u_2$ ?  — propositions A. 2 · B. 8 · C. 14 · D. 26
+> **Réponse déclarée par le modèle : C ($u_2 = 14$).**
+
+Or 2 est le point fixe de cette récurrence : $u_1 = 3(2)-4 = 2$, $u_2 = 2$. La
+bonne réponse est **A**, et l'élève qui la choisit s'entend répondre « Réponse
+incorrecte », avec une explication qui affirme le contraire. C'est pire que pas
+de quiz du tout.
+
+**Ce que le code garantit déjà, et ce qu'il ne garantit pas.** La correction est
+*déterministe* (comparaison de deux identifiants, aucun appel au modèle) et
+`contient_du_factice` écarte les QCM de remplissage (« Option 1 / Option 2 »).
+Mais **rien ne vérifie la vérité mathématique de la réponse déclarée** : elle est
+reprise du modèle telle quelle, scellée dans le `quiz_token`, puis servie comme
+un fait. C'est le seul endroit du produit où la règle non-négociable n°2 n'est
+pas tenue par du code — le chat, lui, refuse d'annoncer un résultat non vérifié.
+
+**Ce qu'il faut trancher, et les options mesurées :**
+
+1. **Vérifier symboliquement ce qui est vérifiable, et jeter le reste.** Une
+   partie du programme s'y prête déjà avec l'outillage existant : cette
+   question-ci est exactement ce que `tools/suite.py` sait établir (termes
+   exacts d'une récurrence), et `tools/calculator.py` couvre les dérivées et les
+   calculs. Coût : un vérificateur par famille de question, et un taux de rejet
+   à mesurer.
+2. **Servir les questions du corpus au lieu de les générer.** Les 12 leçons
+   portent une section « 18. Auto-évaluation » avec QCM et Vrai/Faux **déjà
+   rédigés et corrigés par l'auteur**. Le quiz deviendrait une lecture du corpus,
+   déterministe et juste par construction — au prix de la variété, et de la
+   dépendance à des sections qui ne sont pas toujours remplies.
+3. **Désactiver l'écran de quiz** tant que l'une des deux voies n'est pas en
+   place, plutôt que d'exposer un exercice qui peut noter faux.
+
+**Ce qui reste bloqué tant que non tranchée.** Rien techniquement : l'écran
+fonctionne et la boucle est complète. Mais tant que la question n'est pas
+tranchée, l'écran peut affirmer à un élève qu'il s'est trompé alors qu'il a
+raison — et c'est la confiance dans le tuteur qui se joue là, pas une
+fonctionnalité.
+
+**Décision :** _(à remplir — vérification symbolique / questions du corpus / écran désactivé)_
+**Date :**
+**Notes :**
+
+---
+
 ## Historique des décisions actées
 
 _(déplacer ici chaque entrée une fois `Décision` renseignée, pour garder la section

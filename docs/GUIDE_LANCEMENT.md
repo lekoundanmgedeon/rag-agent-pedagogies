@@ -33,9 +33,9 @@ les combinaisons de configuration possibles. Complète `docs/architecture.md`
 Le code applicatif (API, worker, frontend) est **identique** dans les 3 modes —
 seule la façon de lancer l'infrastructure et les processus change.
 
-⚠️ **Deux frontends coexistent** dans le dépôt : le Next.js (courant) et le Vue
-(historique, qui fait encore tourner le déploiement). Les commandes ci-dessus
-lancent le **Vue** ; pour le Next.js, voir [§4.3](#43--quel-frontend--deux-coexistent).
+Le dépôt ne contient plus qu'un frontend, le **Vue** (`agent-tuteur-web/`) :
+c'est lui que lancent toutes les commandes ci-dessus et le déploiement. Détail
+en [§4.3](#43--le-frontend-vue).
 
 Pour une **mise en ligne** (VPS ou cloud, pile complète avec worker et
 Qdrant), voir [`DEPLOIEMENT_TEST.md`](DEPLOIEMENT_TEST.md).
@@ -206,42 +206,38 @@ make worker     # terminal 2
 make run        # terminal 3
 ```
 
-### 4.3 — Quel frontend ? (deux coexistent)
+### 4.3 — Le frontend Vue
 
-| Répertoire | Techno | Statut | Lancé par |
-|---|---|---|---|
-| `agent-tuteur-web-next/` | Next.js 16 / React 19 / TypeScript | **Frontend courant**, 9 écrans | `npm run dev` (voir ci-dessous) |
-| `agent-tuteur-web/` | Vue 3 (Vite) | Historique — fait encore tourner le déploiement | `make run`, `make dev`, `docker-compose.dev.yml` |
+`agent-tuteur-web/` (Vue 3 + Vite) est le **seul** frontend du dépôt : espace
+élève (chat, progression) et espace d'administration (tableau de bord,
+documents, recherche RAG, journaux, utilisateurs). Il est lancé par `make run`,
+`make dev` et le service `web` de `docker-compose.dev.yml`.
 
-Le Vue reste ce que lancent `make dev` / le compose **tant que la bascule du
-déploiement n'est pas décidée** (point V7, cf. `docs/STATUS.md` §5). Les deux
-sont construits par l'intégration continue.
+> **Historique.** Un second frontend Next.js/React (`agent-tuteur-web-next/`) a
+> coexisté d'août 2026 jusqu'au **27 août 2026**, date à laquelle il a été
+> supprimé : le déploiement n'a jamais servi que le Vue, et maintenir deux
+> interfaces coûtait plus qu'il ne rapportait. Les documents de fusion en
+> gardent la trace.
 
-**Lancer le frontend Next.js** :
+**Lancer le frontend seul** (l'API doit tourner à côté) :
 
 ```bash
-cd agent-tuteur-web-next
+cd agent-tuteur-web
 npm install
-npm run gen:api                                   # types TypeScript depuis openapi.json
-API_ORIGIN=http://localhost:8000 npm run dev      # http://localhost:3000
+npm run dev          # http://localhost:5173, proxy /api et /health -> :8000
 ```
 
-Ce que vérifie la CI, à lancer avant de proposer une modification :
+Ce que vérifie l'intégration continue, à lancer avant de proposer une
+modification :
 
 ```bash
-npm run gen:api && git diff --exit-code src/types/api.d.ts   # types à jour ?
-npm run typecheck
-npm run build
+npm ci
+npm run build        # produit dist/, ce que sert nginx en production
 ```
-
-⚠️ **`API_ORIGIN` est lu au *build*, pas au démarrage.** Next fige les
-redirections dans le manifeste de construction : un `npm run build` sans cette
-variable produit une image qui pointera **toujours** vers `localhost:8000`, quoi
-qu'on mette dans l'environnement ensuite. Piège vérifié en conditions réelles.
 
 Le navigateur ne connaît jamais l'URL du backend : l'API est jointe par chemin
-relatif `/api/...`, redirigé par Next en dev et par nginx en production. C'est ce
-qui évite d'ouvrir CORS.
+relatif `/api/...`, redirigé par Vite en développement (`VITE_API_TARGET`) et
+par nginx en production. C'est ce qui évite d'ouvrir CORS.
 
 ---
 
@@ -449,7 +445,6 @@ docker compose -f docker-compose.dev.yml down
 pkill -f "uvicorn agent_tuteur"
 pkill -f "arq agent_tuteur"
 pkill -f "vite"           # serveur de dev du frontend Vue
-pkill -f "next dev"       # serveur de dev du frontend Next.js
 ```
 
 (`make dev` avec `Ctrl+C` arrête les 3 en une fois s'ils ont été lancés via
